@@ -1,0 +1,1 @@
+"""Authenticated media upload module."""

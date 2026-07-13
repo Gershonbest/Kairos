@@ -14,4 +14,4 @@ dist/
 # Local SQLite DB and uploaded media (not for version control)
 *.db
 kairos.db
-uploads/
+/uploads/
