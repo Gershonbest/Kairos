@@ -4,6 +4,4 @@ dist/
 .env
 .env.local
 .cursor/
-
-# Backend is maintained in a separate repository.
-backend/
+kairos.db

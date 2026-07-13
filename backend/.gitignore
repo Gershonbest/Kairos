@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.egg-info/
+.DS_Store
+
+.env
+
+# Local SQLite DB and uploaded media (not for version control)
+*.db
+kairos.db
+uploads/

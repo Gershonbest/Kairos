@@ -1,0 +1,3 @@
+"""Public booking module package."""
+
+
