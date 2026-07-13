@@ -1,0 +1,43 @@
+services:
+  redis:
+    image: mirror.gcr.io/library/redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      REDIS_URL: redis://redis:6379/0
+      ALLOWED_ORIGINS: http://localhost:3000
+      FRONTEND_BASE_URL: http://localhost:3000
+      MEDIA_BASE_URL: http://localhost:3000/media
+      LOCAL_UPLOAD_DIR: uploads
+    volumes:
+      - backend_uploads:/app/uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  backend_uploads:

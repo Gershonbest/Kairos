@@ -1,0 +1,79 @@
+# Render Blueprint: deploys frontend + backend + Redis in one project.
+# Database stays on Neon (set DATABASE_URL as a secret in the dashboard).
+#
+# First deploy:
+#   1. Push this repo to GitHub.
+#   2. Render Dashboard -> New -> Blueprint -> pick this repo.
+#   3. Fill in the secret env vars marked `sync: false` (DATABASE_URL, JWT_SECRET, etc.).
+#
+# Redeploys: `git push` (auto-deploy) or `./scripts/deploy-render.sh`.
+
+services:
+  # ----- Managed Redis -----
+  - type: redis
+    name: kairos-redis
+    plan: starter
+    maxmemoryPolicy: noeviction
+    ipAllowList: []   # only reachable from other Render services
+
+  # ----- Backend (FastAPI) -----
+  - type: web
+    name: kairos-backend
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health/live
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: LOCAL_UPLOAD_DIR
+        value: uploads
+      # Neon connection string (postgresql+asyncpg://...?sslmode=require)
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      # Redis wired automatically from the managed instance above.
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: kairos-redis
+          property: connectionString
+      # Public frontend URL (update if you attach a custom domain).
+      - key: ALLOWED_ORIGINS
+        value: https://kairos-frontend.onrender.com
+      - key: FRONTEND_BASE_URL
+        value: https://kairos-frontend.onrender.com
+      - key: PUBLIC_BOOKING_BASE_URL
+        value: https://kairos-frontend.onrender.com/book
+      - key: MEDIA_BASE_URL
+        value: https://kairos-backend.onrender.com/media
+      # Optional integrations — set in dashboard when ready.
+      - key: BREVO_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false
+      - key: SUPER_ADMIN_EMAIL
+        sync: false
+      - key: SUPER_ADMIN_PASSWORD
+        sync: false
+
+  # ----- Frontend (Vite build served by nginx) -----
+  - type: web
+    name: kairos-frontend
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      # Baked into the SPA at build time (see ARG in ./Dockerfile).
+      # Points the browser at the backend's public API.
+      - key: VITE_API_BASE_URL
+        value: https://kairos-backend.onrender.com/api/v1
