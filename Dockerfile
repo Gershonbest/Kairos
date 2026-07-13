@@ -20,7 +20,12 @@ RUN npm run build
 
 FROM mirror.gcr.io/library/nginx:1.27-alpine
 
-COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+# Port nginx listens on. Defaults to 80 for local docker-compose; Render
+# overrides this with its injected PORT (e.g. 10000) at runtime. The nginx
+# entrypoint renders templates/*.template into conf.d with envsubst.
+ENV PORT=80
+
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80
