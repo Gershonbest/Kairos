@@ -9,8 +9,8 @@
 # Redeploys: `git push` (auto-deploy) or `./scripts/deploy-render.sh`.
 
 services:
-  # ----- Managed Redis -----
-  - type: redis
+  # ----- Managed Redis (Key Value) -----
+  - type: keyvalue
     name: kairos-redis
     plan: starter
     maxmemoryPolicy: noeviction
@@ -24,7 +24,7 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /health/live
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
         value: production
@@ -37,10 +37,10 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
-      # Redis wired automatically from the managed instance above.
+      # Redis wired automatically from the managed Key Value instance above.
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: kairos-redis
           property: connectionString
       # Public frontend URL (update if you attach a custom domain).
@@ -71,7 +71,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
       # Baked into the SPA at build time (see ARG in ./Dockerfile).
       # Points the browser at the backend's public API.
