@@ -45,13 +45,13 @@ services:
           property: connectionString
       # Public frontend URL (update if you attach a custom domain).
       - key: ALLOWED_ORIGINS
-        value: https://kairos-frontend.onrender.com
+        value: https://kairos-frontend-sugb.onrender.com
       - key: FRONTEND_BASE_URL
-        value: https://kairos-frontend.onrender.com
+        value: https://kairos-frontend-sugb.onrender.com
       - key: PUBLIC_BOOKING_BASE_URL
-        value: https://kairos-frontend.onrender.com/book
+        value: https://kairos-frontend-sugb.onrender.com/book
       - key: MEDIA_BASE_URL
-        value: https://kairos-backend.onrender.com/media
+        value: https://kairos-backend-rrof.onrender.com/media
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
