@@ -59,7 +59,7 @@ export function AvailabilitySettings() {
     <div className="p-6 space-y-6 max-w-3xl">
       <div>
         <h1 className="text-3xl font-semibold">Weekly Availability</h1>
-        <p className="text-gray-600 mt-1">
+        <p className="text-muted-foreground mt-1">
           Set when clients can book you. Changes apply immediately to your public booking page.
         </p>
       </div>
@@ -67,7 +67,7 @@ export function AvailabilitySettings() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               Open days
             </CardTitle>
@@ -78,13 +78,13 @@ export function AvailabilitySettings() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
               <Clock className="w-4 h-4" />
               Booking windows
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Slot length follows each service&apos;s duration and buffer settings.
             </p>
           </CardContent>
@@ -97,15 +97,15 @@ export function AvailabilitySettings() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-sm text-gray-500">Loading availability...</p>
+            <p className="text-sm text-muted-foreground">Loading availability...</p>
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
               <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isSaving} />
 
               {error && <p className="text-sm text-red-600">{error}</p>}
-              {success && <p className="text-sm text-[#22c55e]">{success}</p>}
+              {success && <p className="text-sm text-[#2ECC71]">{success}</p>}
 
-              <Button type="submit" className="bg-[#7c3aed] hover:bg-[#6d28d9]" loading={isSaving} loadingLabel="Saving...">
+              <Button type="submit" className="bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isSaving} loadingLabel="Saving...">
                 <Save className="w-4 h-4 mr-2" />
                 Save weekly hours
               </Button>

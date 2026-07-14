@@ -154,7 +154,7 @@ export function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold">Dashboard</h1>
-          <p className="text-gray-600 mt-1">Live business metrics from your account data.</p>
+          <p className="text-muted-foreground mt-1">Live business metrics from your account data.</p>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" asChild>
@@ -163,7 +163,7 @@ export function Dashboard() {
               View Calendar
             </Link>
           </Button>
-          <Button className="bg-[#7c3aed] hover:bg-[#6d28d9]" asChild>
+          <Button className="bg-[#3B3680] hover:bg-[#2E2A5C]" asChild>
             <Link to="/dashboard/booking-links">
               <Plus className="w-4 h-4 mr-2" />
               Share Booking Link
@@ -177,12 +177,12 @@ export function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Bookings</CardTitle>
-            <Calendar className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Bookings</CardTitle>
+            <Calendar className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats?.total_bookings ?? 0}</div>
-            <p className="text-xs text-[#22c55e] flex items-center gap-1 mt-2">
+            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>{stats?.bookings_change_pct ?? 0}% from last month</span>
             </p>
@@ -191,12 +191,12 @@ export function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Monthly Revenue</CardTitle>
-            <DollarSign className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Monthly Revenue</CardTitle>
+            <DollarSign className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${(stats?.monthly_revenue ?? 0).toFixed(2)}</div>
-            <p className="text-xs text-[#22c55e] flex items-center gap-1 mt-2">
+            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>{stats?.revenue_change_pct ?? 0}% from last month</span>
             </p>
@@ -205,23 +205,23 @@ export function Dashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active Clients</CardTitle>
-            <Users className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active Clients</CardTitle>
+            <Users className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats?.active_clients ?? 0}</div>
-            <p className="text-xs text-gray-600 mt-2">Unique clients in your tenant account</p>
+            <p className="text-xs text-muted-foreground mt-2">Unique clients in your tenant account</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Avg. Booking Value</CardTitle>
-            <TrendingUp className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Booking Value</CardTitle>
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${(stats?.avg_booking_value ?? 0).toFixed(2)}</div>
-            <p className="text-xs text-gray-600 mt-2">Current month revenue / bookings</p>
+            <p className="text-xs text-muted-foreground mt-2">Current month revenue / bookings</p>
           </CardContent>
         </Card>
       </div>
@@ -230,22 +230,22 @@ export function Dashboard() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Upcoming Appointments</CardTitle>
-          <Button variant="link" className="text-[#7c3aed]" asChild>
+          <Button variant="link" className="text-[#3B3680]" asChild>
             <Link to="/dashboard/calendar">View all</Link>
           </Button>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {loadingAppointments ? (
-              <p className="text-sm text-gray-500">Loading appointments...</p>
+              <p className="text-sm text-muted-foreground">Loading appointments...</p>
             ) : (
               displayedAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] flex items-center justify-center text-white font-medium">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium">
                       {appointment.client
                         .split(" ")
                         .map((n) => n[0])
@@ -258,19 +258,19 @@ export function Dashboard() {
                         <span
                           className={`px-2 py-0.5 text-xs rounded-full capitalize ${
                             appointment.status === "confirmed"
-                              ? "bg-[#22c55e]/10 text-[#22c55e]"
+                              ? "bg-[#2ECC71]/10 text-[#2ECC71]"
                               : "bg-yellow-100 text-yellow-700"
                           }`}
                         >
                           {appointment.status}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600">{appointment.service}</p>
+                      <p className="text-sm text-muted-foreground">{appointment.service}</p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-medium">{appointment.time}</p>
-                    <p className="text-sm text-gray-600">{appointment.date}</p>
+                    <p className="text-sm text-muted-foreground">{appointment.date}</p>
                   </div>
                 </div>
               ))
@@ -279,57 +279,57 @@ export function Dashboard() {
               <p className="text-sm text-red-600">{appointmentsError}</p>
             )}
             {!loadingAppointments && !appointmentsError && displayedAppointments.length === 0 && (
-              <p className="text-sm text-gray-500">No upcoming appointments yet.</p>
+              <p className="text-sm text-muted-foreground">No upcoming appointments yet.</p>
             )}
           </div>
         </CardContent>
       </Card>
 
       {/* AI Insights */}
-      <Card className="bg-gradient-to-br from-[#7c3aed]/5 via-purple-50 to-[#22c55e]/5 border-[#7c3aed]/20">
+      <Card className="bg-gradient-to-br from-[#3B3680]/5 via-purple-50/40 to-[#2ECC71]/5 dark:via-[#3B3680]/10 border-[#3B3680]/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             AI-Generated Insights
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="p-4 bg-white rounded-lg border border-[#7c3aed]/10">
+          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22c55e]/20 flex items-center justify-center mt-0.5">
-                <TrendingUp className="w-3 h-3 text-[#22c55e]" />
+              <div className="w-6 h-6 rounded-full bg-[#2ECC71]/20 flex items-center justify-center mt-0.5">
+                <TrendingUp className="w-3 h-3 text-[#2ECC71]" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Peak Performance Day</h4>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Booking trends update from your own data. Use weekly chart patterns to tune pricing and availability.
                 </p>
               </div>
             </div>
           </div>
-          <div className="p-4 bg-white rounded-lg border border-[#7c3aed]/10">
+          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#7c3aed]/20 flex items-center justify-center mt-0.5">
-                <Clock className="w-3 h-3 text-[#7c3aed]" />
+              <div className="w-6 h-6 rounded-full bg-[#3B3680]/20 flex items-center justify-center mt-0.5">
+                <Clock className="w-3 h-3 text-[#3B3680]" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Optimize Your Schedule</h4>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Open low-demand slots with promo offers to improve occupancy and reduce idle hours.
                 </p>
               </div>
             </div>
           </div>
-          <div className="p-4 bg-white rounded-lg border border-[#7c3aed]/10">
+          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#22c55e]/20 flex items-center justify-center mt-0.5">
-                <DollarSign className="w-3 h-3 text-[#22c55e]" />
+              <div className="w-6 h-6 rounded-full bg-[#2ECC71]/20 flex items-center justify-center mt-0.5">
+                <DollarSign className="w-3 h-3 text-[#2ECC71]" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Revenue Opportunity</h4>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Deposit conversion and average booking value are now driven from live tenant transactions.
                 </p>
               </div>
@@ -362,9 +362,9 @@ export function Dashboard() {
                   key="revenue"
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#7c3aed"
+                  stroke="#3B3680"
                   strokeWidth={2}
-                  dot={{ fill: "#7c3aed", r: 4 }}
+                  dot={{ fill: "#3B3680", r: 4 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -389,7 +389,7 @@ export function Dashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="bookings" dataKey="bookings" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                <Bar key="bookings" dataKey="bookings" fill="#2ECC71" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -402,15 +402,15 @@ export function Dashboard() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div>
-            <p className="text-sm text-gray-600 mb-1">Main booking page (all services)</p>
-            <a href={bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : undefined} target="_blank" rel="noreferrer" className="text-sm text-[#7c3aed] break-all">
+            <p className="text-sm text-muted-foreground mb-1">Main booking page (all services)</p>
+            <a href={bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : undefined} target="_blank" rel="noreferrer" className="text-sm text-[#3B3680] break-all">
               {bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : "Loading..."}
             </a>
           </div>
           {bookingLinks?.service_urls?.slice(0, 5).map((link) => (
             <div key={link.service_id}>
-              <p className="text-sm text-gray-600 mb-1">{link.service_name}</p>
-              <a href={normalizeToCurrentOrigin(link.url)} target="_blank" rel="noreferrer" className="text-sm text-[#7c3aed] break-all">
+              <p className="text-sm text-muted-foreground mb-1">{link.service_name}</p>
+              <a href={normalizeToCurrentOrigin(link.url)} target="_blank" rel="noreferrer" className="text-sm text-[#3B3680] break-all">
                 {normalizeToCurrentOrigin(link.url)}
               </a>
             </div>

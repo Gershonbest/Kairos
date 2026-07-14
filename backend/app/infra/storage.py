@@ -51,13 +51,17 @@ def _upload_to_s3(*, key: str, data: bytes, content_type: str) -> str:
         aws_access_key_id=settings.aws_access_key_id or None,
         aws_secret_access_key=settings.aws_secret_access_key or None,
     )
-    client.put_object(
-        Bucket=settings.s3_bucket_name,
-        Key=key,
-        Body=data,
-        ContentType=content_type,
-        ACL="public-read",
-    )
+    put_kwargs: dict = {
+        "Bucket": settings.s3_bucket_name,
+        "Key": key,
+        "Body": data,
+        "ContentType": content_type,
+        "CacheControl": "public, max-age=31536000, immutable",
+    }
+    if settings.s3_object_acl:
+        put_kwargs["ACL"] = settings.s3_object_acl
+
+    client.put_object(**put_kwargs)
     if settings.s3_public_base_url:
         return f"{settings.s3_public_base_url.rstrip('/')}/{key}"
     return f"https://{settings.s3_bucket_name}.s3.{settings.aws_region}.amazonaws.com/{key}"
@@ -80,13 +84,22 @@ async def upload_tenant_image(*, tenant_id: str, folder: str, file: UploadFile) 
 
     if settings.s3_bucket_name:
         try:
-            return _upload_to_s3(key=key, data=data, content_type=content_type)
+            url = _upload_to_s3(key=key, data=data, content_type=content_type)
+            logger.info("storage.s3_upload", key=key)
+            return url
         except Exception as exc:
             logger.exception("storage.s3_upload_failed", key=key)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Unable to upload image to storage",
             ) from exc
+
+    if settings.app_env == "production":
+        logger.error("storage.s3_not_configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Object storage is not configured",
+        )
 
     logger.info("storage.local_upload", key=key)
     return _upload_to_local(key=key, data=data)

@@ -43,7 +43,7 @@ export function AdminLogin() {
 
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-200">
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Shield className="w-7 h-7 text-white" />
             </div>
             <div>
@@ -90,7 +90,7 @@ export function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full bg-[#7c3aed] hover:bg-[#6d28d9] mt-6"
+              className="w-full bg-[#3B3680] hover:bg-[#2E2A5C] mt-6"
               loading={isLoading}
               loadingLabel="Signing in..."
             >

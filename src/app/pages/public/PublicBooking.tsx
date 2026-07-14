@@ -45,6 +45,7 @@ interface Service {
   name: string;
   description: string;
   duration: number;
+  scheduling_mode: "fixed" | "flexible" | "all_day";
   price: number;
   deposit: number;
   category: string;
@@ -96,6 +97,12 @@ const ALL_DATES = getUpcomingDates();
 
 const STEP_LABELS = ["Service", "Date & Time", "Your Details", "Payment"];
 
+function serviceDurationLabel(service: { scheduling_mode: string; duration: number }): string {
+  if (service.scheduling_mode === "all_day") return "All day";
+  if (service.scheduling_mode === "flexible") return `About ${service.duration} min`;
+  return `${service.duration} min`;
+}
+
 // ─── AI responses ─────────────────────────────────────────────────────────────
 
 function getAIResponse(input: string): string {
@@ -125,14 +132,14 @@ function getAIResponse(input: string): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const amber = "#92400e";
-const amberLight = "#b45309";
-const cream = "#faf9f6";
-const creamCard = "#f5f0eb";
-const stone600 = "#57534e";
-const stone500 = "#78716c";
-const stone400 = "#a8a29e";
-const dark = "#1c1917";
+const amber = "#F5A623";
+const amberLight = "#FFB347";
+const cream = "var(--color-background)";
+const creamCard = "var(--color-input-background)";
+const stone600 = "var(--color-foreground)";
+const stone500 = "var(--color-muted-foreground)";
+const stone400 = "var(--color-muted-foreground)";
+const dark = "var(--color-foreground)";
 
 const inputStyle: React.CSSProperties = {
   backgroundColor: creamCard,
@@ -173,6 +180,10 @@ export function PublicBooking() {
   const [phoneDialCode, setPhoneDialCode] = useState("+233");
   const [availableSlotIsos, setAvailableSlotIsos] = useState<string[]>([]);
   const [form, setForm] = useState({ name: "", email: "", phone: "", notes: "" });
+  const [calendarLinks, setCalendarLinks] = useState<{
+    googleCalendarUrl: string;
+    icsDownloadPath: string;
+  } | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
   const [chatInput, setChatInput] = useState("");
@@ -233,6 +244,7 @@ export function PublicBooking() {
             name: row.name,
             description: row.description ?? "",
             duration: row.duration_minutes,
+            scheduling_mode: row.scheduling_mode ?? "fixed",
             price: row.price_amount,
             deposit: row.deposit_amount ?? 0,
             category: appointmentTypeLabels[row.appointment_type],
@@ -273,8 +285,16 @@ export function PublicBooking() {
     const to = new Date(`${selectedDate}T23:59:59.000Z`);
     api
       .listPublicAvailability(businessId, service.id, from.toISOString(), to.toISOString())
-      .then((res) => setAvailableSlotIsos(res.slots))
-      .catch(() => setAvailableSlotIsos([]));
+      .then((res) => {
+        setAvailableSlotIsos(res.slots);
+        if (service.scheduling_mode === "all_day") {
+          setSelectedSlotIso(res.slots[0] ?? "");
+        }
+      })
+      .catch(() => {
+        setAvailableSlotIsos([]);
+        if (service.scheduling_mode === "all_day") setSelectedSlotIso("");
+      });
   }, [businessId, service, selectedDate]);
 
   const groupedSlots = availableSlotIsos.reduce<Record<string, string[]>>((acc, slotIso) => {
@@ -305,6 +325,16 @@ export function PublicBooking() {
     setSelectedSlotIso("");
     setAppointmentFormat("");
     setForm({ name: "", email: "", phone: "", notes: "" });
+    setCalendarLinks(null);
+  }
+
+  function openCalendar(calendar: "google" | "ics") {
+    if (!calendarLinks) return;
+    if (calendar === "google") {
+      window.open(calendarLinks.googleCalendarUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.location.assign(calendarLinks.icsDownloadPath);
   }
 
   async function handleDepositPayment() {
@@ -313,7 +343,11 @@ export function PublicBooking() {
       return;
     }
     if (!selectedSlotIso) {
-      setBookingError("Please select a time slot before confirming your booking.");
+      setBookingError(
+        service.scheduling_mode === "all_day"
+          ? "Please select an available date before confirming your booking."
+          : "Please select a time slot before confirming your booking."
+      );
       setStep("datetime");
       return;
     }
@@ -355,8 +389,16 @@ export function PublicBooking() {
         idempotency_key: idempotencyKey,
       });
 
+      let confirmedBooking = booking;
       if (booking.payment_required && booking.payment_status === "pending") {
-        await api.confirmPublicPayment(businessId, booking.id);
+        confirmedBooking = await api.confirmPublicPayment(businessId, booking.id);
+      }
+
+      if (confirmedBooking.google_calendar_url && confirmedBooking.ics_download_path) {
+        setCalendarLinks({
+          googleCalendarUrl: confirmedBooking.google_calendar_url,
+          icsDownloadPath: confirmedBooking.ics_download_path,
+        });
       }
 
       setStep("confirmation");
@@ -388,7 +430,7 @@ export function PublicBooking() {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: cream, fontFamily: "'DM Sans', sans-serif" }}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header style={{ backgroundColor: "#fff", borderBottom: `1px solid rgba(28,25,23,0.08)` }}>
+      <header style={{ backgroundColor: "var(--color-card)", borderBottom: "1px solid var(--color-border)" }}>
         <div
           style={{
             maxWidth: 780,
@@ -468,7 +510,7 @@ export function PublicBooking() {
                           width: 32,
                           height: 32,
                           borderRadius: "50%",
-                          backgroundColor: done ? amberLight : active ? amber : "#e7e5e4",
+                          backgroundColor: done ? amberLight : active ? amber : "var(--color-muted)",
                           color: done || active ? "#fff" : stone400,
                           display: "flex",
                           alignItems: "center",
@@ -498,7 +540,7 @@ export function PublicBooking() {
                         style={{
                           flex: 1,
                           height: 1,
-                          backgroundColor: i < stepIndex ? amberLight : "#e7e5e4",
+                          backgroundColor: i < stepIndex ? amberLight : "var(--color-muted)",
                           marginTop: 16,
                           marginLeft: 8,
                           marginRight: 8,
@@ -552,7 +594,7 @@ export function PublicBooking() {
                   <p style={{ fontSize: 14, color: stone500 }}>Loading services...</p>
                 )}
                 {!servicesLoading && servicesError && (
-                  <p style={{ fontSize: 14, color: "#dc2626" }}>{servicesError}</p>
+                  <p style={{ fontSize: 14, color: "#E74C3C" }}>{servicesError}</p>
                 )}
                 {!servicesLoading && !servicesError && services.length === 0 && (
                   <p style={{ fontSize: 14, color: stone500 }}>
@@ -571,8 +613,8 @@ export function PublicBooking() {
                     transition={{ duration: 0.15 }}
                     style={{
                       textAlign: "left",
-                      backgroundColor: "#fff",
-                      border: "1px solid rgba(28,25,23,0.08)",
+                      backgroundColor: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: 20,
                       overflow: "hidden",
                       boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
@@ -583,7 +625,7 @@ export function PublicBooking() {
                     }}
                   >
                     {/* Image */}
-                    <div style={{ position: "relative", height: 180, backgroundColor: "#e7e5e4", overflow: "hidden" }}>
+                    <div style={{ position: "relative", height: 180, backgroundColor: "var(--color-muted)", overflow: "hidden" }}>
                       <img
                         src={svc.image}
                         alt={svc.name}
@@ -614,7 +656,7 @@ export function PublicBooking() {
                           position: "absolute",
                           top: 12,
                           right: 12,
-                          backgroundColor: "rgba(255,255,255,0.88)",
+                          backgroundColor: "var(--color-card)",
                           color: stone600,
                           fontSize: 11,
                           padding: "3px 8px",
@@ -652,7 +694,7 @@ export function PublicBooking() {
                           <span
                             style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: stone500 }}
                           >
-                            <Clock size={13} /> {svc.duration} min
+                            <Clock size={13} /> {serviceDurationLabel(svc)}
                           </span>
                           <span style={{ fontSize: 14, fontWeight: 600, color: dark }}>
                             ${svc.price}
@@ -661,7 +703,7 @@ export function PublicBooking() {
                         <span
                           style={{
                             fontSize: 11,
-                            backgroundColor: "#fef3c7",
+                            backgroundColor: "var(--color-accent)",
                             color: amber,
                             padding: "3px 9px",
                             borderRadius: 20,
@@ -722,7 +764,7 @@ export function PublicBooking() {
               {/* Service recap pill */}
               <div
                 style={{
-                  backgroundColor: "#fef3c7",
+                  backgroundColor: "var(--color-accent)",
                   border: "1px solid rgba(146,64,14,0.14)",
                   borderRadius: 14,
                   padding: "12px 16px",
@@ -740,7 +782,7 @@ export function PublicBooking() {
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>{service.name}</p>
                   <p style={{ fontSize: 12, color: amber }}>
-                    {service.duration} min · ${service.price} · ${service.deposit} deposit
+                    {serviceDurationLabel(service)} · ${service.price} · ${service.deposit} deposit
                   </p>
                 </div>
               </div>
@@ -760,8 +802,8 @@ export function PublicBooking() {
               {/* Date picker */}
               <div
                 style={{
-                  backgroundColor: "#fff",
-                  border: "1px solid rgba(28,25,23,0.08)",
+                  backgroundColor: "var(--color-card)",
+                  border: "1px solid var(--color-border)",
                   borderRadius: 20,
                   padding: 20,
                   marginBottom: 14,
@@ -841,18 +883,18 @@ export function PublicBooking() {
                 </div>
               </div>
 
-              {/* Time slots */}
+              {/* Time slots / all-day confirmation */}
               <AnimatePresence>
-                {selectedDate && (
+                {selectedDate && service.scheduling_mode === "all_day" && (
                   <motion.div
-                    key="timeslots"
+                    key="allday"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
                     style={{
-                      backgroundColor: "#fff",
-                      border: "1px solid rgba(28,25,23,0.08)",
+                      backgroundColor: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: 20,
                       padding: 20,
                       marginBottom: 18,
@@ -860,12 +902,49 @@ export function PublicBooking() {
                       overflow: "hidden",
                     }}
                   >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 16 }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
+                      {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
+                    </p>
+                    {selectedSlotIso ? (
+                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
+                        This books the entire calendar day — no start time needed.
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
+                        This date is fully booked. Please pick another day.
+                      </p>
+                    )}
+                  </motion.div>
+                )}
+                {selectedDate && service.scheduling_mode !== "all_day" && (
+                  <motion.div
+                    key="timeslots"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      backgroundColor: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 20,
+                      padding: 20,
+                      marginBottom: 18,
+                      boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
                       Available times for{" "}
                       <span style={{ color: amber }}>
                         {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
                       </span>
                     </p>
+                    {service.scheduling_mode === "flexible" && (
+                      <p style={{ fontSize: 12, color: stone500, marginBottom: 16 }}>
+                        Pick a start time. Typical length: about {service.duration} minutes.
+                      </p>
+                    )}
+                    {service.scheduling_mode !== "flexible" && <div style={{ marginBottom: 16 }} />}
                     {Object.entries(groupedSlots).map(([label, slots]) => (
                       <div key={label} style={{ marginBottom: 16 }}>
                         <p
@@ -895,7 +974,7 @@ export function PublicBooking() {
                                   border: "none",
                                   fontSize: 13,
                                   fontWeight: 500,
-                                  backgroundColor: isSelected ? amber : slot.available ? creamCard : "#f5f5f4",
+                                  backgroundColor: isSelected ? amber : slot.available ? creamCard : "var(--color-muted)",
                                   color: isSelected ? "#fff" : slot.available ? stone600 : stone400,
                                   cursor: slot.available ? "pointer" : "not-allowed",
                                   transition: "all 0.15s",
@@ -903,12 +982,12 @@ export function PublicBooking() {
                                 }}
                                 onMouseEnter={(e) => {
                                   if (slot.available && !isSelected)
-                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ede9e3";
+                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-accent)";
                                 }}
                                 onMouseLeave={(e) => {
                                   if (!isSelected)
                                     (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                                      slot.available ? creamCard : "#f5f5f4";
+                                      slot.available ? creamCard : "var(--color-muted)";
                                 }}
                               >
                                 {slot.time}
@@ -931,8 +1010,8 @@ export function PublicBooking() {
                 <div
                   style={{
                     marginTop: 20,
-                    backgroundColor: "#fff",
-                    border: "1px solid rgba(28,25,23,0.08)",
+                    backgroundColor: "var(--color-card)",
+                    border: "1px solid var(--color-border)",
                     borderRadius: 16,
                     padding: 18,
                   }}
@@ -951,8 +1030,8 @@ export function PublicBooking() {
                           style={{
                             padding: "12px 14px",
                             borderRadius: 12,
-                            border: selected ? `2px solid ${amber}` : "1px solid rgba(28,25,23,0.08)",
-                            backgroundColor: selected ? "#fffbeb" : "#fff",
+                            border: selected ? `2px solid ${amber}` : "1px solid var(--color-border)",
+                            backgroundColor: selected ? "var(--color-accent)" : "var(--color-card)",
                             textAlign: "left",
                             cursor: "pointer",
                           }}
@@ -1036,7 +1115,7 @@ export function PublicBooking() {
                 <div
                   style={{
                     marginBottom: 20,
-                    backgroundColor: "#fffbeb",
+                    backgroundColor: "var(--color-accent)",
                     border: "1px solid rgba(146,64,14,0.14)",
                     borderRadius: 14,
                     padding: "14px 16px",
@@ -1051,8 +1130,8 @@ export function PublicBooking() {
 
               <div
                 style={{
-                  backgroundColor: "#fff",
-                  border: "1px solid rgba(28,25,23,0.08)",
+                  backgroundColor: "var(--color-card)",
+                  border: "1px solid var(--color-border)",
                   borderRadius: 20,
                   padding: 24,
                   boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
@@ -1130,7 +1209,7 @@ export function PublicBooking() {
                     padding: "13px 0",
                     borderRadius: 13,
                     border: "none",
-                    backgroundColor: canProceedDetails ? amber : "#d6d3d1",
+                    backgroundColor: canProceedDetails ? amber : "var(--color-muted)",
                     color: canProceedDetails ? "#fff" : stone400,
                     fontSize: 14,
                     fontWeight: 600,
@@ -1189,7 +1268,7 @@ export function PublicBooking() {
                   {/* Card visual */}
                   <div
                     style={{
-                      background: `linear-gradient(135deg, ${amber} 0%, ${amberLight} 55%, #d97706 100%)`,
+                      background: `linear-gradient(135deg, ${amber} 0%, ${amberLight} 55%, #F5A623 100%)`,
                       borderRadius: 20,
                       padding: "28px 28px 24px",
                       position: "relative",
@@ -1242,8 +1321,8 @@ export function PublicBooking() {
                   {/* Card form */}
                   <div
                     style={{
-                      backgroundColor: "#fff",
-                      border: "1px solid rgba(28,25,23,0.08)",
+                      backgroundColor: "var(--color-card)",
+                      border: "1px solid var(--color-border)",
                       borderRadius: 20,
                       padding: 22,
                     }}
@@ -1287,8 +1366,8 @@ export function PublicBooking() {
                 {/* Summary */}
                 <div
                   style={{
-                    backgroundColor: "#fff",
-                    border: "1px solid rgba(28,25,23,0.08)",
+                    backgroundColor: "var(--color-card)",
+                    border: "1px solid var(--color-border)",
                     borderRadius: 20,
                     padding: 20,
                   }}
@@ -1311,8 +1390,10 @@ export function PublicBooking() {
                       ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
                       ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
                       { label: "Date", value: `${selectedDateObj?.day}, ${selectedDateObj?.month} ${selectedDateObj?.num}` },
-                      { label: "Time", value: displayTime(selectedSlotIso) },
-                      { label: "Duration", value: `${service.duration} minutes` },
+                      ...(service.scheduling_mode === "all_day"
+                        ? []
+                        : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
+                      { label: "Duration", value: serviceDurationLabel(service) },
                     ].map(({ label, value }) => (
                       <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                         <span style={{ color: stone500 }}>{label}</span>
@@ -1320,7 +1401,7 @@ export function PublicBooking() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ borderTop: "1px solid rgba(28,25,23,0.08)", marginTop: 14, paddingTop: 14 }}>
+                  <div style={{ borderTop: "1px solid var(--color-border)", marginTop: 14, paddingTop: 14 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
                       <span style={{ color: stone500 }}>Total</span>
                       <span style={{ fontWeight: 500, color: dark }}>${service.price}</span>
@@ -1380,7 +1461,7 @@ export function PublicBooking() {
                     )}
                   </button>
                   {bookingError && (
-                    <p style={{ marginTop: 10, fontSize: 12, color: "#dc2626" }}>{bookingError}</p>
+                    <p style={{ marginTop: 10, fontSize: 12, color: "#E74C3C" }}>{bookingError}</p>
                   )}
                 </div>
               </div>
@@ -1435,8 +1516,8 @@ export function PublicBooking() {
                 style={{
                   width: "100%",
                   maxWidth: 400,
-                  backgroundColor: "#fff",
-                  border: "1px solid rgba(28,25,23,0.09)",
+                  backgroundColor: "var(--color-card)",
+                  border: "1px solid var(--color-border)",
                   borderRadius: 20,
                   padding: 22,
                   marginBottom: 22,
@@ -1450,7 +1531,7 @@ export function PublicBooking() {
                     gap: 12,
                     paddingBottom: 16,
                     marginBottom: 16,
-                    borderBottom: "1px solid rgba(28,25,23,0.08)",
+                    borderBottom: "1px solid var(--color-border)",
                   }}
                 >
                   <img src={service.image} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover" }} />
@@ -1463,7 +1544,7 @@ export function PublicBooking() {
                       fontSize: 11,
                       fontWeight: 600,
                       backgroundColor: "#dcfce7",
-                      color: "#15803d",
+                      color: "#239B56",
                       padding: "4px 10px",
                       borderRadius: 20,
                     }}
@@ -1478,8 +1559,10 @@ export function PublicBooking() {
                     ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
                     ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
                     { label: "Date", value: `${selectedDateObj?.day}, ${selectedDateObj?.month} ${selectedDateObj?.num}` },
-                    { label: "Time", value: displayTime(selectedSlotIso) },
-                    { label: "Duration", value: `${service.duration} minutes` },
+                    ...(service.scheduling_mode === "all_day"
+                      ? []
+                      : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
+                    { label: "Duration", value: serviceDurationLabel(service) },
                     { label: "Deposit paid", value: `$${service.deposit}` },
                     { label: "Balance due", value: `$${service.price - service.deposit} at appointment` },
                   ].map(({ label, value }) => (
@@ -1494,18 +1577,26 @@ export function PublicBooking() {
               {/* Calendar actions */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 400 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  {["Google Calendar", "Apple Calendar", "Outlook"].map((cal) => (
+                  {[
+                    { label: "Google Calendar", kind: "google" as const },
+                    { label: "Apple Calendar", kind: "ics" as const },
+                    { label: "Outlook", kind: "ics" as const },
+                  ].map(({ label, kind }) => (
                     <button
-                      key={cal}
+                      key={label}
+                      type="button"
+                      disabled={!calendarLinks}
+                      onClick={() => openCalendar(kind)}
                       style={{
                         padding: "10px 8px",
                         borderRadius: 12,
-                        border: "1px solid rgba(28,25,23,0.1)",
-                        backgroundColor: "#fff",
+                        border: "1px solid var(--color-border)",
+                        backgroundColor: "var(--color-card)",
                         fontSize: 11,
                         fontWeight: 500,
                         color: stone600,
-                        cursor: "pointer",
+                        cursor: calendarLinks ? "pointer" : "not-allowed",
+                        opacity: calendarLinks ? 1 : 0.55,
                         fontFamily: "'DM Sans', sans-serif",
                         display: "flex",
                         flexDirection: "column",
@@ -1520,12 +1611,12 @@ export function PublicBooking() {
                       }}
                       onMouseLeave={(e) => {
                         const el = e.currentTarget as HTMLButtonElement;
-                        el.style.borderColor = "rgba(28,25,23,0.1)";
+                        el.style.borderColor = "var(--color-border)";
                         el.style.color = stone600;
                       }}
                     >
                       <CalendarPlus size={16} />
-                      {cal}
+                      {label}
                     </button>
                   ))}
                 </div>
@@ -1544,7 +1635,7 @@ export function PublicBooking() {
                     fontFamily: "'DM Sans', sans-serif",
                     transition: "background-color 0.15s",
                   }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "#ede9e3")}
+                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-accent)")}
                   onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = creamCard)}
                 >
                   Book another appointment
@@ -1578,9 +1669,9 @@ export function PublicBooking() {
                 right: 0,
                 width: 320,
                 height: 440,
-                backgroundColor: "#fff",
+                backgroundColor: "var(--color-card)",
                 borderRadius: 20,
-                border: "1px solid rgba(28,25,23,0.1)",
+                border: "1px solid var(--color-border)",
                 boxShadow: "0 24px 64px rgba(28,25,23,0.18)",
                 display: "flex",
                 flexDirection: "column",
@@ -1646,7 +1737,7 @@ export function PublicBooking() {
                 <div
                   style={{
                     padding: "8px 14px",
-                    backgroundColor: "#fef3c7",
+                    backgroundColor: "var(--color-accent)",
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
@@ -1744,7 +1835,7 @@ export function PublicBooking() {
               <div
                 style={{
                   padding: "10px 12px",
-                  borderTop: "1px solid rgba(28,25,23,0.08)",
+                  borderTop: "1px solid var(--color-border)",
                   display: "flex",
                   gap: 8,
                   flexShrink: 0,
@@ -1822,14 +1913,14 @@ export function PublicBooking() {
                 width: 22,
                 height: 22,
                 borderRadius: "50%",
-                backgroundColor: "#d97706",
+                backgroundColor: "#F5A623",
                 color: "#fff",
                 fontSize: 9,
                 fontWeight: 800,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                border: "2px solid #faf9f6",
+                border: "2px solid var(--color-background)",
                 letterSpacing: "-0.02em",
               }}
             >

@@ -77,7 +77,7 @@ export function ChoosePlan() {
   }
 
   if (isLoading) {
-    return <div className="p-6 text-gray-500">Loading plans...</div>;
+    return <div className="p-6 text-muted-foreground">Loading plans...</div>;
   }
 
   const trialExpired = status?.requires_plan_selection;
@@ -85,14 +85,14 @@ export function ChoosePlan() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-3 py-1 text-sm text-[#7c3aed]">
+        <div className="inline-flex items-center gap-2 rounded-full bg-purple-100 dark:bg-purple-500/20 px-3 py-1 text-sm text-[#3B3680] dark:text-purple-100">
           <Sparkles className="w-4 h-4" />
           {trialExpired ? "Trial ended" : "Choose your plan"}
         </div>
         <h1 className="text-3xl font-semibold">
           {trialExpired ? "Continue with Kairos Bookings" : "Upgrade before your trial ends"}
         </h1>
-        <p className="text-gray-600 max-w-2xl mx-auto">
+        <p className="text-muted-foreground max-w-2xl mx-auto">
           {trialExpired
             ? "Your 7-day free trial has ended. Select a plan to restore full access to your dashboard, bookings, and clients."
             : status?.warning_message ||
@@ -107,7 +107,7 @@ export function ChoosePlan() {
             <Card
               key={plan.code}
               className={`cursor-pointer transition-all ${
-                isSelected ? "border-[#7c3aed] ring-2 ring-[#7c3aed]/20" : "hover:border-gray-300"
+                isSelected ? "border-[#3B3680] ring-2 ring-[#3B3680]/20" : "hover:border-border"
               } ${plan.is_featured ? "shadow-lg" : ""}`}
               onClick={() => setSelectedPlan(plan.code)}
             >
@@ -115,26 +115,26 @@ export function ChoosePlan() {
                 <CardTitle className="flex items-center justify-between">
                   <span>{plan.name}</span>
                   {plan.is_featured && (
-                    <span className="text-xs font-medium bg-[#7c3aed] text-white px-2 py-1 rounded-full">
+                    <span className="text-xs font-medium bg-[#3B3680] text-white px-2 py-1 rounded-full">
                       Popular
                     </span>
                   )}
                 </CardTitle>
                 <p className="text-2xl font-semibold">
                   {formatPrice(plan.monthly_price)}
-                  <span className="text-sm font-normal text-gray-500">/month</span>
+                  <span className="text-sm font-normal text-muted-foreground">/month</span>
                 </p>
-                <p className="text-sm text-gray-600">{plan.description}</p>
+                <p className="text-sm text-muted-foreground">{plan.description}</p>
               </CardHeader>
               <CardContent className="space-y-3">
                 {plan.features.map((feature) => (
                   <div key={feature} className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-[#22c55e] mt-0.5 shrink-0" />
+                    <Check className="w-4 h-4 text-[#2ECC71] mt-0.5 shrink-0" />
                     <span>{feature}</span>
                   </div>
                 ))}
                 {!plan.self_serve && (
-                  <p className="text-xs text-gray-500 pt-2">Contact sales for Enterprise onboarding.</p>
+                  <p className="text-xs text-muted-foreground pt-2">Contact sales for Enterprise onboarding.</p>
                 )}
               </CardContent>
             </Card>
@@ -146,12 +146,12 @@ export function ChoosePlan() {
         <CardContent className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <p className="font-medium">Selected plan: {plans.find((p) => p.code === selectedPlan)?.name ?? "—"}</p>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Billing is simulated for now — your account will be activated immediately for 30 days.
             </p>
           </div>
           <Button
-            className="bg-[#7c3aed] hover:bg-[#6d28d9]"
+            className="bg-[#3B3680] hover:bg-[#2E2A5C]"
             onClick={handleActivate}
             loading={isActivating}
             loadingLabel="Activating..."
@@ -163,7 +163,7 @@ export function ChoosePlan() {
       </Card>
 
       {error && <p className="text-sm text-red-600 text-center">{error}</p>}
-      {success && <p className="text-sm text-[#22c55e] text-center">{success}</p>}
+      {success && <p className="text-sm text-[#2ECC71] text-center">{success}</p>}
     </div>
   );
 }

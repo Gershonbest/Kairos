@@ -31,7 +31,7 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
               type="checkbox"
               checked={value[key].enabled}
               onChange={(e) => updateDay(key, "enabled", e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 text-[#7c3aed] focus:ring-[#7c3aed]"
+              className="w-4 h-4 rounded border-gray-300 text-[#3B3680] focus:ring-[#3B3680]"
               disabled={disabled}
             />
             <span className="font-medium">{label}</span>
@@ -48,7 +48,7 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
                   type="time"
                   value={value[key].startTime}
                   onChange={(e) => updateDay(key, "startTime", e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7c3aed] bg-white"
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
                   disabled={disabled}
                 />
               </div>
@@ -62,7 +62,7 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
                   type="time"
                   value={value[key].endTime}
                   onChange={(e) => updateDay(key, "endTime", e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#7c3aed] bg-white"
+                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
                   disabled={disabled}
                 />
               </div>

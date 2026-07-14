@@ -65,10 +65,10 @@ export function PaymentsDashboard() {
 
         const totalCount = mapped.length || 1;
         const providerNames = [
-          { id: "stripe", color: "#7c3aed", name: "Stripe" },
-          { id: "paystack", color: "#22c55e", name: "Paystack" },
+          { id: "stripe", color: "#3B3680", name: "Stripe" },
+          { id: "paystack", color: "#2ECC71", name: "Paystack" },
           { id: "flutterwave", color: "#3b82f6", name: "Flutterwave" },
-          { id: "kairos", color: "#f59e0b", name: "Kairos" },
+          { id: "kairos", color: "#FFB347", name: "Kairos" },
         ];
         setPaymentMethodData(
           providerNames.map((provider) => ({
@@ -117,7 +117,7 @@ export function PaymentsDashboard() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "completed":
-        return <CheckCircle className="w-4 h-4 text-[#22c55e]" />;
+        return <CheckCircle className="w-4 h-4 text-[#2ECC71]" />;
       case "pending":
         return <Clock className="w-4 h-4 text-yellow-500" />;
       case "failed":
@@ -130,15 +130,15 @@ export function PaymentsDashboard() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-[#22c55e]/10 text-[#22c55e]";
+        return "bg-[#2ECC71]/10 text-[#2ECC71]";
       case "pending":
-        return "bg-yellow-100 text-yellow-700";
+        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-100";
       case "failed":
-        return "bg-red-100 text-red-700";
+        return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-100";
       case "partial":
-        return "bg-blue-100 text-blue-700";
+        return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-100";
       default:
-        return "bg-gray-100 text-gray-700";
+        return "bg-muted text-muted-foreground";
     }
   };
 
@@ -148,7 +148,7 @@ export function PaymentsDashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold">Payments Dashboard</h1>
-          <p className="text-gray-600 mt-1">Track your revenue, deposits, and transactions</p>
+          <p className="text-muted-foreground mt-1">Track your revenue, deposits, and transactions</p>
         </div>
         <Button variant="outline">
           <Download className="w-4 h-4 mr-2" />
@@ -159,14 +159,14 @@ export function PaymentsDashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-[#22c55e]/5 to-white border-[#22c55e]/20">
+        <Card className="bg-gradient-to-br from-[#2ECC71]/5 to-card border-[#2ECC71]/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Revenue</CardTitle>
-            <DollarSign className="w-4 h-4 text-[#22c55e]" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
+            <DollarSign className="w-4 h-4 text-[#2ECC71]" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-[#22c55e] flex items-center gap-1 mt-2">
+            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live from transactions</span>
             </p>
@@ -175,12 +175,12 @@ export function PaymentsDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Deposits Collected</CardTitle>
-            <CreditCard className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Deposits Collected</CardTitle>
+            <CreditCard className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${totalDeposits.toFixed(2)}</div>
-            <p className="text-xs text-gray-600 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               {totalRevenue > 0 ? Math.round((totalDeposits / totalRevenue) * 100) : 0}% of total revenue
             </p>
           </CardContent>
@@ -188,23 +188,23 @@ export function PaymentsDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Pending Payments</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Payments</CardTitle>
             <Clock className="w-4 h-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${pendingTotal.toFixed(2)}</div>
-            <p className="text-xs text-gray-600 mt-2">{pendingPayments.length} outstanding payments</p>
+            <p className="text-xs text-muted-foreground mt-2">{pendingPayments.length} outstanding payments</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Avg. Transaction</CardTitle>
-            <TrendingUp className="w-4 h-4 text-gray-600" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Transaction</CardTitle>
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${averageTransaction.toFixed(2)}</div>
-            <p className="text-xs text-[#22c55e] flex items-center gap-1 mt-2">
+            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live average</span>
             </p>
@@ -232,8 +232,8 @@ export function PaymentsDashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="revenue" dataKey="revenue" fill="#7c3aed" radius={[8, 8, 0, 0]} />
-                <Bar key="deposits" dataKey="deposits" fill="#22c55e" radius={[8, 8, 0, 0]} />
+                <Bar key="revenue" dataKey="revenue" fill="#3B3680" radius={[8, 8, 0, 0]} />
+                <Bar key="deposits" dataKey="deposits" fill="#2ECC71" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -297,10 +297,10 @@ export function PaymentsDashboard() {
                 {recentTransactions.map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/40 transition-colors"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] flex items-center justify-center text-white font-medium">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium">
                         {transaction.client.split(" ").map((n) => n[0]).join("")}
                       </div>
                       <div>
@@ -308,21 +308,21 @@ export function PaymentsDashboard() {
                           <h4 className="font-medium">{transaction.client}</h4>
                           {getStatusIcon(transaction.status)}
                         </div>
-                        <p className="text-sm text-gray-600">{transaction.service}</p>
+                        <p className="text-sm text-muted-foreground">{transaction.service}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-muted-foreground">
                             {new Date(transaction.date).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
                             })}
                           </span>
-                          <span className="text-xs text-gray-500">via {transaction.method}</span>
+                          <span className="text-xs text-muted-foreground">via {transaction.method}</span>
                         </div>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-lg">${transaction.deposit.toFixed(2)}</p>
-                      <p className="text-xs text-gray-600">Service total: ${transaction.amount.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">Service total: ${transaction.amount.toFixed(2)}</p>
                       <span
                         className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${getStatusColor(
                           transaction.status
@@ -334,7 +334,7 @@ export function PaymentsDashboard() {
                   </div>
                 ))}
                 {recentTransactions.length === 0 && (
-                  <p className="text-sm text-gray-500">No payment transactions yet.</p>
+                  <p className="text-sm text-muted-foreground">No payment transactions yet.</p>
                 )}
               </div>
             </CardContent>
@@ -351,12 +351,12 @@ export function PaymentsDashboard() {
                 {depositTracking.map((deposit) => (
                   <div
                     key={deposit.id}
-                    className="p-4 border border-gray-200 rounded-lg"
+                    className="p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <h4 className="font-medium">{deposit.client}</h4>
-                        <p className="text-sm text-gray-600">{deposit.service}</p>
+                        <p className="text-sm text-muted-foreground">{deposit.service}</p>
                       </div>
                       <span
                         className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
@@ -368,17 +368,17 @@ export function PaymentsDashboard() {
                     </div>
                     <div className="grid grid-cols-3 gap-4 mb-3">
                       <div>
-                        <p className="text-xs text-gray-500">Deposit Paid</p>
-                        <p className="font-semibold text-[#22c55e]">
+                        <p className="text-xs text-muted-foreground">Deposit Paid</p>
+                        <p className="font-semibold text-[#2ECC71]">
                           ${deposit.depositPaid} / ${deposit.depositRequired}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Remaining Balance</p>
+                        <p className="text-xs text-muted-foreground">Remaining Balance</p>
                         <p className="font-semibold">${deposit.remainingBalance}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">Due Date</p>
+                        <p className="text-xs text-muted-foreground">Due Date</p>
                         <p className="font-medium">
                           {new Date(deposit.dueDate).toLocaleDateString("en-US", {
                             month: "short",
@@ -387,9 +387,9 @@ export function PaymentsDashboard() {
                         </p>
                       </div>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className="bg-gradient-to-r from-[#7c3aed] to-[#22c55e] h-2 rounded-full transition-all"
+                        className="bg-gradient-to-r from-[#3B3680] to-[#2ECC71] h-2 rounded-full transition-all"
                         style={{
                           width: `${
                             (deposit.depositPaid / deposit.depositRequired) * 100
@@ -400,7 +400,7 @@ export function PaymentsDashboard() {
                   </div>
                 ))}
                 {depositTracking.length === 0 && (
-                  <p className="text-sm text-gray-500">No pending deposit balances.</p>
+                  <p className="text-sm text-muted-foreground">No pending deposit balances.</p>
                 )}
               </div>
             </CardContent>

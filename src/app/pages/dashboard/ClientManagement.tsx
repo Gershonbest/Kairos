@@ -123,11 +123,11 @@ export function ClientManagement() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold">Client Management</h1>
-          <p className="text-gray-600 mt-1">View and manage your client relationships</p>
+          <p className="text-muted-foreground mt-1">View and manage your client relationships</p>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
-            <Button className="bg-[#7c3aed] hover:bg-[#6d28d9]">
+            <Button className="bg-[#3B3680] hover:bg-[#2E2A5C]">
               <Plus className="w-4 h-4 mr-2" />
               Add Client
             </Button>
@@ -176,7 +176,7 @@ export function ClientManagement() {
                   className="mt-1"
                 />
               </div>
-              <Button type="submit" className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]" loading={isAdding} loadingLabel="Adding...">
+              <Button type="submit" className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isAdding} loadingLabel="Adding...">
                 Add client
               </Button>
             </form>
@@ -187,7 +187,7 @@ export function ClientManagement() {
       <Card>
         <CardContent className="p-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
               placeholder="Search clients by name or email..."
               value={searchTerm}
@@ -201,7 +201,7 @@ export function ClientManagement() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Clients</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{clients.length}</div>
@@ -209,7 +209,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Active This Month</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Active This Month</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{clients.filter((c) => c.totalBookings > 0).length}</div>
@@ -217,7 +217,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Avg. Bookings/Client</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Bookings/Client</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{avgBookingsPerClient.toFixed(1)}</div>
@@ -225,7 +225,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Avg. Lifetime Value</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Lifetime Value</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${avgLifetimeValue.toFixed(0)}</div>
@@ -244,7 +244,7 @@ export function ClientManagement() {
               <Dialog key={client.id}>
                 <DialogTrigger asChild>
                   <div
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
                     onClick={() => {
                       setSelectedClient(client);
                       setNoteDraft(client.notes);
@@ -252,7 +252,7 @@ export function ClientManagement() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] flex items-center justify-center text-white font-medium text-lg">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium text-lg">
                           {client.name
                             .split(" ")
                             .map((n) => n[0])
@@ -261,11 +261,11 @@ export function ClientManagement() {
                         <div>
                           <h3 className="font-medium">{client.name}</h3>
                           <div className="flex items-center gap-4 mt-1">
-                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
                               <Mail className="w-3 h-3" />
                               {client.email}
                             </div>
-                            <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
                               <Phone className="w-3 h-3" />
                               {client.phone}
                             </div>
@@ -274,15 +274,15 @@ export function ClientManagement() {
                       </div>
                       <div className="flex items-center gap-8">
                         <div className="text-right">
-                          <p className="text-sm text-gray-600">Total Bookings</p>
+                          <p className="text-sm text-muted-foreground">Total Bookings</p>
                           <p className="font-semibold">{client.totalBookings}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-600">Total Spent</p>
-                          <p className="font-semibold text-[#22c55e]">${client.totalSpent.toFixed(0)}</p>
+                          <p className="text-sm text-muted-foreground">Total Spent</p>
+                          <p className="font-semibold text-[#2ECC71]">${client.totalSpent.toFixed(0)}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-600">Last Visit</p>
+                          <p className="text-sm text-muted-foreground">Last Visit</p>
                           <p className="font-medium">
                             {new Date(client.lastVisit).toLocaleDateString("en-US", {
                               month: "short",
@@ -297,7 +297,7 @@ export function ClientManagement() {
                 <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] flex items-center justify-center text-white font-medium text-lg">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium text-lg">
                         {client.name
                           .split(" ")
                           .map((n) => n[0])
@@ -305,7 +305,7 @@ export function ClientManagement() {
                       </div>
                       <div>
                         <div>{client.name}</div>
-                        <p className="text-sm text-gray-600 font-normal">{client.email}</p>
+                        <p className="text-sm text-muted-foreground font-normal">{client.email}</p>
                       </div>
                     </DialogTitle>
                   </DialogHeader>
@@ -322,9 +322,9 @@ export function ClientManagement() {
                         <Card>
                           <CardContent className="p-4">
                             <div className="flex items-center gap-3">
-                              <Calendar className="w-8 h-8 text-[#7c3aed]" />
+                              <Calendar className="w-8 h-8 text-[#3B3680]" />
                               <div>
-                                <p className="text-sm text-gray-600">Total Bookings</p>
+                                <p className="text-sm text-muted-foreground">Total Bookings</p>
                                 <p className="text-2xl font-semibold">{client.totalBookings}</p>
                               </div>
                             </div>
@@ -333,9 +333,9 @@ export function ClientManagement() {
                         <Card>
                           <CardContent className="p-4">
                             <div className="flex items-center gap-3">
-                              <DollarSign className="w-8 h-8 text-[#22c55e]" />
+                              <DollarSign className="w-8 h-8 text-[#2ECC71]" />
                               <div>
-                                <p className="text-sm text-gray-600">Total Spent</p>
+                                <p className="text-sm text-muted-foreground">Total Spent</p>
                                 <p className="text-2xl font-semibold">${client.totalSpent.toFixed(0)}</p>
                               </div>
                             </div>
@@ -349,11 +349,11 @@ export function ClientManagement() {
                         {clientBookingHistory.map((booking) => (
                           <div
                             key={booking.id}
-                            className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                            className="flex items-center justify-between p-3 border border-border rounded-lg"
                           >
                             <div>
                               <p className="font-medium">{booking.service_name}</p>
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-muted-foreground">
                                 {new Date(booking.start_at).toLocaleDateString("en-US", {
                                   month: "long",
                                   day: "numeric",
@@ -361,20 +361,20 @@ export function ClientManagement() {
                                 })}
                               </p>
                             </div>
-                            <span className="text-xs px-2 py-1 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
+                            <span className="text-xs px-2 py-1 rounded-full bg-[#2ECC71]/10 text-[#2ECC71]">
                               {booking.status}
                             </span>
                           </div>
                         ))}
                         {clientBookingHistory.length === 0 && (
-                          <p className="text-sm text-gray-500">No bookings yet for this client.</p>
+                          <p className="text-sm text-muted-foreground">No bookings yet for this client.</p>
                         )}
                       </div>
                     </TabsContent>
 
                     <TabsContent value="notes" className="mt-4 space-y-4">
                       <div className="flex items-start gap-2">
-                        <MessageSquare className="w-4 h-4 text-gray-400 mt-2" />
+                        <MessageSquare className="w-4 h-4 text-muted-foreground mt-2" />
                         <Textarea
                           value={noteDraft}
                           onChange={(e) => setNoteDraft(e.target.value)}
@@ -383,7 +383,7 @@ export function ClientManagement() {
                         />
                       </div>
                       <Button
-                        className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]"
+                        className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]"
                         onClick={handleSaveNotes}
                         loading={isSavingNote}
                         loadingLabel="Saving..."
@@ -396,7 +396,7 @@ export function ClientManagement() {
               </Dialog>
             ))}
             {filteredClients.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-8">No clients yet. Add one or share your booking link.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">No clients yet. Add one or share your booking link.</p>
             )}
           </div>
         </CardContent>

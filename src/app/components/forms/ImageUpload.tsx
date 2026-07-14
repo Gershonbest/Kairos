@@ -36,22 +36,22 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50/60 p-4 space-y-3">
+    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
       <div>
         <Label>{label}</Label>
-        {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
+        {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
       </div>
       <div className="flex flex-col sm:flex-row sm:items-start gap-4">
         <button
           type="button"
           onClick={() => !disabled && !isUploading && inputRef.current?.click()}
           disabled={disabled || isUploading}
-          className="w-full sm:w-28 h-28 rounded-xl border border-dashed border-gray-300 bg-white overflow-hidden flex items-center justify-center shrink-0 transition-colors hover:border-[#7c3aed]/40 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full sm:w-28 h-28 rounded-xl border border-dashed border-border bg-card overflow-hidden flex items-center justify-center shrink-0 transition-colors hover:border-[#3B3680]/40 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {value ? (
             <img src={value} alt="" className="w-full h-full object-cover" />
           ) : (
-            <ImagePlus className="w-8 h-8 text-gray-400" />
+            <ImagePlus className="w-8 h-8 text-muted-foreground" />
           )}
         </button>
         <div className="flex-1 space-y-2 min-w-0">
@@ -96,7 +96,7 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
             )}
           </div>
           {value && !error && (
-            <p className="text-xs text-[#22c55e]">Image uploaded. Save the form below to keep it.</p>
+            <p className="text-xs text-[#2ECC71]">Image uploaded. Save the form below to keep it.</p>
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>

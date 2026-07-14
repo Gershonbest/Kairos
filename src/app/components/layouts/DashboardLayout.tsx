@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { TrialBanner } from "../billing/TrialBanner";
+import { NotificationBell } from "../notifications/NotificationBell";
+import { ThemeToggle } from "../theme/ThemeToggle";
 import { useEffect, useState } from "react";
 import {
   api,
@@ -101,18 +103,18 @@ export function DashboardLayout() {
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200
+        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card border-r border-border
         transform transition-transform duration-200 ease-in-out
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="h-16 flex items-center px-6 border-b border-gray-200">
+          <div className="h-16 flex items-center px-6 border-b border-border">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
                 <Calendar className="w-5 h-5 text-white" />
               </div>
               <span className="font-semibold text-lg">Kairos Bookings</span>
@@ -130,8 +132,8 @@ export function DashboardLayout() {
                 className={({ isActive }) => `
                   flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   ${isActive 
-                    ? 'bg-[#7c3aed] text-white' 
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-[#3B3680] text-white' 
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   }
                 `}
               >
@@ -142,14 +144,14 @@ export function DashboardLayout() {
           </nav>
 
           {/* User section */}
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-border">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#6d28d9] flex items-center justify-center text-white">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white">
                 {initials}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{user?.full_name ?? "Business User"}</p>
-                <p className="text-xs text-gray-500 truncate">{user?.email ?? ""}</p>
+                <p className="text-sm font-medium text-foreground truncate">{user?.full_name ?? "Business User"}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
               </div>
             </div>
             <Button
@@ -182,16 +184,23 @@ export function DashboardLayout() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
-        <header className="lg:hidden h-16 bg-white border-b border-gray-200 flex items-center px-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="w-6 h-6" />
-          </Button>
-          <span className="ml-4 font-semibold">Kairos Bookings</span>
+        <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="w-6 h-6" />
+            </Button>
+            <span className="font-semibold lg:hidden">Kairos Bookings</span>
+            <span className="hidden lg:inline text-sm text-muted-foreground">Dashboard</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle compact />
+            <NotificationBell />
+          </div>
         </header>
 
         {/* Page content */}

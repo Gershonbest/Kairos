@@ -195,9 +195,11 @@ Copy `backend/.env.example` → `backend/.env`. Key variables:
 | `BREVO_API_KEY` | Brevo HTTP API key (`xkeysib-...`) — preferred for email |
 | `SMTP_*` | SMTP fallback if Brevo API is unavailable |
 | `GOOGLE_CLIENT_ID` | Google Sign-In (frontend + backend token verification) |
-| `S3_BUCKET_NAME` | If empty, uploads use local `LOCAL_UPLOAD_DIR` |
-| `LOCAL_UPLOAD_DIR` | Local upload folder (default: `uploads`) |
-| `MEDIA_BASE_URL` | Public URL prefix for uploaded files (`/media` in dev) |
+| `S3_BUCKET_NAME` | Required in production; if empty in dev, uploads use local disk |
+| `S3_PUBLIC_BASE_URL` | Optional public/CDN base for uploaded object URLs |
+| `S3_OBJECT_ACL` | Optional (e.g. `public-read`); leave empty if bucket ACLs are off |
+| `LOCAL_UPLOAD_DIR` | Local upload folder for dev fallback (default: `uploads`) |
+| `MEDIA_BASE_URL` | Public URL prefix for local files (`/media` in dev) |
 | `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` | Platform admin login |
 
 Frontend optional env:
@@ -335,7 +337,8 @@ When adding new tables or endpoints, always filter by `tenant_id` for authentica
 ### Uploads
 
 - `POST /uploads/logo`, `POST /uploads/service-image`
-- Local storage when `S3_BUCKET_NAME` is empty; files served at `/media/...`
+- S3 when `S3_BUCKET_NAME` is set; otherwise local disk in dev (served at `/media/...`)
+- Production requires S3 — uploads return 503 if the bucket is not configured
 - Max 5 MB; JPEG, PNG, WebP, GIF
 
 ### Admin
@@ -525,8 +528,19 @@ Brevo may require your server IP in [authorised IPs](https://app.brevo.com/secur
 
 ### File uploads (`backend/app/infra/storage.py`)
 
-- `S3_BUCKET_NAME` set → uploads go to S3
-- Empty → local `LOCAL_UPLOAD_DIR`, served at `/media`
+- `S3_BUCKET_NAME` set → **new** uploads go to S3 (public URL from `S3_PUBLIC_BASE_URL` or the default bucket URL)
+- Empty + `APP_ENV=dev` → local `LOCAL_UPLOAD_DIR`, served at `/media`
+- Empty + `APP_ENV=production` → uploads fail with 503 (S3 required)
+- `/media` is still mounted when S3 is on, so **legacy** local URLs in the DB keep working until re-uploaded
+
+Recommended bucket setup:
+
+1. Create a bucket and turn **off** Block Public Access (enough to allow a public bucket policy)
+2. Attach a public-read **bucket policy** for `s3:GetObject` on `arn:aws:s3:::YOUR_BUCKET/*`
+3. Set `S3_BUCKET_NAME`, `AWS_REGION`, credentials, and `S3_PUBLIC_BASE_URL`
+4. Leave `S3_OBJECT_ACL` empty unless the bucket explicitly allows object ACLs
+
+Without a public-read policy, uploads succeed but image `<img>` tags get **403** from S3.
 
 ### Google Sign-In
 

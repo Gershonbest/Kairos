@@ -78,13 +78,13 @@ export function Login() {
       {/* Left side - Form */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#7c3aed] mb-8 transition-colors">
+          <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#3B3680] mb-8 transition-colors">
             <ArrowLeft className="w-4 h-4" />
             Back to home
           </Link>
           
           <div className="flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <span className="font-semibold text-xl">Kairos Bookings</span>
@@ -147,14 +147,14 @@ export function Login() {
                 <input type="checkbox" className="rounded border-gray-300" disabled={isLoading} />
                 <span className="text-gray-600">Remember me</span>
               </label>
-              <a href="#" className="text-[#7c3aed] hover:text-[#6d28d9]">
+              <a href="#" className="text-[#3B3680] hover:text-[#2E2A5C]">
                 Forgot password?
               </a>
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]"
+              className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]"
               loading={isLoading}
               loadingLabel="Signing in..."
             >
@@ -162,7 +162,7 @@ export function Login() {
             </Button>
             {error && <p className="text-sm text-red-600">{error}</p>}
             {showResend && (
-              <div className="rounded-lg border border-[#7c3aed]/20 bg-[#7c3aed]/5 p-3 text-sm">
+              <div className="rounded-lg border border-[#3B3680]/20 bg-[#3B3680]/5 p-3 text-sm">
                 <p className="text-gray-700 mb-2">Didn't get the email?</p>
                 <Button
                   type="button"
@@ -181,7 +181,7 @@ export function Login() {
 
           <p className="mt-6 text-center text-sm text-gray-600">
             Don't have an account?{" "}
-            <Link to="/signup" className="text-[#7c3aed] hover:text-[#6d28d9] font-medium">
+            <Link to="/signup" className="text-[#3B3680] hover:text-[#2E2A5C] font-medium">
               Sign up
             </Link>
           </p>
@@ -189,7 +189,7 @@ export function Login() {
       </div>
 
       {/* Right side - Image/Brand */}
-      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-[#7c3aed] via-[#8b5cf6] to-[#22c55e] items-center justify-center p-12">
+      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-[#3B3680] via-[#4A4594] to-[#2ECC71] items-center justify-center p-12">
         <div className="max-w-md text-white">
           <h2 className="text-4xl font-semibold mb-4">Streamline your bookings with AI</h2>
           <p className="text-lg text-white/90 mb-8">

@@ -1,6 +1,7 @@
 """Helpers for resolving service appointment display details."""
 
 from app.infra.models import AppointmentFormat, AppointmentType, Service, Tenant
+from app.modules.tenants.helpers import tenant_display_location
 
 
 def resolve_appointment_format(
@@ -34,6 +35,7 @@ def service_to_dict(service: Service, *, include_meeting_link: bool = False) -> 
         "name": service.name,
         "description": service.description,
         "duration_minutes": service.duration_minutes,
+        "scheduling_mode": service.scheduling_mode.value,
         "price_amount": float(service.price_amount),
         "deposit_amount": float(service.deposit_amount) if service.deposit_amount is not None else None,
         "appointment_type": service.appointment_type.value,

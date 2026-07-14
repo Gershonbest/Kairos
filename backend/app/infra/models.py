@@ -52,11 +52,21 @@ class AppointmentFormat(str, enum.Enum):
     onsite = "onsite"
 
 
+class SchedulingMode(str, enum.Enum):
+    fixed = "fixed"
+    flexible = "flexible"
+    all_day = "all_day"
+
+
 class PaymentStatus(str, enum.Enum):
     pending = "pending"
     succeeded = "succeeded"
     failed = "failed"
     refunded = "refunded"
+
+
+class NotificationType(str, enum.Enum):
+    booking_created = "booking_created"
 
 
 class Tenant(Base):
@@ -136,6 +146,9 @@ class Service(Base):
     name: Mapped[str] = mapped_column(String(140), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduling_mode: Mapped[SchedulingMode] = mapped_column(
+        Enum(SchedulingMode), default=SchedulingMode.fixed, nullable=False
+    )
     price_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     deposit_amount: Mapped[float | None] = mapped_column(Numeric(10, 2))
     appointment_type: Mapped[AppointmentType] = mapped_column(
@@ -191,6 +204,7 @@ class Booking(Base):
     status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), default=BookingStatus.pending)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     appointment_format: Mapped[AppointmentFormat | None] = mapped_column(Enum(AppointmentFormat))
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -248,3 +262,19 @@ class SubscriptionPlan(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType), default=NotificationType.booking_created, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    booking_id: Mapped[str | None] = mapped_column(ForeignKey("bookings.id"), index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

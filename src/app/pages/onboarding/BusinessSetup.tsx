@@ -102,13 +102,13 @@ export function BusinessSetup() {
             <span className="text-sm text-gray-600">25% complete</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#8b5cf6] w-1/4 transition-all duration-300" />
+            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#4A4594] w-1/4 transition-all duration-300" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -147,7 +147,7 @@ export function BusinessSetup() {
                 id="businessType"
                 value={formData.businessType}
                 onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#7c3aed] bg-white"
+                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
                 required
                 disabled={isLoading}
               >
@@ -287,7 +287,7 @@ export function BusinessSetup() {
               <Button type="button" variant="outline" onClick={() => navigate("/")} className="flex-1" disabled={isLoading}>
                 Back
               </Button>
-              <Button type="submit" className="flex-1 bg-[#7c3aed] hover:bg-[#6d28d9]" loading={isLoading} loadingLabel="Saving...">
+              <Button type="submit" className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isLoading} loadingLabel="Saving...">
                 Continue
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>

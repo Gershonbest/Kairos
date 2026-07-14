@@ -51,42 +51,42 @@ const features = [
     title: "Smart Booking Calendar",
     description:
       "Drag-and-drop scheduling with real-time availability. Sync with Google, Apple, and Outlook calendars.",
-    color: "#7c3aed",
+    color: "#3B3680",
   },
   {
     icon: Brain,
     title: "AI Assistant",
     description:
       "Let AI handle customer inquiries, suggest optimal scheduling, and provide business insights automatically.",
-    color: "#7c3aed",
+    color: "#3B3680",
   },
   {
     icon: CreditCard,
     title: "Integrated Payments",
     description:
       "Accept deposits and full payments online. Support for cards, bank transfers, and mobile money.",
-    color: "#22c55e",
+    color: "#2ECC71",
   },
   {
     icon: Users,
     title: "Client Management",
     description:
       "Build rich customer profiles with booking history, preferences, and automated follow-ups.",
-    color: "#7c3aed",
+    color: "#3B3680",
   },
   {
     icon: BarChart3,
     title: "Business Analytics",
     description:
       "Track revenue, peak hours, popular services, and customer trends with beautiful dashboards.",
-    color: "#22c55e",
+    color: "#2ECC71",
   },
   {
     icon: Smartphone,
     title: "Mobile-First Design",
     description:
       "Your clients book from any device. Your team manages from anywhere. Beautiful on every screen.",
-    color: "#7c3aed",
+    color: "#3B3680",
   },
 ];
 
@@ -158,7 +158,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
                 <Calendar className="w-6 h-6 text-white" />
               </div>
               <span className="text-xl font-bold text-gray-900">
@@ -517,7 +517,7 @@ export function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="py-24 bg-gradient-to-br from-[#7c3aed] via-[#8b5cf6] to-[#6d28d9]">
+      <section className="py-24 bg-gradient-to-br from-[#3B3680] via-[#4A4594] to-[#2E2A5C]">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -558,7 +558,7 @@ export function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-white" />
                 </div>
                 <span className="text-xl font-bold text-white">Kairos Bookings</span>

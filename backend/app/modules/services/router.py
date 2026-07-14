@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
 from app.infra.db import get_db_session
-from app.infra.models import AppointmentType, Service, Tenant
+from app.infra.models import AppointmentType, SchedulingMode, Service, Tenant
 from app.schemas.services import ServiceCreate, ServiceOut, ServiceUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
@@ -18,6 +18,7 @@ def _to_service_out(service: Service) -> ServiceOut:
         name=service.name,
         description=service.description,
         duration_minutes=service.duration_minutes,
+        scheduling_mode=service.scheduling_mode.value,
         price_amount=float(service.price_amount),
         deposit_amount=float(service.deposit_amount) if service.deposit_amount is not None else None,
         appointment_type=service.appointment_type.value,
@@ -37,6 +38,7 @@ def _apply_service_payload(service: Service, payload: ServiceCreate | ServiceUpd
     service.name = payload.name
     service.description = payload.description
     service.duration_minutes = payload.duration_minutes
+    service.scheduling_mode = SchedulingMode(payload.scheduling_mode)
     service.price_amount = payload.price_amount
     service.deposit_amount = payload.deposit_amount
     service.appointment_type = AppointmentType(payload.appointment_type)

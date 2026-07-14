@@ -40,15 +40,41 @@ def generate_slots(
             rules_by_day[rule.day_of_week].append(rule)
 
     slots: list[str] = []
-    duration = timedelta(minutes=service.duration_minutes)
-    slot_step = timedelta(minutes=max(service.duration_minutes, 15))
     buffer_minutes = service.buffer_minutes or 0
+    active_bookings = [
+        booking
+        for booking in existing_bookings
+        if booking.status in (BookingStatus.pending, BookingStatus.confirmed)
+    ]
     current_day = from_dt.date()
     final_day = to_dt.date()
+    is_all_day = getattr(service.scheduling_mode, "value", service.scheduling_mode) == "all_day"
 
     while current_day <= final_day:
         configured_day = (current_day.weekday() + 1) % 7
-        for rule in rules_by_day.get(configured_day, []):
+        day_rules = rules_by_day.get(configured_day, [])
+        if not day_rules:
+            current_day += timedelta(days=1)
+            continue
+
+        if is_all_day:
+            day_start = datetime.combine(current_day, time.min, tzinfo=UTC)
+            day_end = day_start + timedelta(days=1)
+            if day_start < from_dt or day_start > to_dt:
+                current_day += timedelta(days=1)
+                continue
+            has_conflict = any(
+                booking_blocks_slot(booking, day_start, day_end, buffer_minutes)
+                for booking in active_bookings
+            )
+            if not has_conflict:
+                slots.append(day_start.isoformat())
+            current_day += timedelta(days=1)
+            continue
+
+        duration = timedelta(minutes=service.duration_minutes)
+        slot_step = timedelta(minutes=max(service.duration_minutes, 15))
+        for rule in day_rules:
             window_start = datetime.combine(current_day, _parse_time(rule.start_time), tzinfo=UTC)
             window_end = datetime.combine(current_day, _parse_time(rule.end_time), tzinfo=UTC)
             cursor = window_start
@@ -59,8 +85,7 @@ def generate_slots(
                 slot_end = cursor + duration
                 has_conflict = any(
                     booking_blocks_slot(booking, cursor, slot_end, buffer_minutes)
-                    for booking in existing_bookings
-                    if booking.status in (BookingStatus.pending, BookingStatus.confirmed)
+                    for booking in active_bookings
                 )
                 if not has_conflict:
                     slots.append(cursor.isoformat())

@@ -39,9 +39,18 @@ app.add_middleware(
 configure_telemetry(app)
 
 upload_root = Path(settings.local_upload_dir)
-if not settings.s3_bucket_name:
-    upload_root.mkdir(parents=True, exist_ok=True)
-    app.mount("/media", StaticFiles(directory=str(upload_root)), name="media")
+# Always serve local /media when present so legacy DB URLs keep working after
+# switching new uploads to S3. New uploads return absolute S3 URLs instead.
+upload_root.mkdir(parents=True, exist_ok=True)
+app.mount("/media", StaticFiles(directory=str(upload_root)), name="media")
+
+if settings.app_env == "production" and not settings.s3_bucket_name:
+    import structlog
+
+    structlog.get_logger().warning(
+        "storage.s3_not_configured",
+        detail="APP_ENV=production but S3_BUCKET_NAME is empty; uploads will fail",
+    )
 
 
 @app.get("/health/live")

@@ -134,7 +134,7 @@ export function LocationFields({
               href={googleMapsSearchUrl(addressQuery)}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-[#7c3aed] hover:underline inline-flex items-center gap-1"
+              className="text-xs text-[#3B3680] hover:underline inline-flex items-center gap-1"
             >
               Open in Google Maps
               <ExternalLink className="w-3 h-3" />
