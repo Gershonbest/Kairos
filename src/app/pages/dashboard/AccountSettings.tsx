@@ -60,26 +60,26 @@ export function AccountSettings() {
   };
 
   if (isLoading) {
-    return <div className="p-6 text-gray-600">Loading account settings...</div>;
+    return <div className="p-6 text-muted-foreground">Loading account settings...</div>;
   }
 
   return (
     <div className="p-6 max-w-2xl">
       <h1 className="text-3xl font-semibold">Account settings</h1>
-      <p className="text-gray-600 mt-1">Update your profile and password.</p>
+      <p className="text-muted-foreground mt-1">Update your profile and password.</p>
 
       {!onboardingCompleted && (
-        <div className="mt-6 rounded-xl border border-[#7c3aed]/20 bg-[#7c3aed]/5 p-4">
-          <p className="text-sm text-gray-700">
+        <div className="mt-6 rounded-xl border border-[#3B3680]/20 bg-[#3B3680]/5 p-4">
+          <p className="text-sm text-foreground/90">
             Your business setup is not finished yet.{" "}
-            <Link to="/onboarding" className="text-[#7c3aed] font-medium hover:underline">
+            <Link to="/onboarding" className="text-[#3B3680] font-medium hover:underline">
               Continue onboarding
             </Link>
           </p>
         </div>
       )}
 
-      <form onSubmit={handleSave} className="mt-6 space-y-6 bg-white border border-gray-200 rounded-xl p-6">
+      <form onSubmit={handleSave} className="mt-6 space-y-6 bg-card border border-border rounded-xl p-6">
         <div>
           <Label htmlFor="fullName">Full name</Label>
           <Input
@@ -94,14 +94,14 @@ export function AccountSettings() {
 
         <div>
           <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} className="mt-1 bg-gray-50" disabled />
-          <p className="text-xs text-gray-500 mt-1">Email cannot be changed here yet.</p>
+          <Input id="email" type="email" value={email} className="mt-1 bg-muted/40" disabled />
+          <p className="text-xs text-muted-foreground mt-1">Email cannot be changed here yet.</p>
         </div>
 
-        <div className="border-t border-gray-100 pt-6 space-y-4">
+        <div className="border-t border-border pt-6 space-y-4">
           <div>
             <h2 className="text-lg font-medium">Change password</h2>
-            <p className="text-sm text-gray-500">Leave blank to keep your current password.</p>
+            <p className="text-sm text-muted-foreground">Leave blank to keep your current password.</p>
           </div>
           <div>
             <Label htmlFor="currentPassword">Current password</Label>
@@ -141,11 +141,11 @@ export function AccountSettings() {
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-[#22c55e]">{success}</p>}
+        {success && <p className="text-sm text-[#2ECC71]">{success}</p>}
 
         <Button
           type="submit"
-          className="bg-[#7c3aed] hover:bg-[#6d28d9]"
+          className="bg-[#3B3680] hover:bg-[#2E2A5C]"
           loading={isSaving}
           loadingLabel="Saving..."
         >

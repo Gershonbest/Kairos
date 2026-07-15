@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import smtplib
 import ssl
 import time
+from dataclasses import dataclass
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -51,6 +55,13 @@ class EmailDeliveryError(Exception):
     """Raised when an outbound email could not be delivered."""
 
 
+@dataclass(frozen=True)
+class EmailAttachment:
+    filename: str
+    content: bytes
+    content_type: str
+
+
 def _brevo_http_api_key() -> str | None:
     key = (get_settings().brevo_api_key or "").strip()
     if not key.startswith(BREVO_HTTP_KEY_PREFIX):
@@ -58,7 +69,14 @@ def _brevo_http_api_key() -> str | None:
     return key
 
 
-def send_email(*, to: str, subject: str, html_body: str, text_body: str | None = None) -> None:
+def send_email(
+    *,
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str | None = None,
+    attachments: list[EmailAttachment] | None = None,
+) -> None:
     settings = get_settings()
     plain = text_body or _html_to_plain(html_body)
     api_key = _brevo_http_api_key()
@@ -71,21 +89,28 @@ def send_email(*, to: str, subject: str, html_body: str, text_body: str | None =
                 subject=subject,
                 html_body=html_body,
                 text_body=plain,
+                attachments=attachments,
             )
             logger.info("email.sent", provider="brevo_api", to=to, subject=subject)
             return
         except Exception as exc:
             logger.exception("email.brevo_api_failed", to=to, subject=subject)
-            if not settings.smtp_host:
-                _log_dev_fallback(to=to, subject=subject, text_body=plain, error=exc)
-                raise EmailDeliveryError("Unable to send email via Brevo API") from exc
+            _log_dev_fallback(to=to, subject=subject, text_body=plain, error=exc)
+            raise EmailDeliveryError("Unable to send email via Brevo API") from exc
 
+    # SMTP is used only when no Brevo HTTP API key is configured.
     if not settings.smtp_host:
         _log_dev_fallback(to=to, subject=subject, text_body=plain)
         return
 
     try:
-        _send_via_smtp(to=to, subject=subject, html_body=html_body, text_body=plain)
+        _send_via_smtp(
+            to=to,
+            subject=subject,
+            html_body=html_body,
+            text_body=plain,
+            attachments=attachments,
+        )
         logger.info("email.sent", provider="smtp", to=to, subject=subject)
     except Exception as exc:
         logger.exception("email.smtp_failed", to=to, subject=subject)
@@ -100,6 +125,7 @@ def _send_via_brevo_api(
     subject: str,
     html_body: str,
     text_body: str,
+    attachments: list[EmailAttachment] | None,
 ) -> None:
     settings = get_settings()
     payload = {
@@ -109,6 +135,14 @@ def _send_via_brevo_api(
         "htmlContent": html_body,
         "textContent": text_body,
     }
+    if attachments:
+        payload["attachment"] = [
+            {
+                "name": attachment.filename,
+                "content": base64.b64encode(attachment.content).decode("ascii"),
+            }
+            for attachment in attachments
+        ]
     response = httpx.post(
         BREVO_API_URL,
         headers={
@@ -133,14 +167,31 @@ def _smtp_password() -> str | None:
     return None
 
 
-def _send_via_smtp(*, to: str, subject: str, html_body: str, text_body: str) -> None:
+def _send_via_smtp(
+    *,
+    to: str,
+    subject: str,
+    html_body: str,
+    text_body: str,
+    attachments: list[EmailAttachment] | None,
+) -> None:
     settings = get_settings()
-    message = MIMEMultipart("alternative")
+    message = MIMEMultipart("mixed")
     message["Subject"] = subject
     message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
     message["To"] = to
-    message.attach(MIMEText(text_body, "plain", "utf-8"))
-    message.attach(MIMEText(html_body, "html", "utf-8"))
+    alternative = MIMEMultipart("alternative")
+    alternative.attach(MIMEText(text_body, "plain", "utf-8"))
+    alternative.attach(MIMEText(html_body, "html", "utf-8"))
+    message.attach(alternative)
+
+    for attachment in attachments or []:
+        maintype, subtype = attachment.content_type.split("/", 1)
+        part = MIMEBase(maintype, subtype, method="REQUEST", charset="utf-8")
+        part.set_payload(attachment.content)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=attachment.filename)
+        message.attach(part)
 
     attempts: list[tuple[int, bool, bool]] = []
     if settings.smtp_use_ssl:
@@ -185,13 +236,16 @@ def _smtp_send(
     use_tls: bool,
 ) -> None:
     settings = get_settings()
+    host = settings.smtp_host
+    if not host:
+        raise EmailDeliveryError("SMTP host is not configured")
     context = ssl.create_default_context()
     timeout = settings.smtp_timeout
     password = _smtp_password()
 
     if use_ssl:
         with smtplib.SMTP_SSL(
-            settings.smtp_host,
+            host,
             port,
             timeout=timeout,
             context=context,
@@ -202,7 +256,7 @@ def _smtp_send(
             smtp.sendmail(settings.smtp_from_email, [to], message.as_string())
         return
 
-    with smtplib.SMTP(settings.smtp_host, port, timeout=timeout) as smtp:
+    with smtplib.SMTP(host, port, timeout=timeout) as smtp:
         smtp.ehlo()
         if use_tls:
             smtp.starttls(context=context)

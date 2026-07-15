@@ -1,12 +1,13 @@
 """Unauthenticated public business, availability, and booking endpoints."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.cache import get_redis
+from app.infra.calendar_ics import CalendarEventArgs, build_booking_ics, build_google_calendar_url
 from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
@@ -15,22 +16,56 @@ from app.infra.models import (
     BookingStatus,
     Client,
     PaymentTransaction,
+    SchedulingMode,
     Service,
     Tenant,
 )
-from app.modules.notifications.service import send_booking_confirmation_email
+from app.modules.notifications.service import (
+    create_booking_notifications,
+    send_booking_confirmation_email,
+    send_new_booking_owner_email,
+)
 from app.modules.payments.service import booking_payment_amount, confirm_booking_payment, ensure_booking_payment
 from app.modules.services.helpers import (
     resolve_appointment_format,
     resolve_service_location,
     service_to_dict,
 )
-from app.modules.scheduling.service import generate_slots
+from app.modules.scheduling.service import booking_blocks_slot, generate_slots
 from app.modules.tenants.helpers import tenant_display_location
 
 from app.schemas.bookings import BookingOut, PublicBookingCreateRequest
 
 router = APIRouter(prefix="/public")
+
+
+def _calendar_event_args(booking: Booking, service: Service, tenant: Tenant) -> CalendarEventArgs:
+    appointment_format = booking.appointment_format or AppointmentFormat.onsite
+    return {
+        "booking_id": booking.id,
+        "business_name": tenant.name,
+        "service_name": service.name,
+        "start_at": booking.start_at,
+        "end_at": booking.end_at,
+        "location": resolve_service_location(service, tenant, appointment_format),
+        "host_name": service.host_name,
+        "host_title": service.host_title,
+        "appointment_format": appointment_format.value,
+        "client_instructions": service.client_instructions,
+        "online_meeting_link": (
+            service.online_meeting_link if appointment_format == AppointmentFormat.online else None
+        ),
+        "is_all_day": bool(booking.is_all_day),
+    }
+
+
+def _normalize_booking_window(service: Service, requested_start: datetime) -> tuple[datetime, datetime, bool]:
+    start = requested_start if requested_start.tzinfo else requested_start.replace(tzinfo=UTC)
+    start = start.astimezone(UTC)
+    if service.scheduling_mode == SchedulingMode.all_day:
+        day_start = datetime.combine(start.date(), time.min, tzinfo=UTC)
+        return day_start, day_start + timedelta(days=1), True
+    return start, start + timedelta(minutes=service.duration_minutes), False
 
 
 def _booking_response(
@@ -41,6 +76,8 @@ def _booking_response(
 ) -> BookingOut:
     amount = booking_payment_amount(service)
     payment_required = bool(tenant.payments_enabled and amount > 0)
+    is_confirmed = booking.status == BookingStatus.confirmed
+    tenant_key = tenant.public_slug or tenant.id
     return BookingOut(
         id=booking.id,
         status=booking.status.value,
@@ -51,6 +88,18 @@ def _booking_response(
         payment_required=payment_required,
         payment_amount=amount if amount > 0 else None,
         payment_status=payment_tx.status.value if payment_tx else None,
+        google_calendar_url=(
+            build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
+            if is_confirmed
+            else None
+        ),
+        ics_download_path=(
+            f"/api/v1/public/businesses/{tenant_key}/bookings/{booking.id}/calendar.ics"
+            if is_confirmed
+            else None
+        ),
+        is_all_day=bool(booking.is_all_day),
+        scheduling_mode=service.scheduling_mode.value,
     )
 
 
@@ -130,24 +179,33 @@ async def get_public_availability(
     if to_dt.tzinfo is None:
         to_dt = to_dt.replace(tzinfo=UTC)
 
-    rules = (
-        await session.execute(
-            select(AvailabilityRule).where(
-                AvailabilityRule.tenant_id == tenant.id, AvailabilityRule.is_enabled.is_(True)
+    rules = list(
+        (
+            await session.execute(
+                select(AvailabilityRule).where(
+                    AvailabilityRule.tenant_id == tenant.id,
+                    AvailabilityRule.is_enabled.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
-    existing_bookings = (
-        await session.execute(
-            select(Booking).where(
-                Booking.tenant_id == tenant.id,
-                Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-                Booking.start_at >= from_dt,
-                Booking.start_at <= to_dt + timedelta(days=1),
+    existing_bookings = list(
+        (
+            await session.execute(
+                select(Booking).where(
+                    Booking.tenant_id == tenant.id,
+                    Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
+                    Booking.start_at >= from_dt,
+                    Booking.start_at <= to_dt + timedelta(days=1),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     slots = generate_slots(
         from_dt=from_dt,
@@ -158,6 +216,44 @@ async def get_public_availability(
     )
 
     return {"business_id": business_id, "service_id": service_id, "from": from_iso, "to": to_iso, "slots": slots}
+
+
+@router.get("/businesses/{business_id}/bookings/{booking_id}/calendar.ics")
+async def download_booking_calendar_invite(
+    business_id: str,
+    booking_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    tenant = await resolve_tenant_key(business_id, session)
+    booking = (
+        await session.execute(
+            select(Booking).where(
+                Booking.id == booking_id,
+                Booking.tenant_id == tenant.id,
+                Booking.status == BookingStatus.confirmed,
+            )
+        )
+    ).scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Confirmed booking not found")
+
+    service = (
+        await session.execute(
+            select(Service).where(Service.id == booking.service_id, Service.tenant_id == tenant.id)
+        )
+    ).scalar_one_or_none()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    calendar_invite = build_booking_ics(**_calendar_event_args(booking, service, tenant))
+    return Response(
+        content=calendar_invite,
+        media_type="text/calendar",
+        headers={
+            "Content-Disposition": f'attachment; filename="booking-{booking.id}.ics"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.post("/businesses/{business_id}/bookings", response_model=BookingOut)
@@ -185,7 +281,10 @@ async def create_public_booking(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    lock_key = f"slot-lock:{tenant.id}:{payload.service_id}:{payload.start_at.isoformat()}"
+    start_at, end_at, is_all_day = _normalize_booking_window(service, payload.start_at)
+    buffer_minutes = service.buffer_minutes or 0
+
+    lock_key = f"slot-lock:{tenant.id}:{payload.service_id}:{start_at.isoformat()}"
     locked = await redis.set(lock_key, payload.idempotency_key, ex=30, nx=True)
     if not locked:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slot is currently being booked")
@@ -203,18 +302,19 @@ async def create_public_booking(
         await session.commit()
         return _booking_response(existing, service, tenant, payment_tx)
 
-    conflict = (
+    nearby = (
         await session.execute(
             select(Booking).where(
                 and_(
                     Booking.tenant_id == tenant.id,
-                    Booking.start_at == payload.start_at,
                     Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
+                    Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
+                    Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
                 )
             )
         )
-    ).scalar_one_or_none()
-    if conflict:
+    ).scalars().all()
+    if any(booking_blocks_slot(row, start_at, end_at, buffer_minutes) for row in nearby):
         raise HTTPException(status_code=409, detail="Slot already booked")
 
     client = (
@@ -237,8 +337,9 @@ async def create_public_booking(
         tenant_id=tenant.id,
         client_id=client.id,
         service_id=service.id,
-        start_at=payload.start_at,
-        end_at=payload.start_at + timedelta(minutes=service.duration_minutes),
+        start_at=start_at,
+        end_at=end_at,
+        is_all_day=is_all_day,
         notes=payload.notes,
         appointment_format=appointment_format,
         idempotency_key=payload.idempotency_key,
@@ -250,6 +351,9 @@ async def create_public_booking(
 
     if not tenant.payments_enabled or booking_payment_amount(service) <= 0:
         booking.status = BookingStatus.confirmed
+        owner = await create_booking_notifications(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
         await session.commit()
         await session.refresh(booking)
         await redis.delete(lock_key)
@@ -270,7 +374,22 @@ async def create_public_booking(
             client_instructions=service.client_instructions,
             online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
             booking_id=booking.id,
+            is_all_day=bool(booking.is_all_day),
         )
+        if owner and owner.email:
+            background_tasks.add_task(
+                send_new_booking_owner_email,
+                to=owner.email,
+                owner_name=owner.full_name,
+                business_name=tenant.name,
+                client_name=client.full_name,
+                client_email=client.email,
+                service_name=service.name,
+                start_at=booking.start_at,
+                end_at=booking.end_at,
+                appointment_format=appointment_format.value,
+                booking_id=booking.id,
+            )
         return _booking_response(booking, service, tenant, payment_tx)
 
     await session.commit()
@@ -301,6 +420,7 @@ async def confirm_public_booking_payment(
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
+    was_pending = booking.status == BookingStatus.pending
     payment_tx = await confirm_booking_payment(session, booking)
     if not payment_tx:
         raise HTTPException(status_code=400, detail="No payment required for this booking")
@@ -308,10 +428,18 @@ async def confirm_public_booking_payment(
     client = (
         await session.execute(select(Client).where(Client.id == booking.client_id))
     ).scalar_one()
+
+    newly_confirmed = was_pending and booking.status == BookingStatus.confirmed
+    owner = None
+    if newly_confirmed:
+        owner = await create_booking_notifications(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
+
     await session.commit()
     await session.refresh(booking)
 
-    if booking.status == BookingStatus.confirmed:
+    if newly_confirmed:
         appointment_format = booking.appointment_format or AppointmentFormat.onsite
         appointment_location = resolve_service_location(service, tenant, appointment_format)
         background_tasks.add_task(
@@ -329,6 +457,21 @@ async def confirm_public_booking_payment(
             client_instructions=service.client_instructions,
             online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
             booking_id=booking.id,
+            is_all_day=bool(booking.is_all_day),
         )
+        if owner and owner.email:
+            background_tasks.add_task(
+                send_new_booking_owner_email,
+                to=owner.email,
+                owner_name=owner.full_name,
+                business_name=tenant.name,
+                client_name=client.full_name,
+                client_email=client.email,
+                service_name=service.name,
+                start_at=booking.start_at,
+                end_at=booking.end_at,
+                appointment_format=appointment_format.value,
+                booking_id=booking.id,
+            )
 
     return _booking_response(booking, service, tenant, payment_tx)

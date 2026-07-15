@@ -9,6 +9,10 @@ import { Calendar, ArrowRight, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../lib/api/client";
 import { ServiceAppointmentFields } from "../../components/services/ServiceAppointmentFields";
+import {
+  ServiceSchedulingFields,
+  type SchedulingMode,
+} from "../../components/services/ServiceSchedulingFields";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import {
   defaultServiceAppointmentDetails,
@@ -19,6 +23,7 @@ interface ServiceForm {
   id: string;
   name: string;
   duration: string;
+  schedulingMode: SchedulingMode;
   price: string;
   description: string;
   imageUrl: string;
@@ -30,6 +35,7 @@ function createEmptyService(): ServiceForm {
     id: Date.now().toString(),
     name: "",
     duration: "60",
+    schedulingMode: "fixed",
     price: "",
     description: "",
     imageUrl: "",
@@ -52,7 +58,10 @@ export function ServiceCreation() {
     }
   };
 
-  const updateService = (id: string, patch: Partial<Omit<ServiceForm, "appointment">> & { appointment?: ServiceAppointmentDetails }) => {
+  const updateService = (
+    id: string,
+    patch: Partial<Omit<ServiceForm, "appointment">> & { appointment?: ServiceAppointmentDetails }
+  ) => {
     setServices(services.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
 
@@ -73,7 +82,8 @@ export function ServiceCreation() {
         await api.createService({
           name: service.name,
           description: service.description,
-          duration_minutes: Number(service.duration),
+          duration_minutes: service.schedulingMode === "all_day" ? 1440 : Number(service.duration),
+          scheduling_mode: service.schedulingMode,
           price_amount: Number(service.price),
           deposit_amount: 0,
           appointment_type: appointment.appointment_type,
@@ -104,13 +114,13 @@ export function ServiceCreation() {
             <span className="text-sm text-gray-600">50% complete</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#8b5cf6] w-1/2 transition-all duration-300" />
+            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#4A4594] w-1/2 transition-all duration-300" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -147,20 +157,6 @@ export function ServiceCreation() {
                   </div>
 
                   <div>
-                    <Label htmlFor={`duration-${service.id}`}>Duration (minutes)</Label>
-                    <Input
-                      id={`duration-${service.id}`}
-                      type="number"
-                      placeholder="60"
-                      value={service.duration}
-                      onChange={(e) => updateService(service.id, { duration: e.target.value })}
-                      className="mt-1"
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-
-                  <div>
                     <Label htmlFor={`price-${service.id}`}>Price (USD)</Label>
                     <Input
                       id={`price-${service.id}`}
@@ -171,6 +167,20 @@ export function ServiceCreation() {
                       className="mt-1"
                       required
                       disabled={isLoading}
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <ServiceSchedulingFields
+                      schedulingMode={service.schedulingMode}
+                      duration={service.duration}
+                      disabled={isLoading}
+                      onChange={({ schedulingMode, duration }) =>
+                        updateService(service.id, {
+                          ...(schedulingMode ? { schedulingMode } : {}),
+                          ...(duration !== undefined ? { duration } : {}),
+                        })
+                      }
                     />
                   </div>
 
@@ -216,7 +226,7 @@ export function ServiceCreation() {
               <Button type="button" variant="outline" onClick={() => navigate("/onboarding")} className="flex-1" disabled={isLoading}>
                 Back
               </Button>
-              <Button type="submit" className="flex-1 bg-[#7c3aed] hover:bg-[#6d28d9]" loading={isLoading} loadingLabel="Saving...">
+              <Button type="submit" className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isLoading} loadingLabel="Saving...">
                 Continue
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>

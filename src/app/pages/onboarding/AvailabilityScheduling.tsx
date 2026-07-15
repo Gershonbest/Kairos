@@ -50,13 +50,13 @@ export function AvailabilityScheduling() {
             <span className="text-sm text-gray-600">75% complete</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#8b5cf6] w-3/4 transition-all duration-300" />
+            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#4A4594] w-3/4 transition-all duration-300" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -80,7 +80,7 @@ export function AvailabilityScheduling() {
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-[#7c3aed] hover:bg-[#6d28d9]"
+                className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]"
                 loading={isLoading}
                 loadingLabel="Saving..."
               >

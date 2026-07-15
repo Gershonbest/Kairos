@@ -5,12 +5,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 AppointmentTypeLiteral = Literal["online", "onsite", "hybrid"]
+SchedulingModeLiteral = Literal["fixed", "flexible", "all_day"]
 
 
 class ServiceBase(BaseModel):
     name: str = Field(min_length=2, max_length=140)
     description: str | None = None
-    duration_minutes: int = Field(ge=5, le=480)
+    duration_minutes: int = Field(default=60, ge=5, le=1440)
+    scheduling_mode: SchedulingModeLiteral = "fixed"
     price_amount: float = Field(gt=0)
     deposit_amount: float | None = Field(default=None, ge=0)
     appointment_type: AppointmentTypeLiteral = "onsite"
@@ -25,6 +27,8 @@ class ServiceBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_appointment_details(self) -> "ServiceBase":
+        if self.scheduling_mode == "all_day":
+            self.duration_minutes = 1440
         if self.appointment_type in {"onsite", "hybrid"} and not self.use_business_location:
             if not (self.location or "").strip():
                 raise ValueError("Location is required when not using the business address")
@@ -44,6 +48,7 @@ class ServiceOut(BaseModel):
     name: str
     description: str | None
     duration_minutes: int
+    scheduling_mode: SchedulingModeLiteral
     price_amount: float
     deposit_amount: float | None
     appointment_type: AppointmentTypeLiteral

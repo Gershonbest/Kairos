@@ -206,6 +206,56 @@ export interface TenantBranchPayload {
   is_primary?: boolean;
 }
 
+export type SchedulingMode = "fixed" | "flexible" | "all_day";
+
+export interface PublicBookingResponse {
+  id: string;
+  status: string;
+  start_at: string;
+  end_at: string;
+  client_id: string;
+  service_id: string;
+  payment_required?: boolean;
+  payment_amount?: number | null;
+  payment_status?: string | null;
+  google_calendar_url?: string | null;
+  ics_download_path?: string | null;
+  is_all_day?: boolean;
+  scheduling_mode?: SchedulingMode | null;
+}
+
+export interface BookingListItem {
+  id: string;
+  status: string;
+  start_at: string;
+  end_at: string;
+  client_id: string;
+  service_id: string;
+  client_name: string;
+  client_email?: string | null;
+  client_phone?: string | null;
+  service_name: string;
+  service_duration_minutes?: number;
+  scheduling_mode?: SchedulingMode;
+  is_all_day?: boolean;
+  notes?: string | null;
+  appointment_format?: "online" | "onsite" | null;
+  host_name?: string | null;
+  host_title?: string | null;
+  location?: string | null;
+}
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  booking_id?: string | null;
+  read_at?: string | null;
+  created_at?: string | null;
+  is_read: boolean;
+}
+
 export interface OnboardingPayload {
   business_name: string;
   business_type: string;
@@ -225,6 +275,7 @@ export interface ServicePayload {
   name: string;
   description?: string;
   duration_minutes: number;
+  scheduling_mode?: SchedulingMode;
   price_amount: number;
   deposit_amount?: number;
   appointment_type?: "online" | "onsite" | "hybrid";
@@ -410,8 +461,14 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(payload) }
     ),
   deleteClient: (clientId: string) => request<{ ok: boolean }>(`/clients/${clientId}`, { method: "DELETE" }),
-  listBookings: () =>
-    request<Array<{ id: string; status: string; start_at: string; end_at: string; client_id: string; service_id: string; client_name: string; service_name: string }>>("/bookings"),
+  listBookings: () => request<BookingListItem[]>("/bookings"),
+  listNotifications: (limit = 30) =>
+    request<AppNotification[]>(`/notifications?limit=${encodeURIComponent(String(limit))}`),
+  getUnreadNotificationCount: () => request<{ count: number }>("/notifications/unread-count"),
+  markNotificationRead: (notificationId: string) =>
+    request<{ ok: boolean }>(`/notifications/${notificationId}/read`, { method: "POST" }),
+  markAllNotificationsRead: () =>
+    request<{ ok: boolean }>("/notifications/read-all", { method: "POST" }),
   dashboardSummary: () =>
     request<{
       stats: {
@@ -457,6 +514,7 @@ export const api = {
         name: string;
         description?: string;
         duration_minutes: number;
+        scheduling_mode?: SchedulingMode;
         price_amount: number;
         deposit_amount?: number;
         appointment_type: "online" | "onsite" | "hybrid";
@@ -497,23 +555,15 @@ export const api = {
       idempotency_key: string;
     }
   ) =>
-    request<{
-      id: string;
-      status: string;
-      start_at: string;
-      end_at: string;
-      client_id: string;
-      service_id: string;
-      payment_required?: boolean;
-      payment_amount?: number | null;
-      payment_status?: string | null;
-    }>(`/public/businesses/${businessId}/bookings`, { method: "POST", body: JSON.stringify(payload) }),
+    request<PublicBookingResponse>(`/public/businesses/${businessId}/bookings`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   confirmPublicPayment: (businessId: string, bookingId: string) =>
-    request<{
-      id: string;
-      status: string;
-      payment_status?: string | null;
-    }>(`/public/businesses/${businessId}/bookings/${bookingId}/confirm-payment`, { method: "POST" }),
+    request<PublicBookingResponse>(
+      `/public/businesses/${businessId}/bookings/${bookingId}/confirm-payment`,
+      { method: "POST" }
+    ),
   listTransactions: () =>
     request<
       Array<{

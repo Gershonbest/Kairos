@@ -126,29 +126,29 @@ export function BookingLinksManagement() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-semibold">Booking Links</h1>
-        <p className="text-gray-600 mt-1">
+        <p className="text-muted-foreground mt-1">
           Share a single public booking page or direct service-specific links.
         </p>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <p className="text-sm text-gray-600">
-          Total links available: <span className="font-semibold text-gray-900">{totalLinks}</span>
+      <div className="bg-card border border-border rounded-xl p-5">
+        <p className="text-sm text-muted-foreground">
+          Total links available: <span className="font-semibold text-foreground">{totalLinks}</span>
         </p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Public Booking Branding</h2>
-        <p className="text-sm text-gray-600">
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h2 className="text-lg font-semibold text-foreground">Public Booking Branding</h2>
+        <p className="text-sm text-muted-foreground">
           Customize what clients see on your public booking page.
         </p>
         <div className="grid grid-cols-1 gap-3">
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Tagline / info</label>
+            <label className="block text-xs text-muted-foreground mb-1">Tagline / info</label>
             <input
-              className="w-full px-3 py-2 rounded-lg border border-gray-200"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
               value={profileForm.public_tagline}
               onChange={(e) => setProfileForm((prev) => ({ ...prev, public_tagline: e.target.value }))}
               placeholder="Book your appointment online"
@@ -156,9 +156,9 @@ export function BookingLinksManagement() {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Description</label>
+            <label className="block text-xs text-muted-foreground mb-1">Description</label>
             <textarea
-              className="w-full px-3 py-2 rounded-lg border border-gray-200 min-h-[88px]"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background min-h-[88px]"
               value={profileForm.public_description}
               onChange={(e) => setProfileForm((prev) => ({ ...prev, public_description: e.target.value }))}
               placeholder="Tell clients about your business"
@@ -174,10 +174,10 @@ export function BookingLinksManagement() {
             hint="Upload your logo for the public booking page."
           />
         </div>
-        <div className="flex justify-end border-t border-gray-100 pt-4">
+        <div className="flex justify-end border-t border-border pt-4">
           <Button
             onClick={() => void handleSaveProfile()}
-            className="w-full sm:w-auto bg-[#7c3aed] hover:bg-[#6d28d9]"
+            className="w-full sm:w-auto bg-[#3B3680] hover:bg-[#2E2A5C]"
             loading={savingProfile}
             loadingLabel="Saving..."
           >
@@ -188,10 +188,10 @@ export function BookingLinksManagement() {
 
       <div className="space-y-3">
         {links.map((item) => (
-          <div key={item.url} className="bg-white border border-gray-200 rounded-xl p-5">
+          <div key={item.url} className="bg-card border border-border rounded-xl p-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                <p className="text-sm font-medium text-foreground flex items-center gap-2">
                   <LinkIcon className="w-4 h-4" />
                   {item.label}
                 </p>
@@ -199,7 +199,7 @@ export function BookingLinksManagement() {
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm text-[#7c3aed] break-all mt-2 inline-flex items-center gap-1"
+                  className="text-sm text-[#3B3680] break-all mt-2 inline-flex items-center gap-1"
                 >
                   {item.url}
                   <ExternalLink className="w-3 h-3" />
@@ -208,7 +208,7 @@ export function BookingLinksManagement() {
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => void handleCopy(item.url)}
-                  className="px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 inline-flex items-center gap-2"
+                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent inline-flex items-center gap-2"
                 >
                   <Copy className="w-4 h-4" />
                   {copied === item.url ? "Copied" : "Copy"}
@@ -228,7 +228,7 @@ export function BookingLinksManagement() {
                   href={qrImageUrl(item.url)}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 inline-flex items-center gap-2"
+                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent inline-flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Open QR

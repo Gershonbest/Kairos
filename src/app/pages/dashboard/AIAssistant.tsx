@@ -85,61 +85,61 @@ export function AIAssistant() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-2">
-            <Sparkles className="w-8 h-8 text-[#7c3aed]" />
+            <Sparkles className="w-8 h-8 text-[#3B3680]" />
             AI Assistant
           </h1>
-          <p className="text-gray-600 mt-1">Natural language booking and smart scheduling suggestions</p>
+          <p className="text-muted-foreground mt-1">Natural language booking and smart scheduling suggestions</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-[#7c3aed]/20 bg-gradient-to-br from-[#7c3aed]/5 to-white">
+        <Card className="border-[#3B3680]/20 bg-gradient-to-br from-[#3B3680]/5 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#7c3aed]" />
+              <Calendar className="w-5 h-5 text-[#3B3680]" />
               Smart Scheduling
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               AI analyzes your calendar and suggests optimal booking times based on availability, buffers, and booking patterns.
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-[#22c55e]/20 bg-gradient-to-br from-[#22c55e]/5 to-white">
+        <Card className="border-[#2ECC71]/20 bg-gradient-to-br from-[#2ECC71]/5 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#22c55e]" />
+              <Sparkles className="w-5 h-5 text-[#2ECC71]" />
               Natural Language
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Ask in plain English — find slots, review upcoming appointments, or get optimization tips.
             </p>
           </CardContent>
         </Card>
 
-        <Card className="border-[#7c3aed]/20 bg-gradient-to-br from-purple-50 to-white">
+        <Card className="border-[#3B3680]/20 bg-gradient-to-br from-purple-50/70 dark:from-purple-500/10 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-[#7c3aed]" />
+              <CheckCircle className="w-5 h-5 text-[#3B3680]" />
               Gap Detection
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Spots unfilled gaps in your week and recommends express slots to maximize utilization.
             </p>
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-2 border-[#7c3aed]/20">
-        <CardHeader className="bg-gradient-to-r from-[#7c3aed]/5 to-[#22c55e]/5">
+      <Card className="border-2 border-[#3B3680]/20">
+        <CardHeader className="bg-gradient-to-r from-[#3B3680]/5 to-[#2ECC71]/5">
           <CardTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             AI Chat Assistant
@@ -153,13 +153,13 @@ export function AIAssistant() {
                   <div
                     className={`max-w-[80%] rounded-2xl p-4 ${
                       message.type === "user"
-                        ? "bg-[#7c3aed] text-white ml-12"
-                        : "bg-gray-100 text-gray-900 mr-12"
+                        ? "bg-[#3B3680] text-white ml-12"
+                        : "bg-muted text-foreground mr-12"
                     }`}
                   >
                     {message.type === "ai" && (
                       <div className="flex items-center gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
                           <Sparkles className="w-3 h-3 text-white" />
                         </div>
                         <span className="text-sm font-medium">AI Assistant</span>
@@ -184,7 +184,7 @@ export function AIAssistant() {
                         size="sm"
                         disabled={isLoading}
                         onClick={() => handleSuggestionClick(suggestion)}
-                        className="text-xs hover:bg-[#7c3aed] hover:text-white hover:border-[#7c3aed]"
+                        className="text-xs hover:bg-[#3B3680] hover:text-white hover:border-[#3B3680]"
                       >
                         {suggestion}
                       </Button>
@@ -194,11 +194,11 @@ export function AIAssistant() {
               </div>
             ))}
             {isLoading && (
-              <p className="text-sm text-gray-500 ml-2">Analyzing your schedule...</p>
+              <p className="text-sm text-muted-foreground ml-2">Analyzing your schedule...</p>
             )}
           </div>
 
-          <div className="p-4 border-t border-gray-200 bg-gray-50">
+          <div className="p-4 border-t border-border bg-muted/30">
             <div className="flex gap-2">
               <Input
                 placeholder="Ask me anything about your bookings..."
@@ -210,11 +210,11 @@ export function AIAssistant() {
                 className="flex-1"
                 disabled={isLoading}
               />
-              <Button onClick={handleSend} className="bg-[#7c3aed] hover:bg-[#6d28d9]" disabled={isLoading}>
+              <Button onClick={handleSend} className="bg-[#3B3680] hover:bg-[#2E2A5C]" disabled={isLoading}>
                 <Send className="w-4 h-4" />
               </Button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Try: "Find available slots this week" or "Suggest optimal booking times"
             </p>
           </div>

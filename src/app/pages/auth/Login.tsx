@@ -4,11 +4,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Calendar, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, setAuthTokens } from "../../../lib/api/client";
 import { resolvePostAuthPath } from "../../../lib/auth/redirect";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
+import kairosLogo from "../../../assets/branding/logo.png";
 
 export function Login() {
   const navigate = useNavigate();
@@ -74,27 +75,29 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left side - Form */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-md">
-          <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#7c3aed] mb-8 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back to home
-          </Link>
-          
-          <div className="flex items-center gap-2 mb-8">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-white" />
-            </div>
-            <span className="font-semibold text-xl">Kairos Bookings</span>
+    <div className="relative min-h-screen flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/10 via-white to-accent/15" />
+      <div className="pointer-events-none absolute -top-24 -left-16 h-64 w-64 rounded-full bg-primary/15 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -right-16 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
+
+      <div className="relative w-full max-w-md">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary mb-6 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to home
+        </Link>
+
+        <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-sm shadow-xl shadow-primary/10 p-6 sm:p-8">
+          <div className="flex flex-col items-center text-center mb-8">
+            <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
+            <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Welcome back</h1>
+            <p className="text-muted-foreground mt-2">Sign in to your account to continue</p>
           </div>
 
-          <h1 className="text-3xl font-semibold mb-2">Welcome back</h1>
-          <p className="text-gray-600 mb-8">Sign in to your account to continue</p>
-
           {sessionNotice && (
-            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {sessionNotice}
             </p>
           )}
@@ -104,10 +107,10 @@ export function Login() {
               <GoogleSignInButton label="login" />
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-gray-200" />
+                  <span className="w-full border-t border-border" />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-gray-500">Or continue with email</span>
+                  <span className="bg-card px-2 text-muted-foreground">Or continue with email</span>
                 </div>
               </div>
             </div>
@@ -145,16 +148,16 @@ export function Login() {
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" className="rounded border-gray-300" disabled={isLoading} />
-                <span className="text-gray-600">Remember me</span>
+                <span className="text-muted-foreground">Remember me</span>
               </label>
-              <a href="#" className="text-[#7c3aed] hover:text-[#6d28d9]">
+              <a href="#" className="text-primary hover:text-primary/80 font-medium">
                 Forgot password?
               </a>
             </div>
 
             <Button
               type="submit"
-              className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]"
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
               loading={isLoading}
               loadingLabel="Signing in..."
             >
@@ -162,8 +165,8 @@ export function Login() {
             </Button>
             {error && <p className="text-sm text-red-600">{error}</p>}
             {showResend && (
-              <div className="rounded-lg border border-[#7c3aed]/20 bg-[#7c3aed]/5 p-3 text-sm">
-                <p className="text-gray-700 mb-2">Didn't get the email?</p>
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm">
+                <p className="text-foreground mb-2">Didn't get the email?</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -174,56 +177,17 @@ export function Login() {
                 >
                   Resend confirmation email
                 </Button>
-                {resendMessage && <p className="text-gray-600 mt-2">{resendMessage}</p>}
+                {resendMessage && <p className="text-muted-foreground mt-2">{resendMessage}</p>}
               </div>
             )}
           </form>
 
-          <p className="mt-6 text-center text-sm text-gray-600">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account?{" "}
-            <Link to="/signup" className="text-[#7c3aed] hover:text-[#6d28d9] font-medium">
+            <Link to="/signup" className="text-primary hover:text-primary/80 font-medium">
               Sign up
             </Link>
           </p>
-        </div>
-      </div>
-
-      {/* Right side - Image/Brand */}
-      <div className="hidden lg:flex flex-1 bg-gradient-to-br from-[#7c3aed] via-[#8b5cf6] to-[#22c55e] items-center justify-center p-12">
-        <div className="max-w-md text-white">
-          <h2 className="text-4xl font-semibold mb-4">Streamline your bookings with AI</h2>
-          <p className="text-lg text-white/90 mb-8">
-            Manage appointments, accept payments, and let AI optimize your schedule automatically.
-          </p>
-          <div className="space-y-4">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mt-1">
-                <span className="text-sm">✓</span>
-              </div>
-              <div>
-                <h3 className="font-medium mb-1">Smart Scheduling</h3>
-                <p className="text-sm text-white/80">AI-powered appointment optimization</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mt-1">
-                <span className="text-sm">✓</span>
-              </div>
-              <div>
-                <h3 className="font-medium mb-1">Seamless Payments</h3>
-                <p className="text-sm text-white/80">Accept deposits and payments effortlessly</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mt-1">
-                <span className="text-sm">✓</span>
-              </div>
-              <div>
-                <h3 className="font-medium mb-1">Client Management</h3>
-                <p className="text-sm text-white/80">Keep track of all your clients in one place</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

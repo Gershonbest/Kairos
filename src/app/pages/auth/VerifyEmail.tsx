@@ -54,13 +54,13 @@ export function VerifyEmail() {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
-        <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#7c3aed] mb-8 transition-colors">
+        <Link to="/" className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-[#3B3680] mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back to home
         </Link>
 
         <div className="flex items-center justify-center gap-2 mb-6">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
             <Calendar className="w-6 h-6 text-white" />
           </div>
           <span className="font-semibold text-xl">Kairos Bookings</span>
@@ -68,7 +68,7 @@ export function VerifyEmail() {
 
         {status === "loading" && (
           <>
-            <Loader2 className="w-8 h-8 animate-spin text-[#7c3aed] mx-auto mb-4" />
+            <Loader2 className="w-8 h-8 animate-spin text-[#3B3680] mx-auto mb-4" />
             <h1 className="text-2xl font-semibold mb-2">Verifying your email</h1>
             <p className="text-gray-600">Please wait while we confirm your account.</p>
           </>
@@ -86,7 +86,7 @@ export function VerifyEmail() {
                 : "Taking you to your dashboard..."}
             </p>
             <Button
-              className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]"
+              className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]"
               onClick={() => navigate(redirectPath, { replace: true })}
             >
               Continue now
@@ -99,7 +99,7 @@ export function VerifyEmail() {
             <h1 className="text-2xl font-semibold mb-2">Verification failed</h1>
             <p className="text-gray-600 mb-2">{error}</p>
             <p className="text-sm text-gray-500 mb-6">Request a new link from the sign-in page after you try to log in.</p>
-            <Button className="w-full bg-[#7c3aed] hover:bg-[#6d28d9]" onClick={() => navigate("/login")}>
+            <Button className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]" onClick={() => navigate("/login")}>
               Go to sign in
             </Button>
           </>

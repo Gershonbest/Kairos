@@ -68,13 +68,13 @@ export function PaymentIntegration() {
             <span className="text-sm text-gray-600">100% complete</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#7c3aed] to-[#22c55e] w-full transition-all duration-300" />
+            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#2ECC71] w-full transition-all duration-300" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
           <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#7c3aed] to-[#22c55e] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
               <Calendar className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -94,7 +94,7 @@ export function PaymentIntegration() {
                     relative p-4 border-2 rounded-lg cursor-pointer transition-all
                     ${
                       selectedProvider === provider.id
-                        ? "border-[#7c3aed] bg-purple-50"
+                        ? "border-[#3B3680] bg-purple-50"
                         : "border-gray-200 hover:border-gray-300"
                     }
                   `}
@@ -106,7 +106,7 @@ export function PaymentIntegration() {
                         w-10 h-10 rounded-lg flex items-center justify-center
                         ${
                           selectedProvider === provider.id
-                            ? "bg-[#7c3aed] text-white"
+                            ? "bg-[#3B3680] text-white"
                             : "bg-gray-100 text-gray-600"
                         }
                       `}
@@ -117,7 +117,7 @@ export function PaymentIntegration() {
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium">{provider.name}</h3>
                           {provider.popular && (
-                            <span className="px-2 py-0.5 bg-[#22c55e] text-white text-xs rounded-full">
+                            <span className="px-2 py-0.5 bg-[#2ECC71] text-white text-xs rounded-full">
                               Popular
                             </span>
                           )}
@@ -126,7 +126,7 @@ export function PaymentIntegration() {
                       </div>
                     </div>
                     {selectedProvider === provider.id && (
-                      <div className="w-6 h-6 rounded-full bg-[#7c3aed] flex items-center justify-center">
+                      <div className="w-6 h-6 rounded-full bg-[#3B3680] flex items-center justify-center">
                         <Check className="w-4 h-4 text-white" />
                       </div>
                     )}
@@ -182,7 +182,7 @@ export function PaymentIntegration() {
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-[#7c3aed] to-[#22c55e] hover:opacity-90"
+                className="flex-1 bg-gradient-to-r from-[#3B3680] to-[#2ECC71] hover:opacity-90"
                 loading={isLoading}
                 loadingLabel="Completing setup..."
               >

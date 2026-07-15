@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     s3_bucket_name: str | None = None
     s3_public_base_url: str | None = None
+    # Optional object ACL (e.g. "public-read"). Leave empty for buckets with ACLs disabled;
+    # make objects public via bucket policy instead and set S3_PUBLIC_BASE_URL.
+    s3_object_acl: str | None = None
     local_upload_dir: str = "uploads"
     media_base_url: str = "http://localhost:8000/media"
     super_admin_email: str = "admin@kairosbookings.com"
