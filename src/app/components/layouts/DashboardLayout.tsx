@@ -19,6 +19,7 @@ import { TrialBanner } from "../billing/TrialBanner";
 import { NotificationBell } from "../notifications/NotificationBell";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useEffect, useState } from "react";
+import kairosLogo from "../../../assets/kairos-logo.png";
 import {
   api,
   clearAuthTokens,
@@ -113,11 +114,9 @@ export function DashboardLayout() {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="h-16 flex items-center px-6 border-b border-border">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-white" />
-              </div>
-              <span className="font-semibold text-lg">Kairos Bookings</span>
+            <div className="flex items-center gap-3">
+              <img src={kairosLogo} alt="Kairos logo" className="h-8 w-auto" />
+              <span className="font-semibold text-lg text-primary">Kairos</span>
             </div>
           </div>
 
@@ -132,7 +131,7 @@ export function DashboardLayout() {
                 className={({ isActive }) => `
                   flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
                   ${isActive 
-                    ? 'bg-[#3B3680] text-white' 
+                    ? 'bg-primary text-primary-foreground' 
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   }
                 `}
@@ -146,7 +145,7 @@ export function DashboardLayout() {
           {/* User section */}
           <div className="p-4 border-t border-border">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white">
+              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
                 {initials}
               </div>
               <div className="flex-1 min-w-0">

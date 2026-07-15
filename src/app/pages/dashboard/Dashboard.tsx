@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "../../../lib/api/client";
+import kairosLogo from "../../../assets/kairos-logo.png";
 
 const PUBLIC_UI_BASE_URL =
   ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PUBLIC_UI_BASE_URL ?? "").trim();
@@ -152,9 +153,12 @@ export function Dashboard() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+        <div className="flex items-center gap-3">
+          <img src={kairosLogo} alt="Kairos logo" className="h-10 w-auto" />
+          <div>
           <h1 className="text-3xl font-semibold">Dashboard</h1>
           <p className="text-muted-foreground mt-1">Live business metrics from your account data.</p>
+          </div>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" asChild>
@@ -163,7 +167,7 @@ export function Dashboard() {
               View Calendar
             </Link>
           </Button>
-          <Button className="bg-[#3B3680] hover:bg-[#2E2A5C]" asChild>
+          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
             <Link to="/dashboard/booking-links">
               <Plus className="w-4 h-4 mr-2" />
               Share Booking Link
@@ -182,7 +186,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{stats?.total_bookings ?? 0}</div>
-            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
+            <p className="text-xs text-primary flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>{stats?.bookings_change_pct ?? 0}% from last month</span>
             </p>
@@ -196,7 +200,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${(stats?.monthly_revenue ?? 0).toFixed(2)}</div>
-            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
+            <p className="text-xs text-primary flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>{stats?.revenue_change_pct ?? 0}% from last month</span>
             </p>
@@ -230,7 +234,7 @@ export function Dashboard() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Upcoming Appointments</CardTitle>
-          <Button variant="link" className="text-[#3B3680]" asChild>
+          <Button variant="link" className="text-primary" asChild>
             <Link to="/dashboard/calendar">View all</Link>
           </Button>
         </CardHeader>
@@ -245,7 +249,7 @@ export function Dashboard() {
                   className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-medium">
                       {appointment.client
                         .split(" ")
                         .map((n) => n[0])
@@ -258,8 +262,8 @@ export function Dashboard() {
                         <span
                           className={`px-2 py-0.5 text-xs rounded-full capitalize ${
                             appointment.status === "confirmed"
-                              ? "bg-[#2ECC71]/10 text-[#2ECC71]"
-                              : "bg-yellow-100 text-yellow-700"
+                              ? "bg-primary/10 text-primary"
+                              : "bg-accent/20 text-accent-foreground"
                           }`}
                         >
                           {appointment.status}
@@ -286,20 +290,20 @@ export function Dashboard() {
       </Card>
 
       {/* AI Insights */}
-      <Card className="bg-gradient-to-br from-[#3B3680]/5 via-purple-50/40 to-[#2ECC71]/5 dark:via-[#3B3680]/10 border-[#3B3680]/20">
+      <Card className="bg-gradient-to-br from-primary/5 via-background to-accent/10 border-primary/20">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             AI-Generated Insights
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
+          <div className="p-4 bg-card rounded-lg border border-primary/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#2ECC71]/20 flex items-center justify-center mt-0.5">
-                <TrendingUp className="w-3 h-3 text-[#2ECC71]" />
+              <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center mt-0.5">
+                <TrendingUp className="w-3 h-3 text-primary" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Peak Performance Day</h4>
@@ -309,10 +313,10 @@ export function Dashboard() {
               </div>
             </div>
           </div>
-          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
+          <div className="p-4 bg-card rounded-lg border border-primary/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#3B3680]/20 flex items-center justify-center mt-0.5">
-                <Clock className="w-3 h-3 text-[#3B3680]" />
+              <div className="w-6 h-6 rounded-full bg-accent/25 flex items-center justify-center mt-0.5">
+                <Clock className="w-3 h-3 text-accent-foreground" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Optimize Your Schedule</h4>
@@ -322,10 +326,10 @@ export function Dashboard() {
               </div>
             </div>
           </div>
-          <div className="p-4 bg-card rounded-lg border border-[#3B3680]/10">
+          <div className="p-4 bg-card rounded-lg border border-primary/10">
             <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-[#2ECC71]/20 flex items-center justify-center mt-0.5">
-                <DollarSign className="w-3 h-3 text-[#2ECC71]" />
+              <div className="w-6 h-6 rounded-full bg-accent/25 flex items-center justify-center mt-0.5">
+                <DollarSign className="w-3 h-3 text-accent-foreground" />
               </div>
               <div className="flex-1">
                 <h4 className="font-medium mb-1">Revenue Opportunity</h4>
@@ -362,9 +366,9 @@ export function Dashboard() {
                   key="revenue"
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#3B3680"
+                  stroke="#0b7f9b"
                   strokeWidth={2}
-                  dot={{ fill: "#3B3680", r: 4 }}
+                  dot={{ fill: "#0b7f9b", r: 4 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -389,7 +393,7 @@ export function Dashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="bookings" dataKey="bookings" fill="#2ECC71" radius={[8, 8, 0, 0]} />
+                <Bar key="bookings" dataKey="bookings" fill="#c8953f" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -403,14 +407,14 @@ export function Dashboard() {
         <CardContent className="space-y-3">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Main booking page (all services)</p>
-            <a href={bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : undefined} target="_blank" rel="noreferrer" className="text-sm text-[#3B3680] break-all">
+            <a href={bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : undefined} target="_blank" rel="noreferrer" className="text-sm text-primary break-all">
               {bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : "Loading..."}
             </a>
           </div>
           {bookingLinks?.service_urls?.slice(0, 5).map((link) => (
             <div key={link.service_id}>
               <p className="text-sm text-muted-foreground mb-1">{link.service_name}</p>
-              <a href={normalizeToCurrentOrigin(link.url)} target="_blank" rel="noreferrer" className="text-sm text-[#3B3680] break-all">
+              <a href={normalizeToCurrentOrigin(link.url)} target="_blank" rel="noreferrer" className="text-sm text-primary break-all">
                 {normalizeToCurrentOrigin(link.url)}
               </a>
             </div>
