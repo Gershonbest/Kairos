@@ -23,7 +23,7 @@ services:
     plan: starter
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    healthCheckPath: /health/live
+    # healthCheckPath: /health/live
     autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
