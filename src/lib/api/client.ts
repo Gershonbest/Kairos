@@ -462,6 +462,11 @@ export const api = {
     ),
   deleteClient: (clientId: string) => request<{ ok: boolean }>(`/clients/${clientId}`, { method: "DELETE" }),
   listBookings: () => request<BookingListItem[]>("/bookings"),
+  updateBookingStatus: (bookingId: string, status: "completed" | "no_show" | "cancelled" | "confirmed") =>
+    request<BookingListItem>(`/bookings/${bookingId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
   listNotifications: (limit = 30) =>
     request<AppNotification[]>(`/notifications?limit=${encodeURIComponent(String(limit))}`),
   getUnreadNotificationCount: () => request<{ count: number }>("/notifications/unread-count"),

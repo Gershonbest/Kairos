@@ -39,6 +39,7 @@ class BookingStatus(str, enum.Enum):
     confirmed = "confirmed"
     cancelled = "cancelled"
     completed = "completed"
+    no_show = "no_show"
 
 
 class AppointmentType(str, enum.Enum):
