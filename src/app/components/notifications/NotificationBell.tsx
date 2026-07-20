@@ -102,7 +102,7 @@ export function NotificationBell() {
         <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
           <Bell className="w-5 h-5 text-gray-700" />
           {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 rounded-full bg-[#3B3680] text-white text-[10px] font-semibold flex items-center justify-center">
+            <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 rounded-full bg-primary text-white text-[10px] font-semibold flex items-center justify-center">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
@@ -115,7 +115,7 @@ export function NotificationBell() {
             <button
               type="button"
               onClick={() => void handleMarkAll()}
-              className="text-xs text-[#3B3680] hover:underline"
+              className="text-xs text-primary hover:underline"
             >
               Mark all read
             </button>
@@ -133,12 +133,12 @@ export function NotificationBell() {
                 type="button"
                 onClick={() => void handleOpenItem(item)}
                 className={`w-full text-left px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${
-                  item.is_read ? "bg-white" : "bg-[#3B3680]/5"
+                  item.is_read ? "bg-card" : "bg-primary/5"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-gray-900">{item.title}</p>
-                  {!item.is_read && <span className="mt-1 w-2 h-2 rounded-full bg-[#3B3680] shrink-0" />}
+                  {!item.is_read && <span className="mt-1 w-2 h-2 rounded-full bg-primary shrink-0" />}
                 </div>
                 <p className="text-xs text-gray-600 mt-1 line-clamp-2">{item.body}</p>
                 <p className="text-[11px] text-gray-400 mt-1">{formatRelativeTime(item.created_at)}</p>

@@ -62,7 +62,7 @@ export function LocationFields({
             }}
             disabled={disabled}
           >
-            <SelectTrigger id={`${idPrefix}-country`} className="mt-1 bg-white">
+            <SelectTrigger id={`${idPrefix}-country`} className="mt-1 bg-input-background">
               <SelectValue placeholder="Select country" />
             </SelectTrigger>
             <SelectContent>
@@ -86,7 +86,7 @@ export function LocationFields({
               disabled={disabled || !value.country_code}
               required
             >
-              <SelectTrigger id={`${idPrefix}-state`} className="mt-1 bg-white">
+              <SelectTrigger id={`${idPrefix}-state`} className="mt-1 bg-input-background">
                 <SelectValue placeholder="Select state or region" />
               </SelectTrigger>
               <SelectContent>
@@ -127,20 +127,20 @@ export function LocationFields({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-gray-400" />
+              <MapPin className="w-4 h-4 text-muted-foreground" />
               Map preview
             </Label>
             <a
               href={googleMapsSearchUrl(addressQuery)}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-[#3B3680] hover:underline inline-flex items-center gap-1"
+              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
             >
               Open in Google Maps
               <ExternalLink className="w-3 h-3" />
             </a>
           </div>
-          <div className="rounded-xl overflow-hidden border border-gray-200 h-48 bg-gray-100">
+          <div className="rounded-xl overflow-hidden border border-border h-48 bg-muted">
             <iframe
               title="Location map preview"
               src={googleMapsEmbedUrl(addressQuery)}

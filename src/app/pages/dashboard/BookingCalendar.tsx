@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, User } from "lucide-react";
+import { Calendar as CalendarIcon, CheckCircle2, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, User, UserX, XCircle } from "lucide-react";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -18,10 +18,11 @@ import { api, type BookingListItem } from "../../../lib/api/client";
 type CalendarView = "month" | "week" | "day";
 
 const STATUS_STYLES: Record<string, string> = {
-  confirmed: "bg-purple-100 border-purple-300 text-purple-900 dark:bg-purple-500/20 dark:border-purple-400/40 dark:text-purple-100",
+  confirmed: "bg-primary/10 border-primary/30 text-primary dark:bg-primary/20 dark:border-primary/40 dark:text-primary-foreground",
   pending: "bg-blue-100 border-blue-300 text-blue-900 dark:bg-blue-500/20 dark:border-blue-400/40 dark:text-blue-100",
   completed: "bg-green-100 border-green-300 text-green-900 dark:bg-green-500/20 dark:border-green-400/40 dark:text-green-100",
   cancelled: "bg-muted border-border text-muted-foreground",
+  no_show: "bg-amber-100 border-amber-300 text-amber-900 dark:bg-amber-500/20 dark:border-amber-400/40 dark:text-amber-100",
 };
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
@@ -96,6 +97,8 @@ export function BookingCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [bookings, setBookings] = useState<BookingListItem[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<BookingListItem | null>(null);
+  const [outcomeUpdating, setOutcomeUpdating] = useState<string | null>(null);
+  const [outcomeError, setOutcomeError] = useState("");
 
   useEffect(() => {
     api
@@ -172,9 +175,25 @@ export function BookingCalendar() {
 
   const closeBooking = () => {
     setSelectedBooking(null);
+    setOutcomeError("");
     const next = new URLSearchParams(searchParams);
     next.delete("booking");
     setSearchParams(next, { replace: true });
+  };
+
+  const updateOutcome = async (status: "completed" | "no_show" | "cancelled" | "confirmed") => {
+    if (!selectedBooking) return;
+    setOutcomeError("");
+    setOutcomeUpdating(status);
+    try {
+      const updated = await api.updateBookingStatus(selectedBooking.id, status);
+      setBookings((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
+      setSelectedBooking(updated);
+    } catch (err) {
+      setOutcomeError(err instanceof Error ? err.message : "Unable to update appointment outcome.");
+    } finally {
+      setOutcomeUpdating(null);
+    }
   };
 
   const bookingChip = (booking: BookingListItem, compact = false) => (
@@ -251,7 +270,7 @@ export function BookingCalendar() {
                   variant={view === mode ? "default" : "outline"}
                   size="sm"
                   onClick={() => setView(mode)}
-                  className={view === mode ? "bg-[#3B3680] hover:bg-[#2E2A5C] capitalize" : "capitalize"}
+                  className={view === mode ? "bg-primary hover:bg-primary/90 capitalize" : "capitalize"}
                 >
                   {mode}
                 </Button>
@@ -288,9 +307,9 @@ export function BookingCalendar() {
                       }}
                       className={`min-h-[110px] p-2 border-r border-b border-border text-left align-top hover:bg-muted/40 ${
                         inMonth ? "bg-card" : "bg-muted/30"
-                      } ${isToday ? "ring-1 ring-inset ring-[#3B3680]/40" : ""}`}
+                      } ${isToday ? "ring-1 ring-inset ring-primary/40" : ""}`}
                     >
-                      <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-[#3B3680]" : ""}`}>
+                      <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-primary" : ""}`}>
                         {day.getDate()}
                       </div>
                       <div className="space-y-0.5">
@@ -329,7 +348,7 @@ export function BookingCalendar() {
                           setView("day");
                         }}
                         className={`p-4 text-center border-r border-border hover:bg-muted/60 ${
-                          isToday ? "bg-[#3B3680]/10" : "bg-muted/40"
+                          isToday ? "bg-primary/10" : "bg-muted/40"
                         }`}
                       >
                         <div className="text-sm font-medium">
@@ -424,9 +443,10 @@ export function BookingCalendar() {
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-sm font-medium text-muted-foreground">Status:</span>
             {[
-              { label: "Confirmed", className: "bg-purple-100 border-purple-300" },
+              { label: "Confirmed", className: "bg-primary/10 border-primary/30" },
               { label: "Pending", className: "bg-blue-100 border-blue-300" },
               { label: "Completed", className: "bg-green-100 border-green-300" },
+              { label: "No-show", className: "bg-amber-100 border-amber-300" },
               { label: "Cancelled", className: "bg-muted border-border" },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2">
@@ -449,7 +469,7 @@ export function BookingCalendar() {
               <div className="px-4 pb-6 space-y-5">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="capitalize">
-                    {selectedBooking.status}
+                    {selectedBooking.status === "no_show" ? "No-show" : selectedBooking.status}
                   </Badge>
                   {selectedBooking.appointment_format && (
                     <Badge variant="outline" className="capitalize">
@@ -520,7 +540,7 @@ export function BookingCalendar() {
                             href={selectedBooking.location}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[#3B3680] underline break-all"
+                            className="text-primary underline break-all"
                           >
                             {selectedBooking.location}
                           </a>
@@ -538,6 +558,68 @@ export function BookingCalendar() {
                     <p className="text-sm text-foreground/80 whitespace-pre-wrap">{selectedBooking.notes}</p>
                   </div>
                 )}
+
+                <div className="space-y-3 pt-2 border-t border-border">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Appointment outcome</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Mark whether the client attended, missed, or cancelled this appointment.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <Button
+                      variant={selectedBooking.status === "completed" ? "default" : "outline"}
+                      className={selectedBooking.status === "completed" ? "bg-green-600 hover:bg-green-700" : ""}
+                      loading={outcomeUpdating === "completed"}
+                      loadingLabel="Saving..."
+                      disabled={outcomeUpdating !== null}
+                      onClick={() => void updateOutcome("completed")}
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Mark completed
+                    </Button>
+                    <Button
+                      variant={selectedBooking.status === "no_show" ? "default" : "outline"}
+                      className={
+                        selectedBooking.status === "no_show"
+                          ? "bg-amber-600 hover:bg-amber-700 text-white"
+                          : ""
+                      }
+                      loading={outcomeUpdating === "no_show"}
+                      loadingLabel="Saving..."
+                      disabled={outcomeUpdating !== null}
+                      onClick={() => void updateOutcome("no_show")}
+                    >
+                      <UserX className="w-4 h-4 mr-2" />
+                      Mark no-show
+                    </Button>
+                    <Button
+                      variant={selectedBooking.status === "cancelled" ? "default" : "outline"}
+                      className={selectedBooking.status === "cancelled" ? "bg-gray-700 hover:bg-gray-800" : ""}
+                      loading={outcomeUpdating === "cancelled"}
+                      loadingLabel="Saving..."
+                      disabled={outcomeUpdating !== null}
+                      onClick={() => void updateOutcome("cancelled")}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Mark cancelled
+                    </Button>
+                    {(selectedBooking.status === "completed" ||
+                      selectedBooking.status === "no_show" ||
+                      selectedBooking.status === "cancelled") && (
+                      <Button
+                        variant="ghost"
+                        loading={outcomeUpdating === "confirmed"}
+                        loadingLabel="Saving..."
+                        disabled={outcomeUpdating !== null}
+                        onClick={() => void updateOutcome("confirmed")}
+                      >
+                        Reopen as confirmed
+                      </Button>
+                    )}
+                  </div>
+                  {outcomeError && <p className="text-sm text-red-600">{outcomeError}</p>}
+                </div>
               </div>
             </>
           )}

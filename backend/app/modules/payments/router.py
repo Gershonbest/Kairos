@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, require_active_subscription
 from app.infra.db import get_db_session
 from app.infra.models import Booking, Client, PaymentStatus, PaymentTransaction, Service, WebhookEvent
 from app.modules.payments.providers import get_provider, verify_webhook_signature

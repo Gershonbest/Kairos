@@ -51,12 +51,12 @@ export function ServiceSchedulingFields({
                 }
                 className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                   selected
-                    ? "border-[#3B3680] bg-purple-50 text-[#5b21b6]"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-card text-foreground hover:border-primary/40"
                 }`}
               >
                 <div className="font-medium">{option.label}</div>
-                <div className="mt-1 text-xs text-gray-500 leading-snug">{option.hint}</div>
+                <div className="mt-1 text-xs text-muted-foreground leading-snug">{option.hint}</div>
               </button>
             );
           })}
@@ -64,7 +64,7 @@ export function ServiceSchedulingFields({
       </div>
 
       {schedulingMode === "all_day" ? (
-        <p className="text-sm text-gray-600 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2">
+        <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border bg-muted/50 px-3 py-2">
           Books the entire calendar day (midnight to midnight).
         </p>
       ) : (
@@ -81,8 +81,8 @@ export function ServiceSchedulingFields({
                   onClick={() => onChange({ duration: String(minutes) })}
                   className={`rounded-md border px-2.5 py-1 text-xs font-medium ${
                     selected
-                      ? "border-[#3B3680] bg-[#3B3680] text-white"
-                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-card text-foreground hover:border-primary/40"
                   }`}
                 >
                   {minutes}m
@@ -102,7 +102,7 @@ export function ServiceSchedulingFields({
             disabled={disabled}
           />
           {schedulingMode === "flexible" && (
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Clients choose a start time; this estimate reserves space on your calendar.
             </p>
           )}

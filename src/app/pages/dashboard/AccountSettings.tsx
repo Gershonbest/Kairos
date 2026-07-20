@@ -69,10 +69,10 @@ export function AccountSettings() {
       <p className="text-muted-foreground mt-1">Update your profile and password.</p>
 
       {!onboardingCompleted && (
-        <div className="mt-6 rounded-xl border border-[#3B3680]/20 bg-[#3B3680]/5 p-4">
+        <div className="mt-6 rounded-xl border border-primary/20 bg-primary/5 p-4">
           <p className="text-sm text-foreground/90">
             Your business setup is not finished yet.{" "}
-            <Link to="/onboarding" className="text-[#3B3680] font-medium hover:underline">
+            <Link to="/onboarding" className="text-primary font-medium hover:underline">
               Continue onboarding
             </Link>
           </p>
@@ -141,11 +141,11 @@ export function AccountSettings() {
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-        {success && <p className="text-sm text-[#2ECC71]">{success}</p>}
+        {success && <p className="text-sm text-accent">{success}</p>}
 
         <Button
           type="submit"
-          className="bg-[#3B3680] hover:bg-[#2E2A5C]"
+          className="bg-primary hover:bg-primary/90"
           loading={isSaving}
           loadingLabel="Saving..."
         >

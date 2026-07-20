@@ -103,9 +103,9 @@ export function AvailabilitySettings() {
               <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isSaving} />
 
               {error && <p className="text-sm text-red-600">{error}</p>}
-              {success && <p className="text-sm text-[#2ECC71]">{success}</p>}
+              {success && <p className="text-sm text-accent">{success}</p>}
 
-              <Button type="submit" className="bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isSaving} loadingLabel="Saving...">
+              <Button type="submit" className="bg-primary hover:bg-primary/90" loading={isSaving} loadingLabel="Saving...">
                 <Save className="w-4 h-4 mr-2" />
                 Save weekly hours
               </Button>

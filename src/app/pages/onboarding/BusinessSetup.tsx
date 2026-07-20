@@ -4,7 +4,8 @@ import { useNavigate } from "react-router";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Calendar, ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Plus, Trash2 } from "lucide-react";
+import { OnboardingShell } from "../../components/layouts/OnboardingShell";
 import { useState } from "react";
 import { api, type TenantBranchPayload } from "../../../lib/api/client";
 import { ImageUpload } from "../../components/forms/ImageUpload";
@@ -94,29 +95,11 @@ export function BusinessSetup() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center p-4 py-8">
-      <div className="w-full max-w-3xl">
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">Step 1 of 4</span>
-            <span className="text-sm text-gray-600">25% complete</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#4A4594] w-1/4 transition-all duration-300" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold">Tell us about your business</h1>
-              <p className="text-sm text-gray-600">Logo, contact details, and where clients can find you.</p>
-            </div>
-          </div>
-
+    <OnboardingShell
+      step={1}
+      title="Tell us about your business"
+      description="Logo, contact details, and where clients can find you."
+    >
           <form onSubmit={handleNext} className="space-y-6">
             <ImageUpload
               label="Company logo"
@@ -147,7 +130,7 @@ export function BusinessSetup() {
                 id="businessType"
                 value={formData.businessType}
                 onChange={(e) => setFormData({ ...formData, businessType: e.target.value })}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
+                className="mt-1 w-full px-3 py-2 border border-input rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
                 required
                 disabled={isLoading}
               >
@@ -172,10 +155,10 @@ export function BusinessSetup() {
               disabled={isLoading}
             />
 
-            <div className="rounded-lg border border-gray-200 p-4 space-y-4">
+            <div className="rounded-lg border border-border p-4 space-y-4">
               <div>
                 <h3 className="font-medium">Primary location</h3>
-                <p className="text-sm text-gray-500">Used for in-person appointments and your public profile.</p>
+                <p className="text-sm text-muted-foreground">Used for in-person appointments and your public profile.</p>
               </div>
               <LocationFields
                 value={{
@@ -203,7 +186,7 @@ export function BusinessSetup() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-medium">Additional branches</h3>
-                  <p className="text-sm text-gray-500">Optional — add other offices or studio locations.</p>
+                  <p className="text-sm text-muted-foreground">Optional — add other offices or studio locations.</p>
                 </div>
                 <Button
                   type="button"
@@ -220,7 +203,7 @@ export function BusinessSetup() {
               </div>
 
               {branches.map((branch, index) => (
-                <div key={branch.id} className="rounded-lg border border-gray-200 p-4 space-y-4">
+                <div key={branch.id} className="rounded-lg border border-border p-4 space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="font-medium">Branch {index + 1}</h4>
                     <Button
@@ -287,15 +270,13 @@ export function BusinessSetup() {
               <Button type="button" variant="outline" onClick={() => navigate("/")} className="flex-1" disabled={isLoading}>
                 Back
               </Button>
-              <Button type="submit" className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isLoading} loadingLabel="Saving...">
+              <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90" loading={isLoading} loadingLabel="Saving...">
                 Continue
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </form>
-        </div>
-      </div>
-    </div>
+    </OnboardingShell>
   );
 }

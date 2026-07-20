@@ -232,7 +232,7 @@ export function ServicesManagement() {
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button
-              className="bg-[#3B3680] hover:bg-[#2E2A5C]"
+              className="bg-primary hover:bg-primary/90"
               onClick={() => {
                 setEditingService(null);
                 setFormData(emptyForm());
@@ -345,7 +345,7 @@ export function ServicesManagement() {
                 </Button>
                 <Button
                   type="submit"
-                  className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]"
+                  className="flex-1 bg-primary hover:bg-primary/90"
                   loading={isSubmitting}
                   loadingLabel={editingService ? "Updating..." : "Creating..."}
                 >
@@ -369,14 +369,14 @@ export function ServicesManagement() {
             )}
             <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
               <div className="flex items-start gap-3 flex-1">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center">
                   <Briefcase className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex-1">
                   <CardTitle className="text-lg">{service.name}</CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">{service.description}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-[#3B3680]/10 text-[#3B3680]">
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
                       {appointmentTypeLabels[service.appointment.appointment_type]}
                     </span>
                     {formatHostLabel(service.appointment.host_name, service.appointment.host_title) && (
@@ -426,7 +426,7 @@ export function ServicesManagement() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-[#2ECC71]" />
+                  <DollarSign className="w-4 h-4 text-accent" />
                   <div>
                     <p className="text-xs text-muted-foreground">Deposit</p>
                     <p className="font-medium">${service.deposit}</p>
@@ -457,7 +457,7 @@ export function ServicesManagement() {
                   <span
                     className={`px-2 py-1 rounded-full text-xs font-medium ${
                       service.active
-                        ? "bg-[#2ECC71]/10 text-[#2ECC71]"
+                        ? "bg-accent/10 text-accent"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >

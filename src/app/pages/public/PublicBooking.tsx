@@ -20,7 +20,6 @@ import {
   Star,
   Shield,
   Mail,
-  Phone,
   User,
   FileText,
   CalendarPlus,
@@ -132,8 +131,8 @@ function getAIResponse(input: string): string {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const amber = "#F5A623";
-const amberLight = "#FFB347";
+const brandPrimary = "var(--color-primary)";
+const brandAccent = "var(--color-accent)";
 const cream = "var(--color-background)";
 const creamCard = "var(--color-input-background)";
 const stone600 = "var(--color-foreground)";
@@ -446,7 +445,7 @@ export function PublicBooking() {
               width: 46,
               height: 46,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${amber} 0%, ${amberLight} 100%)`,
+              background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -510,7 +509,7 @@ export function PublicBooking() {
                           width: 32,
                           height: 32,
                           borderRadius: "50%",
-                          backgroundColor: done ? amberLight : active ? amber : "var(--color-muted)",
+                          backgroundColor: done ? brandAccent : active ? brandPrimary : "var(--color-muted)",
                           color: done || active ? "#fff" : stone400,
                           display: "flex",
                           alignItems: "center",
@@ -528,7 +527,7 @@ export function PublicBooking() {
                           fontSize: 11,
                           marginTop: 6,
                           whiteSpace: "nowrap",
-                          color: active ? amber : done ? amberLight : stone400,
+                          color: active ? brandPrimary : done ? brandAccent : stone400,
                           fontWeight: active ? 600 : 400,
                         }}
                       >
@@ -540,7 +539,7 @@ export function PublicBooking() {
                         style={{
                           flex: 1,
                           height: 1,
-                          backgroundColor: i < stepIndex ? amberLight : "var(--color-muted)",
+                          backgroundColor: i < stepIndex ? brandAccent : "var(--color-muted)",
                           marginTop: 16,
                           marginLeft: 8,
                           marginRight: 8,
@@ -637,7 +636,7 @@ export function PublicBooking() {
                             position: "absolute",
                             top: 12,
                             left: 12,
-                            backgroundColor: amber,
+                            backgroundColor: brandPrimary,
                             color: "#fff",
                             fontSize: 11,
                             fontWeight: 600,
@@ -704,7 +703,7 @@ export function PublicBooking() {
                           style={{
                             fontSize: 11,
                             backgroundColor: "var(--color-accent)",
-                            color: amber,
+                            color: brandPrimary,
                             padding: "3px 9px",
                             borderRadius: 20,
                             fontWeight: 500,
@@ -781,7 +780,7 @@ export function PublicBooking() {
                 />
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>{service.name}</p>
-                  <p style={{ fontSize: 12, color: amber }}>
+                  <p style={{ fontSize: 12, color: brandPrimary }}>
                     {serviceDurationLabel(service)} · ${service.price} · ${service.deposit} deposit
                   </p>
                 </div>
@@ -857,7 +856,7 @@ export function PublicBooking() {
                           padding: "10px 4px",
                           borderRadius: 12,
                           border: "none",
-                          backgroundColor: isSelected ? amber : "transparent",
+                          backgroundColor: isSelected ? brandPrimary : "transparent",
                           cursor: d.available ? "pointer" : "not-allowed",
                           opacity: d.available ? 1 : 0.3,
                           transition: "background-color 0.15s",
@@ -935,7 +934,7 @@ export function PublicBooking() {
                   >
                     <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
                       Available times for{" "}
-                      <span style={{ color: amber }}>
+                      <span style={{ color: brandPrimary }}>
                         {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
                       </span>
                     </p>
@@ -974,7 +973,7 @@ export function PublicBooking() {
                                   border: "none",
                                   fontSize: 13,
                                   fontWeight: 500,
-                                  backgroundColor: isSelected ? amber : slot.available ? creamCard : "var(--color-muted)",
+                                  backgroundColor: isSelected ? brandPrimary : slot.available ? creamCard : "var(--color-muted)",
                                   color: isSelected ? "#fff" : slot.available ? stone600 : stone400,
                                   cursor: slot.available ? "pointer" : "not-allowed",
                                   transition: "all 0.15s",
@@ -1030,7 +1029,7 @@ export function PublicBooking() {
                           style={{
                             padding: "12px 14px",
                             borderRadius: 12,
-                            border: selected ? `2px solid ${amber}` : "1px solid var(--color-border)",
+                            border: selected ? `2px solid ${brandPrimary}` : "1px solid var(--color-border)",
                             backgroundColor: selected ? "var(--color-accent)" : "var(--color-card)",
                             textAlign: "left",
                             cursor: "pointer",
@@ -1064,14 +1063,14 @@ export function PublicBooking() {
                       padding: "14px 0",
                       borderRadius: 14,
                       border: "none",
-                      backgroundColor: amber,
+                      backgroundColor: brandPrimary,
                       color: "#fff",
                       fontSize: 14,
                       fontWeight: 600,
                       cursor: "pointer",
                       fontFamily: "'DM Sans', sans-serif",
                     }}
-                    whileHover={{ backgroundColor: amberLight } as never}
+                    whileHover={{ backgroundColor: brandAccent } as never}
                   >
                     Continue to your details
                   </motion.button>
@@ -1158,7 +1157,7 @@ export function PublicBooking() {
                           onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                           placeholder={placeholder}
                           style={{ ...inputStyle, paddingLeft: 38 }}
-                          onFocus={(e) => (e.target.style.borderColor = amber)}
+                          onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
                           onBlur={(e) => (e.target.style.borderColor = "transparent")}
                         />
                       </div>
@@ -1194,7 +1193,7 @@ export function PublicBooking() {
                         placeholder="Skin sensitivities, areas to focus on, preferences..."
                         rows={3}
                         style={{ ...inputStyle, paddingLeft: 38, resize: "none" }}
-                        onFocus={(e) => (e.target.style.borderColor = amber)}
+                        onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
                         onBlur={(e) => (e.target.style.borderColor = "transparent")}
                       />
                     </div>
@@ -1209,7 +1208,7 @@ export function PublicBooking() {
                     padding: "13px 0",
                     borderRadius: 13,
                     border: "none",
-                    backgroundColor: canProceedDetails ? amber : "var(--color-muted)",
+                    backgroundColor: canProceedDetails ? brandPrimary : "var(--color-muted)",
                     color: canProceedDetails ? "#fff" : stone400,
                     fontSize: 14,
                     fontWeight: 600,
@@ -1219,11 +1218,11 @@ export function PublicBooking() {
                   }}
                   onMouseEnter={(e) => {
                     if (canProceedDetails)
-                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = amberLight;
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent;
                   }}
                   onMouseLeave={(e) => {
                     if (canProceedDetails)
-                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = amber;
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary;
                   }}
                 >
                   Continue to payment
@@ -1268,7 +1267,7 @@ export function PublicBooking() {
                   {/* Card visual */}
                   <div
                     style={{
-                      background: `linear-gradient(135deg, ${amber} 0%, ${amberLight} 55%, #F5A623 100%)`,
+                      background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 55%, ${brandPrimary} 100%)`,
                       borderRadius: 20,
                       padding: "28px 28px 24px",
                       position: "relative",
@@ -1335,7 +1334,7 @@ export function PublicBooking() {
                           <input
                             placeholder="1234 5678 9012 3456"
                             style={{ ...inputStyle, paddingLeft: 38 }}
-                            onFocus={(e) => (e.target.style.borderColor = amber)}
+                            onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
                             onBlur={(e) => (e.target.style.borderColor = "transparent")}
                           />
                         </div>
@@ -1350,7 +1349,7 @@ export function PublicBooking() {
                             <input
                               placeholder={placeholder}
                               style={inputStyle}
-                              onFocus={(e) => (e.target.style.borderColor = amber)}
+                              onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
                               onBlur={(e) => (e.target.style.borderColor = "transparent")}
                             />
                           </div>
@@ -1408,7 +1407,7 @@ export function PublicBooking() {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
                       <span style={{ color: stone500 }}>Due today</span>
-                      <span style={{ fontWeight: 700, color: amber }}>${service.deposit}</span>
+                      <span style={{ fontWeight: 700, color: brandPrimary }}>${service.deposit}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
                       <span style={{ color: stone400 }}>Due at appointment</span>
@@ -1425,7 +1424,7 @@ export function PublicBooking() {
                       padding: "13px 0",
                       borderRadius: 13,
                       border: "none",
-                      backgroundColor: isBooking ? amberLight : amber,
+                      backgroundColor: isBooking ? brandAccent : brandPrimary,
                       color: "#fff",
                       fontSize: 14,
                       fontWeight: 600,
@@ -1440,12 +1439,12 @@ export function PublicBooking() {
                     }}
                     onMouseEnter={(e) => {
                       if (!isBooking) {
-                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = amberLight;
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent;
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isBooking) {
-                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = amber;
+                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary;
                       }
                     }}
                   >
@@ -1485,7 +1484,7 @@ export function PublicBooking() {
                   width: 80,
                   height: 80,
                   borderRadius: "50%",
-                  backgroundColor: amber,
+                  backgroundColor: brandPrimary,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1606,8 +1605,8 @@ export function PublicBooking() {
                       }}
                       onMouseEnter={(e) => {
                         const el = e.currentTarget as HTMLButtonElement;
-                        el.style.borderColor = amber;
-                        el.style.color = amber;
+                        el.style.borderColor = brandPrimary;
+                        el.style.color = brandPrimary;
                       }}
                       onMouseLeave={(e) => {
                         const el = e.currentTarget as HTMLButtonElement;
@@ -1644,7 +1643,7 @@ export function PublicBooking() {
 
               <p style={{ marginTop: 28, fontSize: 12, color: stone400 }}>
                 Need to cancel or reschedule? Email{" "}
-                <a href="mailto:hello@lumierewellness.com" style={{ color: amber }}>
+                <a href="mailto:hello@lumierewellness.com" style={{ color: brandPrimary }}>
                   hello@lumierewellness.com
                 </a>
               </p>
@@ -1682,7 +1681,7 @@ export function PublicBooking() {
               <div
                 style={{
                   padding: "14px 16px",
-                  backgroundColor: amber,
+                  backgroundColor: brandPrimary,
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
@@ -1742,7 +1741,7 @@ export function PublicBooking() {
                     alignItems: "center",
                     gap: 8,
                     fontSize: 11,
-                    color: amber,
+                    color: brandPrimary,
                     flexShrink: 0,
                   }}
                 >
@@ -1753,7 +1752,7 @@ export function PublicBooking() {
                         style={{
                           width: 3,
                           height: h,
-                          backgroundColor: amberLight,
+                          backgroundColor: brandAccent,
                           borderRadius: 4,
                           animation: `bounce ${0.5 + i * 0.08}s ease-in-out infinite alternate`,
                         }}
@@ -1785,7 +1784,7 @@ export function PublicBooking() {
                           marginBottom: 2,
                         }}
                       >
-                        <Sparkles size={11} color={amberLight} />
+                        <Sparkles size={11} color={brandAccent} />
                       </div>
                     )}
                     <div
@@ -1795,7 +1794,7 @@ export function PublicBooking() {
                         fontSize: 12,
                         lineHeight: 1.6,
                         whiteSpace: "pre-line",
-                        backgroundColor: msg.role === "user" ? amber : creamCard,
+                        backgroundColor: msg.role === "user" ? brandPrimary : creamCard,
                         color: msg.role === "user" ? "#fff" : dark,
                         borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
                       }}
@@ -1865,7 +1864,7 @@ export function PublicBooking() {
                     height: 34,
                     borderRadius: 10,
                     border: "none",
-                    backgroundColor: amber,
+                    backgroundColor: brandPrimary,
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
@@ -1873,8 +1872,8 @@ export function PublicBooking() {
                     flexShrink: 0,
                     transition: "background-color 0.15s",
                   }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = amberLight)}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = amber)}
+                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent)}
+                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary)}
                 >
                   <Send size={14} color="#fff" />
                 </button>
@@ -1892,7 +1891,7 @@ export function PublicBooking() {
             width: 56,
             height: 56,
             borderRadius: "50%",
-            backgroundColor: chatOpen ? "#57534e" : amber,
+            backgroundColor: chatOpen ? "#57534e" : brandPrimary,
             border: "none",
             cursor: "pointer",
             display: "flex",
@@ -1913,7 +1912,7 @@ export function PublicBooking() {
                 width: 22,
                 height: 22,
                 borderRadius: "50%",
-                backgroundColor: "#F5A623",
+                backgroundColor: brandPrimary,
                 color: "#fff",
                 fontSize: 9,
                 fontWeight: 800,

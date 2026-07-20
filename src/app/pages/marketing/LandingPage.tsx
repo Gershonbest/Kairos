@@ -8,20 +8,14 @@ import {
   Sparkles,
   Users,
   TrendingUp,
-  Shield,
-  Zap,
-  Clock,
   CreditCard,
   BarChart3,
-  MessageSquare,
   CheckCircle2,
   ArrowRight,
   Star,
   Globe,
   Smartphone,
   Brain,
-  Check,
-  X,
 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import kairosLogo from "../../../assets/branding/logo.png";

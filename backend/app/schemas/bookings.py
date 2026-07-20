@@ -31,3 +31,7 @@ class BookingOut(BaseModel):
     ics_download_path: str | None = None
     is_all_day: bool = False
     scheduling_mode: str | None = None
+
+
+class UpdateBookingStatusRequest(BaseModel):
+    status: Literal["completed", "no_show", "cancelled", "confirmed"]
