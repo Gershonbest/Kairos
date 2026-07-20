@@ -20,7 +20,6 @@ import {
   Star,
   Shield,
   Mail,
-  Phone,
   User,
   FileText,
   CalendarPlus,
