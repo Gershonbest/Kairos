@@ -27,6 +27,9 @@ class BookingOut(BaseModel):
     payment_required: bool = False
     payment_amount: float | None = None
     payment_status: str | None = None
+    payment_authorization_url: str | None = None
+    payment_access_code: str | None = None
+    payment_reference: str | None = None
     google_calendar_url: str | None = None
     ics_download_path: str | None = None
     is_all_day: bool = False

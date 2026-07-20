@@ -25,7 +25,15 @@ from app.modules.notifications.service import (
     send_booking_confirmation_email,
     send_new_booking_owner_email,
 )
-from app.modules.payments.service import booking_payment_amount, confirm_booking_payment, ensure_booking_payment
+from app.modules.payments.service import (
+    booking_payment_amount,
+    confirm_booking_payment,
+    ensure_booking_payment,
+    initialize_booking_paystack,
+)
+from app.infra import paystack as paystack_client
+from app.infra.paystack import PaystackError
+from app.modules.payments.service import apply_successful_paystack_payment
 from app.modules.services.helpers import (
     resolve_appointment_format,
     resolve_service_location,
@@ -75,7 +83,7 @@ def _booking_response(
     payment_tx: PaymentTransaction | None,
 ) -> BookingOut:
     amount = booking_payment_amount(service)
-    payment_required = bool(tenant.payments_enabled and amount > 0)
+    payment_required = bool(tenant.payments_enabled and amount > 0 and tenant.payment_account_id)
     is_confirmed = booking.status == BookingStatus.confirmed
     tenant_key = tenant.public_slug or tenant.id
     return BookingOut(
@@ -85,9 +93,12 @@ def _booking_response(
         end_at=booking.end_at,
         client_id=booking.client_id,
         service_id=booking.service_id,
-        payment_required=payment_required,
+        payment_required=payment_required and (payment_tx is None or payment_tx.status.value == "pending"),
         payment_amount=amount if amount > 0 else None,
         payment_status=payment_tx.status.value if payment_tx else None,
+        payment_authorization_url=payment_tx.authorization_url if payment_tx else None,
+        payment_access_code=payment_tx.access_code if payment_tx else None,
+        payment_reference=payment_tx.provider_reference if payment_tx else None,
         google_calendar_url=(
             build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
             if is_confirmed
@@ -299,6 +310,24 @@ async def create_public_booking(
     ).scalar_one_or_none()
     if existing:
         payment_tx = await ensure_booking_payment(session, existing, service, payload.idempotency_key, tenant)
+        if (
+            payment_tx
+            and tenant.payments_enabled
+            and tenant.payment_account_id
+            and payment_tx.status.value == "pending"
+            and not payment_tx.authorization_url
+        ):
+            client_row = (
+                await session.execute(select(Client).where(Client.id == existing.client_id))
+            ).scalar_one()
+            payment_tx = await initialize_booking_paystack(
+                session,
+                tenant=tenant,
+                booking=existing,
+                client=client_row,
+                tx=payment_tx,
+                business_key=business_id,
+            )
         await session.commit()
         return _booking_response(existing, service, tenant, payment_tx)
 
@@ -349,7 +378,7 @@ async def create_public_booking(
     await session.flush()
     payment_tx = await ensure_booking_payment(session, booking, service, payload.idempotency_key, tenant)
 
-    if not tenant.payments_enabled or booking_payment_amount(service) <= 0:
+    if not tenant.payments_enabled or not tenant.payment_account_id or booking_payment_amount(service) <= 0:
         booking.status = BookingStatus.confirmed
         owner = await create_booking_notifications(
             session, tenant=tenant, booking=booking, client=client, service=service
@@ -392,8 +421,23 @@ async def create_public_booking(
             )
         return _booking_response(booking, service, tenant, payment_tx)
 
+    if payment_tx:
+        try:
+            payment_tx = await initialize_booking_paystack(
+                session,
+                tenant=tenant,
+                booking=booking,
+                client=client,
+                tx=payment_tx,
+                business_key=business_id,
+            )
+        except (ValueError, PaystackError) as exc:
+            raise HTTPException(status_code=502, detail=f"Unable to start payment: {exc}") from exc
+
     await session.commit()
     await session.refresh(booking)
+    if payment_tx:
+        await session.refresh(payment_tx)
     await redis.delete(lock_key)
     return _booking_response(booking, service, tenant, payment_tx)
 
@@ -404,6 +448,7 @@ async def confirm_public_booking_payment(
     booking_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db_session),
+    reference: str | None = Query(default=None),
 ) -> BookingOut:
     tenant = await resolve_tenant_key(business_id, session)
     booking = (
@@ -420,10 +465,36 @@ async def confirm_public_booking_payment(
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    was_pending = booking.status == BookingStatus.pending
-    payment_tx = await confirm_booking_payment(session, booking)
+    payment_tx = (
+        await session.execute(
+            select(PaymentTransaction).where(
+                PaymentTransaction.tenant_id == tenant.id,
+                PaymentTransaction.booking_id == booking.id,
+            )
+        )
+    ).scalar_one_or_none()
     if not payment_tx:
         raise HTTPException(status_code=400, detail="No payment required for this booking")
+
+    was_pending = booking.status == BookingStatus.pending
+
+    # Paystack path: verify with gateway (webhook may already have confirmed).
+    if payment_tx.provider == "paystack":
+        ref = reference or payment_tx.provider_reference
+        try:
+            data = await paystack_client.verify_transaction(ref)
+        except PaystackError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if (data.get("status") or "").lower() != "success":
+            raise HTTPException(status_code=400, detail="Payment not completed yet")
+        await apply_successful_paystack_payment(session, reference=ref)
+        await session.refresh(booking)
+        await session.refresh(payment_tx)
+    else:
+        # Demo / non-Paystack fallback
+        payment_tx = await confirm_booking_payment(session, booking)
+        if not payment_tx:
+            raise HTTPException(status_code=400, detail="No payment required for this booking")
 
     client = (
         await session.execute(select(Client).where(Client.id == booking.client_id))

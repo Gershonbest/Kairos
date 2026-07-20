@@ -197,6 +197,7 @@ export function PublicBooking() {
     },
   ]);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const paymentHandledRef = useRef(false);
 
   const stepIndex = (["service", "datetime", "details", "payment", "confirmation"] as StepId[]).indexOf(step);
   const visibleDates = ALL_DATES.slice(dateOffset, dateOffset + 7);
@@ -205,6 +206,37 @@ export function PublicBooking() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Return from Paystack checkout — verify and show confirmation.
+  useEffect(() => {
+    if (!businessId || paymentHandledRef.current) return;
+    const paymentFlag = searchParams.get("payment");
+    const reference = searchParams.get("reference");
+    const bookingId = searchParams.get("booking_id");
+    if (paymentFlag !== "1" || !reference || !bookingId) return;
+
+    paymentHandledRef.current = true;
+    setIsBooking(true);
+    setBookingError("");
+    api
+      .confirmPublicPayment(businessId, bookingId, reference)
+      .then((confirmed) => {
+        if (confirmed.google_calendar_url && confirmed.ics_download_path) {
+          setCalendarLinks({
+            googleCalendarUrl: confirmed.google_calendar_url,
+            icsDownloadPath: confirmed.ics_download_path,
+          });
+        }
+        setStep("confirmation");
+      })
+      .catch((err) => {
+        setBookingError(err instanceof Error ? err.message : "Payment verification failed.");
+        setStep("payment");
+      })
+      .finally(() => {
+        setIsBooking(false);
+      });
+  }, [businessId, searchParams]);
 
   useEffect(() => {
     if (step === "payment" && (!service || !selectedSlotIso)) {
@@ -390,6 +422,11 @@ export function PublicBooking() {
 
       let confirmedBooking = booking;
       if (booking.payment_required && booking.payment_status === "pending") {
+        if (booking.payment_authorization_url) {
+          window.location.href = booking.payment_authorization_url;
+          return;
+        }
+        // Fallback demo confirm when no Paystack URL is returned.
         confirmedBooking = await api.confirmPublicPayment(businessId, booking.id);
       }
 

@@ -218,6 +218,9 @@ export interface PublicBookingResponse {
   payment_required?: boolean;
   payment_amount?: number | null;
   payment_status?: string | null;
+  payment_authorization_url?: string | null;
+  payment_access_code?: string | null;
+  payment_reference?: string | null;
   google_calendar_url?: string | null;
   ics_download_path?: string | null;
   is_all_day?: boolean;
@@ -435,6 +438,31 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ plan_code }),
     }),
+  checkoutSubscriptionPlan: (plan_code: string) =>
+    request<{
+      transaction_id: string;
+      provider: string;
+      provider_reference: string;
+      authorization_url?: string | null;
+      access_code?: string | null;
+      amount: number;
+      plan_code: string;
+      status: string;
+    }>("/subscriptions/checkout", {
+      method: "POST",
+      body: JSON.stringify({ plan_code }),
+    }),
+  verifyPaymentReference: (reference: string) =>
+    request<{
+      ok: boolean;
+      status?: string;
+      reference: string;
+      purpose?: string;
+      booking_id?: string | null;
+      transaction_id?: string;
+    }>(`/payments/verify/${encodeURIComponent(reference)}`, { method: "POST" }),
+  listPaystackBanks: () =>
+    request<Array<{ name: string; code: string; slug?: string }>>("/tenants/me/paystack/banks"),
   updatePublicProfile: (payload: { public_tagline?: string; public_description?: string; public_logo_url?: string }) =>
     request<{ ok: boolean }>("/tenants/me/public-profile", { method: "PUT", body: JSON.stringify(payload) }),
   listClients: () =>
@@ -496,10 +524,28 @@ export const api = {
         date: string;
       }>;
     }>("/dashboard/summary"),
-  connectPaymentProvider: (payload: { provider: string; account_id?: string; api_key?: string }) =>
-    request<{ ok: boolean }>("/tenants/me/payment-provider", { method: "POST", body: JSON.stringify(payload) }),
+  connectPaymentProvider: (payload: {
+    provider: string;
+    business_name?: string;
+    settlement_bank: string;
+    account_number: string;
+  }) =>
+    request<{
+      ok: boolean;
+      provider?: string;
+      subaccount_code?: string;
+      platform_fee_percent?: number;
+      payments_enabled?: boolean;
+    }>("/tenants/me/payment-provider", { method: "POST", body: JSON.stringify(payload) }),
   getPaymentProvider: () =>
-    request<{ provider: string | null; account_id: string | null; payments_enabled: boolean }>("/tenants/me/payment-provider"),
+    request<{
+      provider: string | null;
+      account_id: string | null;
+      payments_enabled: boolean;
+      settlement_bank_code?: string | null;
+      settlement_account_last4?: string | null;
+      platform_fee_percent?: number;
+    }>("/tenants/me/payment-provider"),
   getSchedulingInsights: () =>
     request<{
       open_slots: string[];
@@ -564,9 +610,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  confirmPublicPayment: (businessId: string, bookingId: string) =>
+  confirmPublicPayment: (businessId: string, bookingId: string, reference?: string) =>
     request<PublicBookingResponse>(
-      `/public/businesses/${businessId}/bookings/${bookingId}/confirm-payment`,
+      `/public/businesses/${businessId}/bookings/${bookingId}/confirm-payment${
+        reference ? `?reference=${encodeURIComponent(reference)}` : ""
+      }`,
       { method: "POST" }
     ),
   listTransactions: () =>

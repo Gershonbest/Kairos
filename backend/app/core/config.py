@@ -32,6 +32,12 @@ class Settings(BaseSettings):
         # .env files often double-escape backslashes, breaking the ngrok host pattern.
         return value.replace(r"\\.", r"\.").replace("\\\\", "\\")
     payment_webhook_secret: str = ""
+    paystack_secret_key: str | None = None
+    paystack_public_key: str | None = None
+    # Prefer Paystack secret key for webhook HMAC; falls back to payment_webhook_secret.
+    paystack_webhook_secret: str | None = None
+    paystack_platform_fee_percent: float = 5.0
+    paystack_callback_base_url: str | None = None
     otel_exporter_otlp_endpoint: str | None = None
     public_booking_base_url: str = "http://localhost:5173/book"
     frontend_base_url: str = "http://localhost:5173"

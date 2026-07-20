@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra import paystack as paystack_client
 from app.infra.db import get_db_session
 from app.infra.models import Service, Tenant, User
+from app.infra.paystack import PaystackError
 from app.modules.tenants.helpers import branches_to_dict, tenant_display_location
-from app.modules.subscriptions.service import start_tenant_trial
+from app.modules.subscriptions.service import start_tenant_trial, tenant_allows_payment_processing
 from app.schemas.tenants import TenantOnboardingUpdate, TenantPublicProfileUpdate
 
 router = APIRouter()
@@ -18,7 +20,11 @@ settings = get_settings()
 
 
 class PaymentProviderConnectRequest(BaseModel):
-    provider: str = Field(pattern="^(stripe|paystack|flutterwave)$")
+    provider: str = Field(default="paystack", pattern="^paystack$")
+    business_name: str | None = Field(default=None, min_length=2, max_length=200)
+    settlement_bank: str = Field(min_length=2, max_length=20)
+    account_number: str = Field(min_length=6, max_length=20)
+    # Optional legacy fields ignored for Paystack.
     account_id: str | None = None
     api_key: str | None = None
 
@@ -143,12 +149,31 @@ async def update_public_profile(
     return {"ok": True}
 
 
+@router.get("/me/paystack/banks")
+async def list_paystack_banks(
+    current_user: CurrentUser = Depends(require_active_subscription),
+) -> list[dict]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    if not paystack_client.is_configured():
+        raise HTTPException(status_code=503, detail="Paystack is not configured")
+    try:
+        banks = await paystack_client.list_banks()
+    except PaystackError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return [
+        {"name": bank.get("name"), "code": bank.get("code"), "slug": bank.get("slug")}
+        for bank in banks
+        if bank.get("code") and bank.get("name")
+    ]
+
+
 @router.post("/me/payment-provider")
 async def connect_payment_provider(
     payload: PaymentProviderConnectRequest,
     current_user: CurrentUser = Depends(require_active_subscription),
     session: AsyncSession = Depends(get_db_session),
-) -> dict[str, bool]:
+) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
     tenant = (
@@ -157,11 +182,49 @@ async def connect_payment_provider(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    tenant.payment_provider = payload.provider
-    tenant.payment_account_id = payload.account_id or None
+    if not await tenant_allows_payment_processing(session, tenant):
+        raise HTTPException(
+            status_code=403,
+            detail="Payment processing requires a Premium plan or an active trial.",
+        )
+    if not paystack_client.is_configured():
+        raise HTTPException(status_code=503, detail="Paystack is not configured on the server")
+
+    owner = (await session.execute(select(User).where(User.id == current_user.id))).scalar_one_or_none()
+    business_name = (payload.business_name or tenant.name or "Kairos Business").strip()
+    fee_percent = float(settings.paystack_platform_fee_percent)
+
+    try:
+        subaccount = await paystack_client.create_subaccount(
+            business_name=business_name,
+            settlement_bank=payload.settlement_bank.strip(),
+            account_number=payload.account_number.strip(),
+            percentage_charge=fee_percent,
+            primary_contact_email=owner.email if owner else None,
+            primary_contact_name=owner.full_name if owner else None,
+        )
+    except PaystackError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    subaccount_code = subaccount.get("subaccount_code") or subaccount.get("id")
+    if not subaccount_code:
+        raise HTTPException(status_code=502, detail="Paystack did not return a subaccount code")
+
+    tenant.payment_provider = "paystack"
+    tenant.payment_account_id = str(subaccount_code)
+    tenant.paystack_subaccount_id = str(subaccount.get("id") or "")
+    tenant.settlement_bank_code = payload.settlement_bank.strip()
+    tenant.settlement_account_last4 = payload.account_number.strip()[-4:]
+    tenant.platform_fee_percent = fee_percent
     tenant.payments_enabled = True
     await session.commit()
-    return {"ok": True}
+    return {
+        "ok": True,
+        "provider": "paystack",
+        "subaccount_code": tenant.payment_account_id,
+        "platform_fee_percent": fee_percent,
+        "payments_enabled": True,
+    }
 
 
 @router.get("/me/payment-provider")
@@ -180,4 +243,9 @@ async def get_payment_provider(
         "provider": tenant.payment_provider,
         "account_id": tenant.payment_account_id,
         "payments_enabled": tenant.payments_enabled,
+        "settlement_bank_code": tenant.settlement_bank_code,
+        "settlement_account_last4": tenant.settlement_account_last4,
+        "platform_fee_percent": float(tenant.platform_fee_percent)
+        if tenant.platform_fee_percent is not None
+        else float(settings.paystack_platform_fee_percent),
     }
