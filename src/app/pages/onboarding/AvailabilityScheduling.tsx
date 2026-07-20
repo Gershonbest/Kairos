@@ -2,7 +2,8 @@
 
 import { useNavigate } from "react-router";
 import { Button } from "../../components/ui/button";
-import { Calendar, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { OnboardingShell } from "../../components/layouts/OnboardingShell";
 import { useState } from "react";
 import { api } from "../../../lib/api/client";
 import {
@@ -42,29 +43,11 @@ export function AvailabilityScheduling() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">Step 3 of 4</span>
-            <span className="text-sm text-gray-600">75% complete</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#4A4594] w-3/4 transition-all duration-300" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold">Set your availability</h1>
-              <p className="text-sm text-gray-600">When are you available for bookings?</p>
-            </div>
-          </div>
-
+    <OnboardingShell
+      step={3}
+      title="Set your availability"
+      description="When are you available for bookings?"
+    >
           <form onSubmit={handleNext} className="space-y-3">
             <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isLoading} />
 
@@ -80,7 +63,7 @@ export function AvailabilityScheduling() {
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-[#3B3680] hover:bg-[#2E2A5C]"
+                className="flex-1 bg-primary hover:bg-primary/90"
                 loading={isLoading}
                 loadingLabel="Saving..."
               >
@@ -88,10 +71,8 @@ export function AvailabilityScheduling() {
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </form>
-        </div>
-      </div>
-    </div>
+    </OnboardingShell>
   );
 }

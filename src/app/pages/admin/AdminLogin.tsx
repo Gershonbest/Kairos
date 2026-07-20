@@ -43,7 +43,7 @@ export function AdminLogin() {
 
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-200">
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Shield className="w-7 h-7 text-white" />
             </div>
             <div>
@@ -90,7 +90,7 @@ export function AdminLogin() {
 
             <Button
               type="submit"
-              className="w-full bg-[#3B3680] hover:bg-[#2E2A5C] mt-6"
+              className="w-full bg-primary hover:bg-primary/90 mt-6"
               loading={isLoading}
               loadingLabel="Signing in..."
             >
@@ -99,14 +99,14 @@ export function AdminLogin() {
             {error && <p className="text-sm text-red-600">{error}</p>}
           </form>
 
-          <p className="mt-6 text-center text-xs text-gray-500">
+          <p className="mt-6 text-center text-xs text-muted-foreground">
             This dashboard is only accessible to authorized system administrators.
           </p>
         </div>
 
-        <p className="text-center text-sm text-gray-400 mt-6">
+        <p className="text-center text-sm text-muted-foreground mt-6">
           Need help?{" "}
-          <a href="mailto:support@kairosbookings.com" className="text-purple-400 hover:text-purple-300">
+          <a href="mailto:support@kairosbookings.com" className="text-primary hover:text-primary/80">
             Contact Support
           </a>
         </p>

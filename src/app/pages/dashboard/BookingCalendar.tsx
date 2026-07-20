@@ -18,7 +18,7 @@ import { api, type BookingListItem } from "../../../lib/api/client";
 type CalendarView = "month" | "week" | "day";
 
 const STATUS_STYLES: Record<string, string> = {
-  confirmed: "bg-purple-100 border-purple-300 text-purple-900 dark:bg-purple-500/20 dark:border-purple-400/40 dark:text-purple-100",
+  confirmed: "bg-primary/10 border-primary/30 text-primary dark:bg-primary/20 dark:border-primary/40 dark:text-primary-foreground",
   pending: "bg-blue-100 border-blue-300 text-blue-900 dark:bg-blue-500/20 dark:border-blue-400/40 dark:text-blue-100",
   completed: "bg-green-100 border-green-300 text-green-900 dark:bg-green-500/20 dark:border-green-400/40 dark:text-green-100",
   cancelled: "bg-muted border-border text-muted-foreground",
@@ -270,7 +270,7 @@ export function BookingCalendar() {
                   variant={view === mode ? "default" : "outline"}
                   size="sm"
                   onClick={() => setView(mode)}
-                  className={view === mode ? "bg-[#3B3680] hover:bg-[#2E2A5C] capitalize" : "capitalize"}
+                  className={view === mode ? "bg-primary hover:bg-primary/90 capitalize" : "capitalize"}
                 >
                   {mode}
                 </Button>
@@ -307,9 +307,9 @@ export function BookingCalendar() {
                       }}
                       className={`min-h-[110px] p-2 border-r border-b border-border text-left align-top hover:bg-muted/40 ${
                         inMonth ? "bg-card" : "bg-muted/30"
-                      } ${isToday ? "ring-1 ring-inset ring-[#3B3680]/40" : ""}`}
+                      } ${isToday ? "ring-1 ring-inset ring-primary/40" : ""}`}
                     >
-                      <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-[#3B3680]" : ""}`}>
+                      <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-primary" : ""}`}>
                         {day.getDate()}
                       </div>
                       <div className="space-y-0.5">
@@ -348,7 +348,7 @@ export function BookingCalendar() {
                           setView("day");
                         }}
                         className={`p-4 text-center border-r border-border hover:bg-muted/60 ${
-                          isToday ? "bg-[#3B3680]/10" : "bg-muted/40"
+                          isToday ? "bg-primary/10" : "bg-muted/40"
                         }`}
                       >
                         <div className="text-sm font-medium">
@@ -443,7 +443,7 @@ export function BookingCalendar() {
           <div className="flex flex-wrap items-center gap-4">
             <span className="text-sm font-medium text-muted-foreground">Status:</span>
             {[
-              { label: "Confirmed", className: "bg-purple-100 border-purple-300" },
+              { label: "Confirmed", className: "bg-primary/10 border-primary/30" },
               { label: "Pending", className: "bg-blue-100 border-blue-300" },
               { label: "Completed", className: "bg-green-100 border-green-300" },
               { label: "No-show", className: "bg-amber-100 border-amber-300" },
@@ -540,7 +540,7 @@ export function BookingCalendar() {
                             href={selectedBooking.location}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[#3B3680] underline break-all"
+                            className="text-primary underline break-all"
                           >
                             {selectedBooking.location}
                           </a>

@@ -165,7 +165,7 @@ export function PlanSettings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link to="/admin" className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                   <Calendar className="w-6 h-6 text-white" />
                 </div>
                 <div>
@@ -182,7 +182,7 @@ export function PlanSettings() {
                 <ArrowLeft className="w-4 h-4" />
                 Back to Dashboard
               </Link>
-              <Button onClick={startCreate} className="bg-purple-600 hover:bg-purple-700">
+              <Button onClick={startCreate} className="bg-primary hover:bg-primary/90">
                 <Plus className="w-4 h-4 mr-2" />
                 New plan
               </Button>
@@ -210,7 +210,7 @@ export function PlanSettings() {
                     key={plan.code}
                     onClick={() => selectPlan(plan)}
                     className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
-                      selectedCode === plan.code && !isCreating ? "bg-purple-50" : ""
+                      selectedCode === plan.code && !isCreating ? "bg-primary/10" : ""
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -333,7 +333,7 @@ export function PlanSettings() {
                       onClick={() => void handleSave()}
                       loading={isSaving}
                       loadingLabel="Saving..."
-                      className="bg-purple-600 hover:bg-purple-700"
+                      className="bg-primary hover:bg-primary/90"
                     >
                       <Save className="w-4 h-4 mr-2" />
                       {isCreating ? "Create plan" : "Save changes"}

@@ -177,7 +177,7 @@ export function BookingLinksManagement() {
         <div className="flex justify-end border-t border-border pt-4">
           <Button
             onClick={() => void handleSaveProfile()}
-            className="w-full sm:w-auto bg-[#3B3680] hover:bg-[#2E2A5C]"
+            className="w-full sm:w-auto bg-primary hover:bg-primary/90"
             loading={savingProfile}
             loadingLabel="Saving..."
           >
@@ -199,7 +199,7 @@ export function BookingLinksManagement() {
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm text-[#3B3680] break-all mt-2 inline-flex items-center gap-1"
+                  className="text-sm text-primary break-all mt-2 inline-flex items-center gap-1"
                 >
                   {item.url}
                   <ExternalLink className="w-3 h-3" />
@@ -208,7 +208,7 @@ export function BookingLinksManagement() {
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => void handleCopy(item.url)}
-                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent inline-flex items-center gap-2"
+                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-muted inline-flex items-center gap-2"
                 >
                   <Copy className="w-4 h-4" />
                   {copied === item.url ? "Copied" : "Copy"}
@@ -228,7 +228,7 @@ export function BookingLinksManagement() {
                   href={qrImageUrl(item.url)}
                   target="_blank"
                   rel="noreferrer"
-                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent inline-flex items-center gap-2"
+                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-muted inline-flex items-center gap-2"
                 >
                   <Download className="w-4 h-4" />
                   Open QR

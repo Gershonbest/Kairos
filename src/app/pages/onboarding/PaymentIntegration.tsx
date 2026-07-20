@@ -4,7 +4,8 @@ import { useNavigate } from "react-router";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { Calendar, CreditCard, Check } from "lucide-react";
+import { CreditCard, Check } from "lucide-react";
+import { OnboardingShell } from "../../components/layouts/OnboardingShell";
 import { useState } from "react";
 import { api } from "../../../lib/api/client";
 
@@ -59,30 +60,11 @@ export function PaymentIntegration() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        {/* Progress indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">Step 4 of 4</span>
-            <span className="text-sm text-gray-600">100% complete</span>
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-[#3B3680] to-[#2ECC71] w-full transition-all duration-300" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
-              <Calendar className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-semibold">Connect payment provider</h1>
-              <p className="text-sm text-gray-600">Accept deposits and payments from clients</p>
-            </div>
-          </div>
-
+    <OnboardingShell
+      step={4}
+      title="Connect payment provider"
+      description="Accept deposits and payments from clients"
+    >
           <form onSubmit={handleComplete} className="space-y-6">
             <div className="space-y-3">
               <Label>Select Payment Provider</Label>
@@ -94,8 +76,8 @@ export function PaymentIntegration() {
                     relative p-4 border-2 rounded-lg cursor-pointer transition-all
                     ${
                       selectedProvider === provider.id
-                        ? "border-[#3B3680] bg-purple-50"
-                        : "border-gray-200 hover:border-gray-300"
+                        ? "border-primary bg-primary/10"
+                        : "border-border hover:border-primary/40"
                     }
                   `}
                 >
@@ -106,8 +88,8 @@ export function PaymentIntegration() {
                         w-10 h-10 rounded-lg flex items-center justify-center
                         ${
                           selectedProvider === provider.id
-                            ? "bg-[#3B3680] text-white"
-                            : "bg-gray-100 text-gray-600"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-muted-foreground"
                         }
                       `}
                       >
@@ -117,17 +99,17 @@ export function PaymentIntegration() {
                         <div className="flex items-center gap-2">
                           <h3 className="font-medium">{provider.name}</h3>
                           {provider.popular && (
-                            <span className="px-2 py-0.5 bg-[#2ECC71] text-white text-xs rounded-full">
+                            <span className="px-2 py-0.5 bg-accent text-accent-foreground text-xs rounded-full">
                               Popular
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">{provider.description}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{provider.description}</p>
                       </div>
                     </div>
                     {selectedProvider === provider.id && (
-                      <div className="w-6 h-6 rounded-full bg-[#3B3680] flex items-center justify-center">
-                        <Check className="w-4 h-4 text-white" />
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                        <Check className="w-4 h-4 text-primary-foreground" />
                       </div>
                     )}
                   </div>
@@ -135,9 +117,9 @@ export function PaymentIntegration() {
               ))}
             </div>
 
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+            <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
               <h3 className="font-medium">Account Details (Optional)</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 You can skip this for now and configure it later in settings
               </p>
               <div>
@@ -182,17 +164,15 @@ export function PaymentIntegration() {
               </Button>
               <Button
                 type="submit"
-                className="flex-1 bg-gradient-to-r from-[#3B3680] to-[#2ECC71] hover:opacity-90"
+                className="flex-1 bg-gradient-to-r from-primary to-accent hover:opacity-90"
                 loading={isLoading}
                 loadingLabel="Completing setup..."
               >
                 Complete Setup
               </Button>
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
           </form>
-        </div>
-      </div>
-    </div>
+    </OnboardingShell>
   );
 }

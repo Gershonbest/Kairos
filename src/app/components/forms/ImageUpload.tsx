@@ -46,7 +46,7 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
           type="button"
           onClick={() => !disabled && !isUploading && inputRef.current?.click()}
           disabled={disabled || isUploading}
-          className="w-full sm:w-28 h-28 rounded-xl border border-dashed border-border bg-card overflow-hidden flex items-center justify-center shrink-0 transition-colors hover:border-[#3B3680]/40 disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full sm:w-28 h-28 rounded-xl border border-dashed border-border bg-card overflow-hidden flex items-center justify-center shrink-0 transition-colors hover:border-primary/40 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {value ? (
             <img src={value} alt="" className="w-full h-full object-cover" />
@@ -96,7 +96,7 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
             )}
           </div>
           {value && !error && (
-            <p className="text-xs text-[#2ECC71]">Image uploaded. Save the form below to keep it.</p>
+            <p className="text-xs text-accent">Image uploaded. Save the form below to keep it.</p>
           )}
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>

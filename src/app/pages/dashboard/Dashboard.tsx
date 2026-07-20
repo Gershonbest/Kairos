@@ -366,9 +366,9 @@ export function Dashboard() {
                   key="revenue"
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#0b7f9b"
+                  stroke="var(--color-primary)"
                   strokeWidth={2}
-                  dot={{ fill: "#0b7f9b", r: 4 }}
+                  dot={{ fill: "var(--color-primary)", r: 4 }}
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -393,7 +393,7 @@ export function Dashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="bookings" dataKey="bookings" fill="#c8953f" radius={[8, 8, 0, 0]} />
+                <Bar key="bookings" dataKey="bookings" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>

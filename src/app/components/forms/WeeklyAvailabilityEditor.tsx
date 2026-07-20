@@ -25,22 +25,25 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
   return (
     <div className="space-y-3">
       {WEEK_DAYS.map(({ key, label }) => (
-        <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-4 border border-gray-200 rounded-lg">
+        <div
+          key={key}
+          className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-4 border border-border rounded-lg bg-card/40"
+        >
           <label className="flex items-center gap-3 min-w-[140px] cursor-pointer">
             <input
               type="checkbox"
               checked={value[key].enabled}
               onChange={(e) => updateDay(key, "enabled", e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 text-[#3B3680] focus:ring-[#3B3680]"
+              className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
               disabled={disabled}
             />
-            <span className="font-medium">{label}</span>
+            <span className="font-medium text-foreground">{label}</span>
           </label>
 
           {value[key].enabled ? (
             <div className="flex flex-wrap items-center gap-3 flex-1">
               <div className="flex items-center gap-2">
-                <Label htmlFor={`${key}-start`} className="text-sm">
+                <Label htmlFor={`${key}-start`} className="text-sm text-muted-foreground">
                   From
                 </Label>
                 <input
@@ -48,13 +51,13 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
                   type="time"
                   value={value[key].startTime}
                   onChange={(e) => updateDay(key, "startTime", e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
+                  className="px-3 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-input-background text-foreground"
                   disabled={disabled}
                 />
               </div>
-              <span className="text-gray-400">—</span>
+              <span className="text-muted-foreground">—</span>
               <div className="flex items-center gap-2">
-                <Label htmlFor={`${key}-end`} className="text-sm">
+                <Label htmlFor={`${key}-end`} className="text-sm text-muted-foreground">
                   To
                 </Label>
                 <input
@@ -62,13 +65,13 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
                   type="time"
                   value={value[key].endTime}
                   onChange={(e) => updateDay(key, "endTime", e.target.value)}
-                  className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#3B3680] bg-white"
+                  className="px-3 py-1.5 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary bg-input-background text-foreground"
                   disabled={disabled}
                 />
               </div>
             </div>
           ) : (
-            <span className="text-sm text-gray-400 flex-1">Unavailable</span>
+            <span className="text-sm text-muted-foreground flex-1">Unavailable</span>
           )}
         </div>
       ))}

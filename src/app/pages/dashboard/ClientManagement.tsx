@@ -127,7 +127,7 @@ export function ClientManagement() {
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
-            <Button className="bg-[#3B3680] hover:bg-[#2E2A5C]">
+            <Button className="bg-primary hover:bg-primary/90">
               <Plus className="w-4 h-4 mr-2" />
               Add Client
             </Button>
@@ -176,7 +176,7 @@ export function ClientManagement() {
                   className="mt-1"
                 />
               </div>
-              <Button type="submit" className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]" loading={isAdding} loadingLabel="Adding...">
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90" loading={isAdding} loadingLabel="Adding...">
                 Add client
               </Button>
             </form>
@@ -252,7 +252,7 @@ export function ClientManagement() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium text-lg">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium text-lg">
                           {client.name
                             .split(" ")
                             .map((n) => n[0])
@@ -279,7 +279,7 @@ export function ClientManagement() {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Total Spent</p>
-                          <p className="font-semibold text-[#2ECC71]">${client.totalSpent.toFixed(0)}</p>
+                          <p className="font-semibold text-accent">${client.totalSpent.toFixed(0)}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Last Visit</p>
@@ -297,7 +297,7 @@ export function ClientManagement() {
                 <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium text-lg">
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium text-lg">
                         {client.name
                           .split(" ")
                           .map((n) => n[0])
@@ -322,7 +322,7 @@ export function ClientManagement() {
                         <Card>
                           <CardContent className="p-4">
                             <div className="flex items-center gap-3">
-                              <Calendar className="w-8 h-8 text-[#3B3680]" />
+                              <Calendar className="w-8 h-8 text-primary" />
                               <div>
                                 <p className="text-sm text-muted-foreground">Total Bookings</p>
                                 <p className="text-2xl font-semibold">{client.totalBookings}</p>
@@ -333,7 +333,7 @@ export function ClientManagement() {
                         <Card>
                           <CardContent className="p-4">
                             <div className="flex items-center gap-3">
-                              <DollarSign className="w-8 h-8 text-[#2ECC71]" />
+                              <DollarSign className="w-8 h-8 text-accent" />
                               <div>
                                 <p className="text-sm text-muted-foreground">Total Spent</p>
                                 <p className="text-2xl font-semibold">${client.totalSpent.toFixed(0)}</p>
@@ -361,7 +361,7 @@ export function ClientManagement() {
                                 })}
                               </p>
                             </div>
-                            <span className="text-xs px-2 py-1 rounded-full bg-[#2ECC71]/10 text-[#2ECC71]">
+                            <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent">
                               {booking.status}
                             </span>
                           </div>
@@ -383,7 +383,7 @@ export function ClientManagement() {
                         />
                       </div>
                       <Button
-                        className="w-full bg-[#3B3680] hover:bg-[#2E2A5C]"
+                        className="w-full bg-primary hover:bg-primary/90"
                         onClick={handleSaveNotes}
                         loading={isSavingNote}
                         loadingLabel="Saving..."

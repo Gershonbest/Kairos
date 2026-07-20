@@ -85,7 +85,7 @@ export function AIAssistant() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold flex items-center gap-2">
-            <Sparkles className="w-8 h-8 text-[#3B3680]" />
+            <Sparkles className="w-8 h-8 text-primary" />
             AI Assistant
           </h1>
           <p className="text-muted-foreground mt-1">Natural language booking and smart scheduling suggestions</p>
@@ -93,10 +93,10 @@ export function AIAssistant() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-[#3B3680]/20 bg-gradient-to-br from-[#3B3680]/5 to-card">
+        <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-[#3B3680]" />
+              <Calendar className="w-5 h-5 text-primary" />
               Smart Scheduling
             </CardTitle>
           </CardHeader>
@@ -107,10 +107,10 @@ export function AIAssistant() {
           </CardContent>
         </Card>
 
-        <Card className="border-[#2ECC71]/20 bg-gradient-to-br from-[#2ECC71]/5 to-card">
+        <Card className="border-accent/20 bg-gradient-to-br from-accent/5 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-[#2ECC71]" />
+              <Sparkles className="w-5 h-5 text-accent" />
               Natural Language
             </CardTitle>
           </CardHeader>
@@ -121,10 +121,10 @@ export function AIAssistant() {
           </CardContent>
         </Card>
 
-        <Card className="border-[#3B3680]/20 bg-gradient-to-br from-purple-50/70 dark:from-purple-500/10 to-card">
+        <Card className="border-primary/20 bg-gradient-to-br from-primary/10 dark:from-primary/10 to-card">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-[#3B3680]" />
+              <CheckCircle className="w-5 h-5 text-primary" />
               Gap Detection
             </CardTitle>
           </CardHeader>
@@ -136,10 +136,10 @@ export function AIAssistant() {
         </Card>
       </div>
 
-      <Card className="border-2 border-[#3B3680]/20">
-        <CardHeader className="bg-gradient-to-r from-[#3B3680]/5 to-[#2ECC71]/5">
+      <Card className="border-2 border-primary/20">
+        <CardHeader className="bg-gradient-to-r from-primary/5 to-accent/5">
           <CardTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             AI Chat Assistant
@@ -153,13 +153,13 @@ export function AIAssistant() {
                   <div
                     className={`max-w-[80%] rounded-2xl p-4 ${
                       message.type === "user"
-                        ? "bg-[#3B3680] text-white ml-12"
+                        ? "bg-primary text-white ml-12"
                         : "bg-muted text-foreground mr-12"
                     }`}
                   >
                     {message.type === "ai" && (
                       <div className="flex items-center gap-2 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2ECC71] flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                           <Sparkles className="w-3 h-3 text-white" />
                         </div>
                         <span className="text-sm font-medium">AI Assistant</span>
@@ -184,7 +184,7 @@ export function AIAssistant() {
                         size="sm"
                         disabled={isLoading}
                         onClick={() => handleSuggestionClick(suggestion)}
-                        className="text-xs hover:bg-[#3B3680] hover:text-white hover:border-[#3B3680]"
+                        className="text-xs hover:bg-primary hover:text-white hover:border-primary"
                       >
                         {suggestion}
                       </Button>
@@ -210,7 +210,7 @@ export function AIAssistant() {
                 className="flex-1"
                 disabled={isLoading}
               />
-              <Button onClick={handleSend} className="bg-[#3B3680] hover:bg-[#2E2A5C]" disabled={isLoading}>
+              <Button onClick={handleSend} className="bg-primary hover:bg-primary/90" disabled={isLoading}>
                 <Send className="w-4 h-4" />
               </Button>
             </div>

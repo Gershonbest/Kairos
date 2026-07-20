@@ -65,10 +65,10 @@ export function PaymentsDashboard() {
 
         const totalCount = mapped.length || 1;
         const providerNames = [
-          { id: "stripe", color: "#3B3680", name: "Stripe" },
-          { id: "paystack", color: "#2ECC71", name: "Paystack" },
-          { id: "flutterwave", color: "#3b82f6", name: "Flutterwave" },
-          { id: "kairos", color: "#FFB347", name: "Kairos" },
+          { id: "stripe", color: "var(--color-primary)", name: "Stripe" },
+          { id: "paystack", color: "var(--color-accent)", name: "Paystack" },
+          { id: "flutterwave", color: "var(--color-chart-2)", name: "Flutterwave" },
+          { id: "kairos", color: "var(--color-accent)", name: "Kairos" },
         ];
         setPaymentMethodData(
           providerNames.map((provider) => ({
@@ -117,7 +117,7 @@ export function PaymentsDashboard() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "completed":
-        return <CheckCircle className="w-4 h-4 text-[#2ECC71]" />;
+        return <CheckCircle className="w-4 h-4 text-accent" />;
       case "pending":
         return <Clock className="w-4 h-4 text-yellow-500" />;
       case "failed":
@@ -130,7 +130,7 @@ export function PaymentsDashboard() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-[#2ECC71]/10 text-[#2ECC71]";
+        return "bg-accent/10 text-accent";
       case "pending":
         return "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-100";
       case "failed":
@@ -159,14 +159,14 @@ export function PaymentsDashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-[#2ECC71]/5 to-card border-[#2ECC71]/20">
+        <Card className="bg-gradient-to-br from-accent/5 to-card border-accent/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
-            <DollarSign className="w-4 h-4 text-[#2ECC71]" />
+            <DollarSign className="w-4 h-4 text-accent" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
+            <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live from transactions</span>
             </p>
@@ -204,7 +204,7 @@ export function PaymentsDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">${averageTransaction.toFixed(2)}</div>
-            <p className="text-xs text-[#2ECC71] flex items-center gap-1 mt-2">
+            <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live average</span>
             </p>
@@ -232,8 +232,8 @@ export function PaymentsDashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="revenue" dataKey="revenue" fill="#3B3680" radius={[8, 8, 0, 0]} />
-                <Bar key="deposits" dataKey="deposits" fill="#2ECC71" radius={[8, 8, 0, 0]} />
+                <Bar key="revenue" dataKey="revenue" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
+                <Bar key="deposits" dataKey="deposits" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -300,7 +300,7 @@ export function PaymentsDashboard() {
                     className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/40 transition-colors"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#3B3680] to-[#2E2A5C] flex items-center justify-center text-white font-medium">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium">
                         {transaction.client.split(" ").map((n) => n[0]).join("")}
                       </div>
                       <div>
@@ -369,7 +369,7 @@ export function PaymentsDashboard() {
                     <div className="grid grid-cols-3 gap-4 mb-3">
                       <div>
                         <p className="text-xs text-muted-foreground">Deposit Paid</p>
-                        <p className="font-semibold text-[#2ECC71]">
+                        <p className="font-semibold text-accent">
                           ${deposit.depositPaid} / ${deposit.depositRequired}
                         </p>
                       </div>
@@ -389,7 +389,7 @@ export function PaymentsDashboard() {
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">
                       <div
-                        className="bg-gradient-to-r from-[#3B3680] to-[#2ECC71] h-2 rounded-full transition-all"
+                        className="bg-gradient-to-r from-primary to-accent h-2 rounded-full transition-all"
                         style={{
                           width: `${
                             (deposit.depositPaid / deposit.depositRequired) * 100

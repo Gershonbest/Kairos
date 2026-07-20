@@ -42,7 +42,7 @@ export function PhoneInput({
           }}
           disabled={disabled}
         >
-          <SelectTrigger className="w-[150px] bg-white">
+          <SelectTrigger className="w-[150px] bg-input-background">
             <SelectValue placeholder="Country" />
           </SelectTrigger>
           <SelectContent>
@@ -54,7 +54,7 @@ export function PhoneInput({
           </SelectContent>
         </Select>
         <div className="flex flex-1">
-          <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-sm text-gray-600">
+          <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-border bg-muted text-sm text-muted-foreground">
             {dialCode}
           </span>
           <Input
