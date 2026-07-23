@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -26,7 +27,7 @@ class PaystackError(Exception):
 class PaystackClient:
     """Async client for Paystack REST API operations."""
 
-    def __init__(self, *, base_url: str = PAYSTACK_BASE_URL, timeout: float = 30.0):
+    def __init__(self, *, base_url: str = PAYSTACK_BASE_URL, timeout: float = 45.0):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
@@ -73,6 +74,8 @@ class PaystackClient:
 
         if response.status_code >= 400 or not payload.get("status"):
             message = payload.get("message") if isinstance(payload, dict) else "Paystack API error"
+            if not message and isinstance(payload, dict):
+                message = payload.get("title") or payload.get("detail") or f"Paystack HTTP {response.status_code}"
             logger.warning(
                 "paystack.api_error",
                 path=path,
@@ -84,8 +87,21 @@ class PaystackClient:
         return payload.get("data")
 
     async def list_banks(self, *, country: str = "nigeria") -> list[dict]:
-        data = await self._request("GET", f"/bank?country={country}")
-        return list(data or []) if isinstance(data, list) else []
+        last_error: PaystackError | None = None
+        for attempt in range(3):
+            try:
+                data = await self._request("GET", f"/bank?country={country}")
+                return list(data or []) if isinstance(data, list) else []
+            except PaystackError as exc:
+                last_error = exc
+                # Paystack/Cloudflare occasional timeouts — brief backoff then retry.
+                if exc.status_code in {502, 503, 504} and attempt < 2:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        return []
 
     async def create_subaccount(
         self,
@@ -112,6 +128,15 @@ class PaystackClient:
             raise PaystackError("Unexpected subaccount response from Paystack")
         return data
 
+    @staticmethod
+    def checkout_channels() -> list[str] | None:
+        """Payment methods shown on Paystack Checkout (card, bank/OPay, transfer, etc.)."""
+        raw = (get_settings().paystack_channels or "").strip()
+        if not raw:
+            return None
+        channels = [part.strip() for part in raw.split(",") if part.strip()]
+        return channels or None
+
     async def initialize_transaction(
         self,
         *,
@@ -122,6 +147,7 @@ class PaystackClient:
         metadata: dict | None = None,
         subaccount_code: str | None = None,
         currency: str = "NGN",
+        channels: list[str] | None = None,
     ) -> dict:
         body: dict[str, Any] = {
             "email": email,
@@ -131,6 +157,9 @@ class PaystackClient:
             "currency": currency,
             "metadata": metadata or {},
         }
+        resolved_channels = channels if channels is not None else self.checkout_channels()
+        if resolved_channels:
+            body["channels"] = resolved_channels
         if subaccount_code:
             body["subaccount"] = subaccount_code
             # Main account (Kairos) bears Paystack fees; split uses subaccount percentage_charge.

@@ -205,6 +205,7 @@ Copy `backend/.env.example` → `backend/.env`. Key variables:
 | `PAYSTACK_PUBLIC_KEY` | Paystack public key (optional frontend) |
 | `PAYSTACK_WEBHOOK_SECRET` | Webhook HMAC secret (defaults to secret key) |
 | `PAYSTACK_PLATFORM_FEE_PERCENT` | Platform fee on booking payments (default `5`) |
+| `PAYSTACK_CHANNELS` | Checkout methods (`card,bank,ussd,bank_transfer,qr`; OPay under `bank`) |
 | `PAYSTACK_CALLBACK_BASE_URL` | Frontend origin for Paystack redirects |
 
 Frontend optional env:

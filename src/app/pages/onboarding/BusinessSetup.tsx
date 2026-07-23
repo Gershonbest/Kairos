@@ -44,6 +44,7 @@ export function BusinessSetup() {
     businessName: "",
     businessType: "",
     logoUrl: "",
+    helpEmail: "",
     countryCode: "GH",
     dialCode: "+233",
     phoneNumber: "",
@@ -81,6 +82,7 @@ export function BusinessSetup() {
         phone_country_code: formData.dialCode,
         phone_number: formData.phoneNumber,
         logo_url: formData.logoUrl || undefined,
+        help_email: formData.helpEmail.trim() || undefined,
         branches: branches.map((branch) => ({
           ...branch,
           state: branch.state.trim() || undefined,
@@ -122,6 +124,22 @@ export function BusinessSetup() {
                 required
                 disabled={isLoading}
               />
+            </div>
+
+            <div>
+              <Label htmlFor="helpEmail">Help / support email</Label>
+              <Input
+                id="helpEmail"
+                type="email"
+                placeholder="support@yourbusiness.com"
+                value={formData.helpEmail}
+                onChange={(e) => setFormData({ ...formData, helpEmail: e.target.value })}
+                className="mt-1"
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Shown on the public booking confirmation for cancellations and questions. Your signup email is used as the primary contact.
+              </p>
             </div>
 
             <div>

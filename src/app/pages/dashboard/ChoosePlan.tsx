@@ -198,7 +198,7 @@ export function ChoosePlan() {
           <div>
             <p className="font-medium">Selected plan: {plans.find((p) => p.code === selectedPlan)?.name ?? "—"}</p>
             <p className="text-sm text-muted-foreground">
-              Secure checkout via Paystack. Your plan activates for 30 days after payment.
+              Secure Paystack checkout — card, bank transfer, OPay, USSD, and more. Your plan activates for 30 days after payment.
             </p>
           </div>
           <Button

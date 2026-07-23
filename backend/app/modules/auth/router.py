@@ -356,6 +356,7 @@ async def me(
         "tenant_id": user.tenant_id,
         "role": user.role.value,
         "email_verified": user.email_verified,
+        "has_password": bool(user.password_hash),
         "onboarding_completed": onboarding_completed,
         "subscription": subscription,
     }
@@ -364,6 +365,7 @@ async def me(
 @router.patch("/me")
 async def update_me(
     payload: UpdateProfileRequest,
+    background_tasks: BackgroundTasks,
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
@@ -381,6 +383,35 @@ async def update_me(
         if not payload.current_password or not verify_password(payload.current_password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
         user.password_hash = hash_password(payload.new_password)
+
+    if payload.new_email is not None:
+        new_email = str(payload.new_email).strip().lower()
+        if new_email != user.email.lower():
+            if not user.password_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This account uses Google sign-in and cannot change email here",
+                )
+            if not payload.current_password or not verify_password(payload.current_password, user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is required to change email",
+                )
+            taken = (
+                await session.execute(select(User).where(User.email == new_email, User.id != user.id))
+            ).scalar_one_or_none()
+            if taken:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already in use")
+            user.email = new_email
+            if settings.email_verification_required:
+                user.email_verified = False
+                raw_token = await _create_verification_token(session, user.id)
+                _queue_verification_email(
+                    background_tasks,
+                    email=user.email,
+                    full_name=user.full_name,
+                    raw_token=raw_token,
+                )
 
     await session.commit()
     return {

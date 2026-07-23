@@ -19,6 +19,8 @@ from app.infra.models import (
     SchedulingMode,
     Service,
     Tenant,
+    User,
+    UserRole,
 )
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.notifications.service import (
@@ -80,11 +82,15 @@ def _booking_response(
     service: Service,
     tenant: Tenant,
     payment_tx: PaymentTransaction | None,
+    *,
+    client: Client | None = None,
+    business_contact_email: str | None = None,
 ) -> BookingOut:
     amount = booking_payment_amount(service)
     payment_required = bool(tenant.payments_enabled and amount > 0 and tenant.payment_account_id)
     is_confirmed = booking.status == BookingStatus.confirmed
     tenant_key = tenant.public_slug or tenant.id
+    appointment_format = booking.appointment_format or AppointmentFormat.onsite
     return BookingOut(
         id=booking.id,
         status=booking.status.value,
@@ -110,6 +116,57 @@ def _booking_response(
         ),
         is_all_day=bool(booking.is_all_day),
         scheduling_mode=service.scheduling_mode.value,
+        client_name=client.full_name if client else None,
+        client_email=client.email if client else None,
+        service_name=service.name,
+        service_price=float(service.price_amount or 0),
+        service_deposit=float(service.deposit_amount or 0),
+        service_image_url=service.image_url,
+        service_duration_minutes=service.duration_minutes,
+        host_name=service.host_name,
+        host_title=service.host_title,
+        appointment_format=appointment_format.value,
+        location=resolve_service_location(service, tenant, appointment_format),
+        business_name=tenant.name,
+        business_contact_email=business_contact_email,
+        business_help_email=tenant.help_email,
+    )
+
+
+async def _owner_contact_email(session: AsyncSession, tenant_id: str) -> str | None:
+    owner = (
+        await session.execute(
+            select(User).where(
+                User.tenant_id == tenant_id,
+                User.role == UserRole.tenant_admin,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    return owner.email if owner else None
+
+
+async def _enriched_booking_response(
+    session: AsyncSession,
+    booking: Booking,
+    service: Service,
+    tenant: Tenant,
+    payment_tx: PaymentTransaction | None,
+    *,
+    client: Client | None = None,
+) -> BookingOut:
+    if client is None:
+        client = (
+            await session.execute(select(Client).where(Client.id == booking.client_id))
+        ).scalar_one_or_none()
+    contact_email = await _owner_contact_email(session, tenant.id)
+    return _booking_response(
+        booking,
+        service,
+        tenant,
+        payment_tx,
+        client=client,
+        business_contact_email=contact_email,
     )
 
 
@@ -127,6 +184,7 @@ async def resolve_tenant_key(business_key: str, session: AsyncSession) -> Tenant
 @router.get("/businesses/{business_id}")
 async def get_public_business(business_id: str, session: AsyncSession = Depends(get_db_session)) -> dict:
     tenant = await resolve_tenant_key(business_id, session)
+    contact_email = await _owner_contact_email(session, tenant.id)
     return {
         "id": tenant.id,
         "name": tenant.name,
@@ -141,6 +199,8 @@ async def get_public_business(business_id: str, session: AsyncSession = Depends(
         "public_tagline": tenant.public_tagline,
         "public_description": tenant.public_description,
         "public_logo_url": tenant.public_logo_url,
+        "contact_email": contact_email,
+        "help_email": tenant.help_email or contact_email,
     }
 
 
@@ -328,7 +388,7 @@ async def create_public_booking(
                 business_key=business_id,
             )
         await session.commit()
-        return _booking_response(existing, service, tenant, payment_tx)
+        return await _enriched_booking_response(session, existing, service, tenant, payment_tx)
 
     nearby = (
         await session.execute(
@@ -345,20 +405,30 @@ async def create_public_booking(
     if any(booking_blocks_slot(row, start_at, end_at, buffer_minutes) for row in nearby):
         raise HTTPException(status_code=409, detail="Slot already booked")
 
+    client_email = payload.client_email.strip().lower()
+    client_name = payload.client_name.strip()
     client = (
         await session.execute(
-            select(Client).where(Client.tenant_id == tenant.id, Client.email == payload.client_email)
+            select(Client).where(Client.tenant_id == tenant.id, Client.email == client_email)
         )
     ).scalar_one_or_none()
     if not client:
         client = Client(
             tenant_id=tenant.id,
-            full_name=payload.client_name,
-            email=payload.client_email,
+            full_name=client_name,
+            email=client_email,
             phone=payload.client_phone,
             notes=payload.notes,
         )
         session.add(client)
+        await session.flush()
+    else:
+        # Returning email: keep client record but refresh name/phone from this booking.
+        client.full_name = client_name or client.full_name
+        if payload.client_phone:
+            client.phone = payload.client_phone
+        if payload.notes:
+            client.notes = payload.notes
         await session.flush()
 
     booking = Booking(
@@ -418,7 +488,7 @@ async def create_public_booking(
                 appointment_format=appointment_format.value,
                 booking_id=booking.id,
             )
-        return _booking_response(booking, service, tenant, payment_tx)
+        return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
 
     if payment_tx:
         try:
@@ -438,7 +508,7 @@ async def create_public_booking(
     if payment_tx:
         await session.refresh(payment_tx)
     await redis.delete(lock_key)
-    return _booking_response(booking, service, tenant, payment_tx)
+    return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
 
 
 @router.post("/businesses/{business_id}/bookings/{booking_id}/confirm-payment", response_model=BookingOut)
@@ -544,4 +614,4 @@ async def confirm_public_booking_payment(
                 booking_id=booking.id,
             )
 
-    return _booking_response(booking, service, tenant, payment_tx)
+    return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)

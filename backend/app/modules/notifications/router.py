@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user
 from app.infra.db import get_db_session
-from app.infra.models import Notification
+from app.infra.models import Notification, NotificationPreference
+from app.schemas.tenants import NotificationPreferencesUpdate
 
 router = APIRouter()
 
@@ -26,11 +27,66 @@ def _notification_payload(row: Notification) -> dict:
     }
 
 
+def _prefs_payload(row: NotificationPreference) -> dict:
+    return {
+        "email_enabled": row.email_enabled,
+        "booking_created_email": row.booking_created_email,
+        "payment_received_email": row.payment_received_email,
+        "sms_enabled": row.sms_enabled,
+        # Back-compat keys used by older clients.
+        "email": row.email_enabled,
+        "sms": row.sms_enabled,
+    }
+
+
+async def _get_or_create_prefs(session: AsyncSession, tenant_id: str) -> NotificationPreference:
+    prefs = (
+        await session.execute(
+            select(NotificationPreference).where(NotificationPreference.tenant_id == tenant_id)
+        )
+    ).scalar_one_or_none()
+    if prefs:
+        return prefs
+    prefs = NotificationPreference(tenant_id=tenant_id)
+    session.add(prefs)
+    await session.flush()
+    return prefs
+
+
 @router.get("/preferences")
 async def get_notification_preferences(
-    _: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    return {"email": True, "sms": False}
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    prefs = await _get_or_create_prefs(session, current_user.tenant_id)
+    await session.commit()
+    return _prefs_payload(prefs)
+
+
+@router.put("/preferences")
+async def update_notification_preferences(
+    payload: NotificationPreferencesUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    prefs = await _get_or_create_prefs(session, current_user.tenant_id)
+    data = payload.model_dump(exclude_unset=True)
+    if "email_enabled" in data and data["email_enabled"] is not None:
+        prefs.email_enabled = data["email_enabled"]
+    if "booking_created_email" in data and data["booking_created_email"] is not None:
+        prefs.booking_created_email = data["booking_created_email"]
+    if "payment_received_email" in data and data["payment_received_email"] is not None:
+        prefs.payment_received_email = data["payment_received_email"]
+    if "sms_enabled" in data and data["sms_enabled"] is not None:
+        prefs.sms_enabled = data["sms_enabled"]
+    prefs.updated_at = datetime.now(UTC)
+    await session.commit()
+    await session.refresh(prefs)
+    return _prefs_payload(prefs)
 
 
 @router.get("")

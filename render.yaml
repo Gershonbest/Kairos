@@ -78,6 +78,8 @@ services:
         sync: false
       - key: PAYSTACK_PLATFORM_FEE_PERCENT
         value: "5.0"
+      - key: PAYSTACK_CHANNELS
+        value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
         value: https://kairos-frontend-sugb.onrender.com
       - key: SUPER_ADMIN_EMAIL

@@ -8,7 +8,6 @@ import {
   Clock,
   Check,
   ArrowLeft,
-  CreditCard,
   Sparkles,
   MessageCircle,
   X,
@@ -26,7 +25,7 @@ import {
   Lock,
   Loader2,
 } from "lucide-react";
-import { api } from "../../../lib/api/client";
+import { api, type PublicBookingResponse } from "../../../lib/api/client";
 import {
   appointmentTypeLabels,
   formatHostLabel,
@@ -173,12 +172,15 @@ export function PublicBooking() {
     public_tagline?: string;
     public_description?: string;
     public_logo_url?: string;
+    contact_email?: string | null;
+    help_email?: string | null;
   }>({ name: "Business" });
   const [appointmentFormat, setAppointmentFormat] = useState<AppointmentFormat | "">("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("GH");
   const [phoneDialCode, setPhoneDialCode] = useState("+233");
   const [availableSlotIsos, setAvailableSlotIsos] = useState<string[]>([]);
   const [form, setForm] = useState({ name: "", email: "", phone: "", notes: "" });
+  const [confirmedBooking, setConfirmedBooking] = useState<PublicBookingResponse | null>(null);
   const [calendarLinks, setCalendarLinks] = useState<{
     googleCalendarUrl: string;
     icsDownloadPath: string;
@@ -207,27 +209,22 @@ export function PublicBooking() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Return from Paystack checkout — verify and show confirmation.
+  // Return from Paystack checkout — verify and show confirmation (UI state is lost on redirect).
   useEffect(() => {
     if (!businessId || paymentHandledRef.current) return;
     const paymentFlag = searchParams.get("payment");
-    const reference = searchParams.get("reference");
+    const reference = searchParams.get("reference") || searchParams.get("trxref");
     const bookingId = searchParams.get("booking_id");
     if (paymentFlag !== "1" || !reference || !bookingId) return;
 
     paymentHandledRef.current = true;
     setIsBooking(true);
     setBookingError("");
+    setStep("confirmation");
     api
       .confirmPublicPayment(businessId, bookingId, reference)
       .then((confirmed) => {
-        if (confirmed.google_calendar_url && confirmed.ics_download_path) {
-          setCalendarLinks({
-            googleCalendarUrl: confirmed.google_calendar_url,
-            icsDownloadPath: confirmed.ics_download_path,
-          });
-        }
-        setStep("confirmation");
+        applyConfirmedBooking(confirmed);
       })
       .catch((err) => {
         setBookingError(err instanceof Error ? err.message : "Payment verification failed.");
@@ -239,10 +236,12 @@ export function PublicBooking() {
   }, [businessId, searchParams]);
 
   useEffect(() => {
+    // Don't kick users off payment/confirmation after Paystack redirect (local slot state is empty).
+    if (paymentHandledRef.current || confirmedBooking) return;
     if (step === "payment" && (!service || !selectedSlotIso)) {
       setStep(service ? "datetime" : "service");
     }
-  }, [step, service, selectedSlotIso]);
+  }, [step, service, selectedSlotIso, confirmedBooking]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -259,6 +258,8 @@ export function PublicBooking() {
           public_tagline: biz.public_tagline,
           public_description: biz.public_description,
           public_logo_url: biz.public_logo_url,
+          contact_email: biz.contact_email,
+          help_email: biz.help_email,
         });
         if (biz.country_code) {
           setPhoneCountryCode(biz.country_code);
@@ -349,6 +350,61 @@ export function PublicBooking() {
     setChatInput("");
   }
 
+  function applyConfirmedBooking(confirmed: PublicBookingResponse) {
+    setConfirmedBooking(confirmed);
+    if (confirmed.client_email || confirmed.client_name) {
+      setForm((prev) => ({
+        ...prev,
+        email: confirmed.client_email || prev.email,
+        name: confirmed.client_name || prev.name,
+      }));
+    }
+    if (confirmed.start_at) {
+      setSelectedSlotIso(confirmed.start_at);
+      setSelectedDate(confirmed.start_at.slice(0, 10));
+    }
+    if (confirmed.appointment_format) {
+      setAppointmentFormat(confirmed.appointment_format);
+    }
+    if (confirmed.service_id) {
+      setService((prev) => {
+        if (prev && prev.id === confirmed.service_id) return prev;
+        return {
+          id: confirmed.service_id,
+          name: confirmed.service_name || "Appointment",
+          description: "",
+          duration: confirmed.service_duration_minutes || 60,
+          scheduling_mode: (confirmed.scheduling_mode as Service["scheduling_mode"]) || "fixed",
+          price: confirmed.service_price ?? 0,
+          deposit: confirmed.service_deposit ?? 0,
+          category: "",
+          image: confirmed.service_image_url || "",
+          appointment_type: "onsite",
+          location: confirmed.location || undefined,
+          use_business_location: true,
+          host_name: confirmed.host_name || undefined,
+          host_title: confirmed.host_title || undefined,
+          buffer_minutes: 0,
+        };
+      });
+    }
+    if (confirmed.business_name) {
+      setBusinessProfile((prev) => ({
+        ...prev,
+        name: confirmed.business_name || prev.name,
+        contact_email: confirmed.business_contact_email ?? prev.contact_email,
+        help_email: confirmed.business_help_email ?? prev.help_email,
+      }));
+    }
+    if (confirmed.google_calendar_url && confirmed.ics_download_path) {
+      setCalendarLinks({
+        googleCalendarUrl: confirmed.google_calendar_url,
+        icsDownloadPath: confirmed.ics_download_path,
+      });
+    }
+    setStep("confirmation");
+  }
+
   function resetBooking() {
     setStep("service");
     setService(null);
@@ -356,7 +412,9 @@ export function PublicBooking() {
     setSelectedSlotIso("");
     setAppointmentFormat("");
     setForm({ name: "", email: "", phone: "", notes: "" });
+    setConfirmedBooking(null);
     setCalendarLinks(null);
+    paymentHandledRef.current = false;
   }
 
   function openCalendar(calendar: "google" | "ics") {
@@ -420,24 +478,27 @@ export function PublicBooking() {
         idempotency_key: idempotencyKey,
       });
 
-      let confirmedBooking = booking;
+      let confirmedBookingResponse = booking;
+      const amountDue = service.deposit > 0 ? service.deposit : service.price;
+
       if (booking.payment_required && booking.payment_status === "pending") {
         if (booking.payment_authorization_url) {
           window.location.href = booking.payment_authorization_url;
           return;
         }
-        // Fallback demo confirm when no Paystack URL is returned.
-        confirmedBooking = await api.confirmPublicPayment(businessId, booking.id);
+        setBookingError(
+          "Payment could not be started (no Paystack checkout URL). Ask the business to reconnect Paystack, then try again."
+        );
+        return;
       }
 
-      if (confirmedBooking.google_calendar_url && confirmedBooking.ics_download_path) {
-        setCalendarLinks({
-          googleCalendarUrl: confirmedBooking.google_calendar_url,
-          icsDownloadPath: confirmedBooking.ics_download_path,
-        });
+      if (!booking.payment_required && amountDue > 0) {
+        setBookingError(
+          "This business has not connected Paystack yet, so live checkout was skipped and the booking was confirmed without payment."
+        );
       }
 
-      setStep("confirmation");
+      applyConfirmedBooking(confirmedBookingResponse);
     } catch (err) {
       setBookingError(err instanceof Error ? err.message : "Unable to complete booking payment.");
     } finally {
@@ -1296,106 +1357,76 @@ export function PublicBooking() {
                 Secure your spot
               </h2>
               <p style={{ fontSize: 14, color: stone500, marginBottom: 28 }}>
-                Pay the ₦{service.deposit} deposit now. Remaining ₦{service.price - service.deposit} due at your appointment.
+                {service.deposit > 0
+                  ? `Pay ₦${service.deposit} now to secure your spot. Remaining ₦${Math.max(0, service.price - service.deposit)} is due at your appointment.`
+                  : `Pay ₦${service.price} securely via Paystack to confirm your booking.`}
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-                  {/* Card visual */}
+                <div
+                  style={{
+                    background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 55%, ${brandPrimary} 100%)`,
+                    borderRadius: 20,
+                    padding: "28px 28px 24px",
+                    position: "relative",
+                    overflow: "hidden",
+                    minHeight: 150,
+                  }}
+                >
                   <div
                     style={{
-                      background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 55%, ${brandPrimary} 100%)`,
-                      borderRadius: 20,
-                      padding: "28px 28px 24px",
-                      position: "relative",
-                      overflow: "hidden",
-                      minHeight: 170,
+                      position: "absolute",
+                      top: -40,
+                      right: -40,
+                      width: 200,
+                      height: 200,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.07)",
                     }}
-                  >
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: -40,
-                        right: -40,
-                        width: 200,
-                        height: 200,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.07)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        position: "absolute",
-                        bottom: -60,
-                        left: -20,
-                        width: 160,
-                        height: 160,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.05)",
-                      }}
-                    />
-                    <div style={{ position: "relative" }}>
-                        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 28 }}>
-                        Deposit Payment · {businessProfile.name}
-                      </p>
-                      <p style={{ color: "#fff", fontSize: 20, fontWeight: 700, letterSpacing: "0.2em", marginBottom: 24 }}>
-                        •••• •••• •••• ••••
-                      </p>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-                        <div>
-                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>Card holder</p>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: "#fff" }}>{form.name || "Your name"}</p>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>Amount due</p>
-                          <p style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>₦{service.deposit}</p>
-                        </div>
-                      </div>
-                    </div>
+                  />
+                  <div style={{ position: "relative" }}>
+                    <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 20 }}>
+                      Secure checkout · {businessProfile.name}
+                    </p>
+                    <p style={{ color: "#fff", fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
+                      ₦{service.deposit > 0 ? service.deposit : service.price}
+                    </p>
+                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
+                      Card, bank transfer, OPay, USSD, and more via Paystack
+                    </p>
                   </div>
+                </div>
 
-                  {/* Card form */}
-                  <div
-                    style={{
-                      backgroundColor: "var(--color-card)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 20,
-                      padding: 22,
-                    }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                      <div>
-                        <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 7 }}>Card number</label>
-                        <div style={{ position: "relative" }}>
-                          <CreditCard size={15} color={stone400} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }} />
-                          <input
-                            placeholder="1234 5678 9012 3456"
-                            style={{ ...inputStyle, paddingLeft: 38 }}
-                            onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                            onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                          />
-                        </div>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                        {[
-                          { label: "Expiry", placeholder: "MM / YY" },
-                          { label: "CVC", placeholder: "•••" },
-                        ].map(({ label, placeholder }) => (
-                          <div key={label}>
-                            <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 7 }}>{label}</label>
-                            <input
-                              placeholder={placeholder}
-                              style={inputStyle}
-                              onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                              onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11, color: stone400 }}>
-                      <Lock size={12} /> Encrypted with 256-bit SSL. We never store card details.
-                    </div>
+                <div
+                  style={{
+                    backgroundColor: "var(--color-card)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 20,
+                    padding: 22,
+                  }}
+                >
+                  <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 12 }}>
+                    Available payment methods
+                  </p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {["Card", "Bank transfer", "Pay with bank / OPay", "USSD", "QR"].map((method) => (
+                      <span
+                        key={method}
+                        style={{
+                          fontSize: 12,
+                          color: dark,
+                          backgroundColor: creamCard,
+                          border: "1px solid var(--color-border)",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                        }}
+                      >
+                        {method}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11, color: stone400 }}>
+                    <Lock size={12} /> You’ll choose your method on the secure Paystack checkout page. We never store card details.
                   </div>
                 </div>
 
@@ -1444,12 +1475,16 @@ export function PublicBooking() {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
                       <span style={{ color: stone500 }}>Due today</span>
-                      <span style={{ fontWeight: 700, color: brandPrimary }}>₦{service.deposit}</span>
+                      <span style={{ fontWeight: 700, color: brandPrimary }}>
+                        ₦{service.deposit > 0 ? service.deposit : service.price}
+                      </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
-                      <span style={{ color: stone400 }}>Due at appointment</span>
-                      <span style={{ color: stone400 }}>₦{service.price - service.deposit}</span>
-                    </div>
+                    {service.deposit > 0 && (
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
+                        <span style={{ color: stone400 }}>Due at appointment</span>
+                        <span style={{ color: stone400 }}>₦{Math.max(0, service.price - service.deposit)}</span>
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -1488,11 +1523,12 @@ export function PublicBooking() {
                     {isBooking ? (
                       <>
                         <Loader2 size={15} className="animate-spin" />
-                        Processing payment...
+                        Redirecting to Paystack...
                       </>
                     ) : (
                       <>
-                        <Lock size={15} /> Pay ₦{service.deposit} deposit
+                        <Lock size={15} /> Continue to Paystack · ₦
+                        {service.deposit > 0 ? service.deposit : service.price}
                       </>
                     )}
                   </button>
@@ -1505,7 +1541,7 @@ export function PublicBooking() {
           )}
 
           {/* ── Step 5: Confirmation ── */}
-          {step === "confirmation" && service && (
+          {step === "confirmation" && (service || confirmedBooking) && (
             <motion.div
               key="confirmation"
               initial={{ opacity: 0, scale: 0.97 }}
@@ -1513,6 +1549,9 @@ export function PublicBooking() {
               transition={{ duration: 0.28 }}
               style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}
             >
+              {isBooking && (
+                <p style={{ fontSize: 14, color: stone500, marginBottom: 16 }}>Confirming your payment…</p>
+              )}
               <motion.div
                 initial={{ scale: 0, rotate: -20 }}
                 animate={{ scale: 1, rotate: 0 }}
@@ -1544,7 +1583,10 @@ export function PublicBooking() {
               </h2>
               <p style={{ fontSize: 14, color: stone500, marginBottom: 32, maxWidth: 380, lineHeight: 1.7 }}>
                 A confirmation email with your calendar invite has been sent to{" "}
-                <strong style={{ color: dark }}>{form.email}</strong>.
+                <strong style={{ color: dark }}>
+                  {confirmedBooking?.client_email || form.email}
+                </strong>
+                .
               </p>
 
               {/* Booking card */}
@@ -1570,10 +1612,20 @@ export function PublicBooking() {
                     borderBottom: "1px solid var(--color-border)",
                   }}
                 >
-                  <img src={service.image} alt="" style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover" }} />
+                  {(confirmedBooking?.service_image_url || service?.image) && (
+                    <img
+                      src={confirmedBooking?.service_image_url || service?.image}
+                      alt=""
+                      style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover" }}
+                    />
+                  )}
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>{service.name}</p>
-                    <p style={{ fontSize: 12, color: stone500 }}>{businessProfile.name}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>
+                      {confirmedBooking?.service_name || service?.name}
+                    </p>
+                    <p style={{ fontSize: 12, color: stone500 }}>
+                      {confirmedBooking?.business_name || businessProfile.name}
+                    </p>
                   </div>
                   <div
                     style={{
@@ -1590,23 +1642,75 @@ export function PublicBooking() {
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {[
-                    { label: "Format", value: resolvedAppointmentFormat === "online" ? "Online" : "In person" },
-                    ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
-                    ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
-                    { label: "Date", value: `${selectedDateObj?.day}, ${selectedDateObj?.month} ${selectedDateObj?.num}` },
-                    ...(service.scheduling_mode === "all_day"
-                      ? []
-                      : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
-                    { label: "Duration", value: serviceDurationLabel(service) },
-                    { label: "Deposit paid", value: `₦${service.deposit}` },
-                    { label: "Balance due", value: `₦${service.price - service.deposit} at appointment` },
-                  ].map(({ label, value }) => (
-                    <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, textAlign: "left" }}>
-                      <span style={{ color: stone500 }}>{label}</span>
-                      <span style={{ fontWeight: 500, color: dark }}>{value}</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    const confFormat =
+                      confirmedBooking?.appointment_format ||
+                      (resolvedAppointmentFormat === "online" ? "online" : "onsite");
+                    const confHost =
+                      confirmedBooking?.host_name ||
+                      (confirmedBooking?.host_title
+                        ? confirmedBooking.host_title
+                        : hostLabel) ||
+                      hostLabel;
+                    const confLocation = confirmedBooking?.location || appointmentLocation;
+                    const confStart = confirmedBooking?.start_at || selectedSlotIso;
+                    const confDate = confStart
+                      ? new Date(confStart).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : selectedDateObj
+                        ? `${selectedDateObj.day}, ${selectedDateObj.month} ${selectedDateObj.num}`
+                        : "—";
+                    const confTime =
+                      confirmedBooking?.is_all_day || service?.scheduling_mode === "all_day"
+                        ? null
+                        : confStart
+                          ? displayTime(confStart)
+                          : selectedSlotIso
+                            ? displayTime(selectedSlotIso)
+                            : null;
+                    const confDuration =
+                      confirmedBooking?.scheduling_mode === "all_day"
+                        ? "All day"
+                        : confirmedBooking?.service_duration_minutes
+                          ? confirmedBooking.scheduling_mode === "flexible"
+                            ? `About ${confirmedBooking.service_duration_minutes} min`
+                            : `${confirmedBooking.service_duration_minutes} min`
+                          : service
+                            ? serviceDurationLabel(service)
+                            : "—";
+                    const depositPaid =
+                      confirmedBooking?.service_deposit ?? service?.deposit ?? 0;
+                    const price = confirmedBooking?.service_price ?? service?.price ?? 0;
+                    const rows = [
+                      { label: "Format", value: confFormat === "online" ? "Online" : "In person" },
+                      ...(confHost ? [{ label: "You'll meet", value: confHost }] : []),
+                      ...(confLocation ? [{ label: "Location", value: confLocation }] : []),
+                      { label: "Date", value: confDate },
+                      ...(confTime ? [{ label: "Time", value: confTime }] : []),
+                      { label: "Duration", value: confDuration },
+                      ...(depositPaid > 0
+                        ? [
+                            { label: "Deposit paid", value: `₦${depositPaid}` },
+                            {
+                              label: "Balance due",
+                              value: `₦${Math.max(0, price - depositPaid)} at appointment`,
+                            },
+                          ]
+                        : [{ label: "Amount paid", value: `₦${price}` }]),
+                    ];
+                    return rows.map(({ label, value }) => (
+                      <div
+                        key={label}
+                        style={{ display: "flex", justifyContent: "space-between", fontSize: 13, textAlign: "left" }}
+                      >
+                        <span style={{ color: stone500 }}>{label}</span>
+                        <span style={{ fontWeight: 500, color: dark }}>{value}</span>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
 
@@ -1678,11 +1782,25 @@ export function PublicBooking() {
                 </button>
               </div>
 
-              <p style={{ marginTop: 28, fontSize: 12, color: stone400 }}>
+              <p style={{ marginTop: 28, fontSize: 12, color: stone400, maxWidth: 420, lineHeight: 1.6 }}>
                 Need to cancel or reschedule? Email{" "}
-                <a href="mailto:hello@lumierewellness.com" style={{ color: brandPrimary }}>
-                  hello@lumierewellness.com
+                <a
+                  href={`mailto:${businessProfile.contact_email || businessProfile.help_email || ""}`}
+                  style={{ color: brandPrimary }}
+                >
+                  {businessProfile.contact_email || "the business"}
                 </a>
+                {businessProfile.help_email &&
+                  businessProfile.help_email !== businessProfile.contact_email && (
+                    <>
+                      {" "}
+                      or help at{" "}
+                      <a href={`mailto:${businessProfile.help_email}`} style={{ color: brandPrimary }}>
+                        {businessProfile.help_email}
+                      </a>
+                    </>
+                  )}
+                .
               </p>
             </motion.div>
           )}

@@ -29,6 +29,7 @@ PAYSTACK_SECRET_KEY=sk_test_xxxxxxxx        # or sk_live_...
 PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxx        # or pk_live_...
 PAYSTACK_WEBHOOK_SECRET=sk_test_xxxxxxxx    # usually same as secret key
 PAYSTACK_PLATFORM_FEE_PERCENT=5.0           # Kairos share of each booking payment
+PAYSTACK_CHANNELS=card,bank,ussd,bank_transfer,qr
 PAYSTACK_CALLBACK_BASE_URL=http://localhost:5173   # frontend origin for return URLs
 ```
 
@@ -38,6 +39,7 @@ PAYSTACK_CALLBACK_BASE_URL=http://localhost:5173   # frontend origin for return 
 | `PAYSTACK_PUBLIC_KEY` | Optional | For Inline JS; redirect checkout works without it |
 | `PAYSTACK_WEBHOOK_SECRET` | Recommended | HMAC-SHA512 of webhook body; defaults to secret key if empty |
 | `PAYSTACK_PLATFORM_FEE_PERCENT` | No (default `5`) | Stored on subaccount as `percentage_charge` |
+| `PAYSTACK_CHANNELS` | No | Checkout methods sent on initialize. OPay is under `bank`. Empty = dashboard defaults |
 | `PAYSTACK_CALLBACK_BASE_URL` | Recommended | Defaults to `FRONTEND_BASE_URL` |
 
 Optional frontend build arg / env:
@@ -77,6 +79,23 @@ In Paystack → **API Keys & Webhooks**, set:
 Subscribe to at least **`charge.success`**.
 
 Signature header expected: `x-paystack-signature` (HMAC-SHA512).
+
+### 3b. Enable payment channels (card, transfer, OPay, …)
+
+In Paystack → **Settings → Preferences**, turn on the channels you want customers to see:
+
+| Channel | What customers see |
+|---------|-------------------|
+| Card | Debit/credit cards |
+| Bank | Pay with bank (includes **OPay** and other bank apps) |
+| Bank transfer | Pay with Transfer (dedicated account number) |
+| USSD | Dial bank USSD codes |
+| QR | Scan to pay |
+
+Kairos also sends `PAYSTACK_CHANNELS` on every initialize (default: `card,bank,ussd,bank_transfer,qr`).  
+**Both** dashboard Preferences and this env list must allow a method for it to appear.
+
+Bank transfer / USSD can take longer than card — keep the **webhook** configured so bookings confirm even if the browser never returns.
 
 ### 4. Connect a tenant settlement account
 

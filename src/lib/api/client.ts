@@ -225,6 +225,20 @@ export interface PublicBookingResponse {
   ics_download_path?: string | null;
   is_all_day?: boolean;
   scheduling_mode?: SchedulingMode | null;
+  client_name?: string | null;
+  client_email?: string | null;
+  service_name?: string | null;
+  service_price?: number | null;
+  service_deposit?: number | null;
+  service_image_url?: string | null;
+  service_duration_minutes?: number | null;
+  host_name?: string | null;
+  host_title?: string | null;
+  appointment_format?: "online" | "onsite" | null;
+  location?: string | null;
+  business_name?: string | null;
+  business_contact_email?: string | null;
+  business_help_email?: string | null;
 }
 
 export interface BookingListItem {
@@ -270,6 +284,8 @@ export interface OnboardingPayload {
   latitude?: number | null;
   longitude?: number | null;
   logo_url?: string;
+  help_email?: string;
+  timezone?: string;
   branches?: TenantBranchPayload[];
   location?: string;
 }
@@ -363,6 +379,7 @@ export const api = {
       tenant_id?: string;
       role: string;
       email_verified?: boolean;
+      has_password?: boolean;
       onboarding_completed?: boolean;
       subscription?: SubscriptionStatus | null;
     }>("/auth/me"),
@@ -370,6 +387,7 @@ export const api = {
     full_name?: string;
     current_password?: string;
     new_password?: string;
+    new_email?: string;
   }) =>
     request<{ id: string; full_name: string; email: string; email_verified: boolean }>("/auth/me", {
       method: "PATCH",
@@ -399,7 +417,38 @@ export const api = {
       public_tagline?: string;
       public_description?: string;
       public_logo_url?: string;
+      help_email?: string | null;
+      timezone?: string;
+      onboarding_completed?: boolean;
     }>("/tenants/me"),
+  updateTenant: (payload: {
+    business_name?: string;
+    business_type?: string;
+    country_code?: string;
+    state?: string;
+    address_line?: string;
+    phone_country_code?: string;
+    phone_number?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    logo_url?: string;
+    help_email?: string | null;
+    timezone?: string;
+    public_slug?: string;
+    branches?: TenantBranchPayload[];
+    location?: string;
+  }) =>
+    request<{
+      id: string;
+      name: string;
+      business_type?: string;
+      help_email?: string | null;
+      timezone?: string;
+      public_slug?: string;
+      [key: string]: unknown;
+    }>("/tenants/me", { method: "PATCH", body: JSON.stringify(payload) }),
+  deactivateTenant: () =>
+    request<{ ok: boolean; status: string }>("/tenants/me/deactivate", { method: "POST" }),
   getBookingLinks: () =>
     request<{ business_url: string; service_urls: Array<{ service_id: string; service_name: string; url: string }> }>(
       "/tenants/me/booking-links"
@@ -463,8 +512,34 @@ export const api = {
     }>(`/payments/verify/${encodeURIComponent(reference)}`, { method: "POST" }),
   listPaystackBanks: () =>
     request<Array<{ name: string; code: string; slug?: string }>>("/tenants/me/paystack/banks"),
-  updatePublicProfile: (payload: { public_tagline?: string; public_description?: string; public_logo_url?: string }) =>
+  updatePublicProfile: (payload: {
+    public_tagline?: string;
+    public_description?: string;
+    public_logo_url?: string;
+    public_slug?: string;
+  }) =>
     request<{ ok: boolean }>("/tenants/me/public-profile", { method: "PUT", body: JSON.stringify(payload) }),
+  getNotificationPreferences: () =>
+    request<{
+      email_enabled: boolean;
+      booking_created_email: boolean;
+      payment_received_email: boolean;
+      sms_enabled: boolean;
+      email?: boolean;
+      sms?: boolean;
+    }>("/notifications/preferences"),
+  updateNotificationPreferences: (payload: {
+    email_enabled?: boolean;
+    booking_created_email?: boolean;
+    payment_received_email?: boolean;
+    sms_enabled?: boolean;
+  }) =>
+    request<{
+      email_enabled: boolean;
+      booking_created_email: boolean;
+      payment_received_email: boolean;
+      sms_enabled: boolean;
+    }>("/notifications/preferences", { method: "PUT", body: JSON.stringify(payload) }),
   listClients: () =>
     request<
       Array<{
@@ -588,6 +663,8 @@ export const api = {
       public_tagline?: string;
       public_description?: string;
       public_logo_url?: string;
+      contact_email?: string | null;
+      help_email?: string | null;
     }>(`/public/businesses/${businessId}`),
   listPublicAvailability: (businessId: string, serviceId: string, fromIso: string, toIso: string) =>
     request<{ slots: string[] }>(

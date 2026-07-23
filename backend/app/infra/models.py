@@ -83,6 +83,8 @@ class Tenant(Base):
     public_tagline: Mapped[str | None] = mapped_column(String(220))
     public_description: Mapped[str | None] = mapped_column(Text)
     public_logo_url: Mapped[str | None] = mapped_column(String(500))
+    help_email: Mapped[str | None] = mapped_column(String(255))
+    timezone: Mapped[str] = mapped_column(String(64), default="Africa/Lagos", nullable=False)
     country_code: Mapped[str | None] = mapped_column(String(2))
     state: Mapped[str | None] = mapped_column(String(120))
     address_line: Mapped[str | None] = mapped_column(String(300))
@@ -290,3 +292,19 @@ class Notification(Base):
     booking_id: Mapped[str | None] = mapped_column(ForeignKey("bookings.id"), index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+    __table_args__ = (UniqueConstraint("tenant_id", name="uq_notification_preferences_tenant"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    booking_created_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    payment_received_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sms_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

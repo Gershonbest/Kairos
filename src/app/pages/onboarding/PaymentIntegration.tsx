@@ -7,7 +7,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { CreditCard, Check } from "lucide-react";
 import { OnboardingShell } from "../../components/layouts/OnboardingShell";
-import { api } from "../../../lib/api/client";
+import { api, SessionExpiredError, SubscriptionRequiredError } from "../../../lib/api/client";
 
 export function PaymentIntegration() {
   const navigate = useNavigate();
@@ -23,7 +23,22 @@ export function PaymentIntegration() {
     api
       .listPaystackBanks()
       .then((rows) => setBanks(rows.map((b) => ({ name: b.name, code: b.code }))))
-      .catch(() => setError("Unable to load Paystack banks. Check server Paystack configuration."))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "";
+        if (err instanceof SessionExpiredError || /session expired|unauthor|log in/i.test(message)) {
+          setError("Please log in again, then return to this page to connect Paystack.");
+          return;
+        }
+        if (err instanceof SubscriptionRequiredError || /402|trial|subscription/i.test(message)) {
+          setError(message || "Your trial has ended. Choose a plan before connecting Paystack.");
+          return;
+        }
+        if (/504|timeout|gateway/i.test(message)) {
+          setError("Paystack is temporarily unreachable. Wait a moment and refresh this page.");
+          return;
+        }
+        setError(message || "Unable to load Paystack banks. Check server Paystack configuration.");
+      })
       .finally(() => setBanksLoading(false));
 
     api

@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     paystack_webhook_secret: str | None = None
     paystack_platform_fee_percent: float = 5.0
     paystack_callback_base_url: str | None = None
+    # Comma-separated checkout channels. Empty = Paystack dashboard defaults.
+    # OPay and other bank apps appear under "bank". Example:
+    # card,bank,ussd,bank_transfer,qr,mobile_money
+    paystack_channels: str = "card,bank,ussd,bank_transfer,qr"
     otel_exporter_otlp_endpoint: str | None = None
     public_booking_base_url: str = "http://localhost:5173/book"
     frontend_base_url: str = "http://localhost:5173"
