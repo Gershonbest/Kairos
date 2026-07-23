@@ -8,8 +8,8 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.calendar_ics import CalendarEventArgs, build_booking_ics, build_google_calendar_url
-from app.infra.email import EmailAttachment, send_email
+from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
+from app.infra.email import EmailAttachment, email_service
 from app.infra.models import (
     Booking,
     Client,
@@ -43,7 +43,7 @@ def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) 
         "— Kairos Bookings"
     )
     try:
-        send_email(to=to, subject=subject, html_body=html, text_body=text)
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
     except Exception:
         logger.exception("notifications.verification_email_failed", to=to)
 
@@ -87,8 +87,8 @@ def send_booking_confirmation_email(
         "online_meeting_link": online_meeting_link,
         "is_all_day": is_all_day,
     }
-    calendar_invite = build_booking_ics(**calendar_args)
-    google_calendar_url = build_google_calendar_url(**calendar_args)
+    calendar_invite = calendar_invite_service.build_booking_ics(**calendar_args)
+    google_calendar_url = calendar_invite_service.build_google_calendar_url(**calendar_args)
     host_line = ""
     host_text = ""
     if host_name:
@@ -149,19 +149,22 @@ def send_booking_confirmation_email(
         f"If you need to make changes, please contact {business_name} directly.\n\n"
         "— Kairos Bookings"
     )
-    send_email(
-        to=to,
-        subject=subject,
-        html_body=html,
-        text_body=text,
-        attachments=[
-            EmailAttachment(
-                filename=f"booking-{booking_id}.ics",
-                content=calendar_invite.encode("utf-8"),
-                content_type="text/calendar",
-            )
-        ],
-    )
+    try:
+        email_service.send(
+            to=to,
+            subject=subject,
+            html_body=html,
+            text_body=text,
+            attachments=[
+                EmailAttachment(
+                    filename=f"booking-{booking_id}.ics",
+                    content=calendar_invite.encode("utf-8"),
+                    content_type="text/calendar",
+                )
+            ],
+        )
+    except Exception:
+        logger.exception("notifications.booking_confirmation_email_failed", to=to, booking_id=booking_id)
 
 
 def send_new_booking_owner_email(
@@ -202,7 +205,7 @@ def send_new_booking_owner_email(
         "— Kairos Bookings"
     )
     try:
-        send_email(to=to, subject=subject, html_body=html, text_body=text)
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
     except Exception:
         logger.exception("notifications.owner_booking_email_failed", to=to, booking_id=booking_id)
 
@@ -275,6 +278,6 @@ def send_trial_ending_email(
         "— Kairos Bookings"
     )
     try:
-        send_email(to=to, subject=subject, html_body=html, text_body=text)
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
     except Exception:
         logger.exception("notifications.trial_ending_email_failed", to=to)

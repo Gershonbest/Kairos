@@ -140,7 +140,7 @@ export function ServiceCreation() {
                   </div>
 
                   <div>
-                    <Label htmlFor={`price-${service.id}`}>Price (USD)</Label>
+                    <Label htmlFor={`price-${service.id}`}>Price (NGN)</Label>
                     <Input
                       id={`price-${service.id}`}
                       type="number"

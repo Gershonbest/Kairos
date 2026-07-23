@@ -42,12 +42,30 @@ type Transaction = {
 export function PaymentsDashboard() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [revenueData, setRevenueData] = useState<Array<{ month: string; revenue: number; deposits: number }>>([]);
-  const [paymentMethodData, setPaymentMethodData] = useState<Array<{ name: string; value: number; color: string }>>(
-    []
-  );
+  const [settlementSplit, setSettlementSplit] = useState<Array<{ name: string; value: number; color: string }>>([]);
+  const [platformFeePercent, setPlatformFeePercent] = useState(5);
+  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    api
+      .getPaymentProvider()
+      .then((provider) => {
+        const fee = Number(provider.platform_fee_percent ?? 5);
+        setPlatformFeePercent(fee);
+        setPaymentsEnabled(Boolean(provider.payments_enabled && provider.account_id));
+        setSettlementSplit([
+          { name: "Your settlement", value: Math.max(0, 100 - fee), color: "var(--color-primary)" },
+          { name: "Kairos fee", value: fee, color: "var(--color-accent)" },
+        ]);
+      })
+      .catch(() => {
+        setSettlementSplit([
+          { name: "Your settlement", value: 95, color: "var(--color-primary)" },
+          { name: "Kairos fee", value: 5, color: "var(--color-accent)" },
+        ]);
+      });
+
     api
       .listTransactions()
       .then((rows) => {
@@ -59,26 +77,9 @@ export function PaymentsDashboard() {
           deposit: row.amount,
           status: row.status === "succeeded" ? "completed" : row.status,
           date: row.created_at,
-          method: row.provider,
+          method: row.provider === "kairos" ? "Demo" : "Paystack",
         }));
         setRecentTransactions(mapped);
-
-        const totalCount = mapped.length || 1;
-        const providerNames = [
-          { id: "stripe", color: "var(--color-primary)", name: "Stripe" },
-          { id: "paystack", color: "var(--color-accent)", name: "Paystack" },
-          { id: "flutterwave", color: "var(--color-chart-2)", name: "Flutterwave" },
-          { id: "kairos", color: "var(--color-accent)", name: "Kairos" },
-        ];
-        setPaymentMethodData(
-          providerNames.map((provider) => ({
-            name: provider.name,
-            color: provider.color,
-            value: Math.round(
-              (mapped.filter((tx) => tx.method.toLowerCase().includes(provider.id)).length / totalCount) * 100
-            ),
-          }))
-        );
 
         const monthly: Record<string, { month: string; revenue: number; deposits: number }> = {};
         for (const tx of mapped) {
@@ -165,7 +166,7 @@ export function PaymentsDashboard() {
             <DollarSign className="w-4 h-4 text-accent" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${totalRevenue.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalRevenue.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live from transactions</span>
@@ -179,7 +180,7 @@ export function PaymentsDashboard() {
             <CreditCard className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${totalDeposits.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalDeposits.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">
               {totalRevenue > 0 ? Math.round((totalDeposits / totalRevenue) * 100) : 0}% of total revenue
             </p>
@@ -192,7 +193,7 @@ export function PaymentsDashboard() {
             <Clock className="w-4 h-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${pendingTotal.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{pendingTotal.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">{pendingPayments.length} outstanding payments</p>
           </CardContent>
         </Card>
@@ -203,7 +204,7 @@ export function PaymentsDashboard() {
             <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${averageTransaction.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{averageTransaction.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live average</span>
@@ -241,13 +242,18 @@ export function PaymentsDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Payment Methods</CardTitle>
+            <CardTitle>Paystack settlement split</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {paymentsEnabled
+                ? `Subaccount percentage_charge: ${platformFeePercent}% to Kairos`
+                : "Connect Paystack to enable live settlement splits"}
+            </p>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie
-                  data={paymentMethodData}
+                  data={settlementSplit}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -255,7 +261,7 @@ export function PaymentsDashboard() {
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {paymentMethodData.map((entry, index) => (
+                  {settlementSplit.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
@@ -263,7 +269,7 @@ export function PaymentsDashboard() {
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-2 mt-4">
-              {paymentMethodData.map((method) => (
+              {settlementSplit.map((method) => (
                 <div key={method.name} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div
@@ -276,6 +282,9 @@ export function PaymentsDashboard() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Provider: Paystack only. Booking payments settle to your subaccount; Kairos keeps the platform fee.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -321,8 +330,8 @@ export function PaymentsDashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-lg">${transaction.deposit.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">Service total: ${transaction.amount.toFixed(2)}</p>
+                      <p className="font-semibold text-lg">₦{transaction.deposit.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">Service total: ₦{transaction.amount.toFixed(2)}</p>
                       <span
                         className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${getStatusColor(
                           transaction.status
@@ -370,12 +379,12 @@ export function PaymentsDashboard() {
                       <div>
                         <p className="text-xs text-muted-foreground">Deposit Paid</p>
                         <p className="font-semibold text-accent">
-                          ${deposit.depositPaid} / ${deposit.depositRequired}
+                          ₦{deposit.depositPaid} / ₦{deposit.depositRequired}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Remaining Balance</p>
-                        <p className="font-semibold">${deposit.remainingBalance}</p>
+                        <p className="font-semibold">₦{deposit.remainingBalance}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Due Date</p>

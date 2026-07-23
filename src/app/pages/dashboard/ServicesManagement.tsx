@@ -291,7 +291,7 @@ export function ServicesManagement() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="price">Price (USD)</Label>
+                  <Label htmlFor="price">Price (NGN)</Label>
                   <Input
                     id="price"
                     type="number"
@@ -304,7 +304,7 @@ export function ServicesManagement() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="deposit">Deposit (USD)</Label>
+                  <Label htmlFor="deposit">Deposit (NGN)</Label>
                   <Input
                     id="deposit"
                     type="number"
@@ -422,14 +422,14 @@ export function ServicesManagement() {
                   <DollarSign className="w-4 h-4 text-muted-foreground" />
                   <div>
                     <p className="text-xs text-muted-foreground">Price</p>
-                    <p className="font-medium">${service.price}</p>
+                    <p className="font-medium">₦{service.price}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4 text-accent" />
                   <div>
                     <p className="text-xs text-muted-foreground">Deposit</p>
-                    <p className="font-medium">${service.deposit}</p>
+                    <p className="font-medium">₦{service.deposit}</p>
                   </div>
                 </div>
               </div>

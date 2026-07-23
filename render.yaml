@@ -62,10 +62,26 @@ services:
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
+      - key: GOOGLE_GMAIL_SENDER
+        sync: false
+      - key: GOOGLE_GMAIL_APP_PASSWORD
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_WEBHOOK_SECRET
+        sync: false
+      - key: PAYSTACK_PLATFORM_FEE_PERCENT
+        value: "5.0"
+      - key: PAYSTACK_CHANNELS
+        value: card,bank,ussd,bank_transfer,qr
+      - key: PAYSTACK_CALLBACK_BASE_URL
+        value: https://kairos-frontend-sugb.onrender.com
       - key: SUPER_ADMIN_EMAIL
         sync: false
       - key: SUPER_ADMIN_PASSWORD
@@ -84,3 +100,5 @@ services:
       # Points the browser at the backend's public API.
       - key: VITE_API_BASE_URL
         value: https://kairos-backend-rrof.onrender.com/api/v1
+      - key: VITE_PAYSTACK_PUBLIC_KEY
+        sync: false

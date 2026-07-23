@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
-from app.infra.storage import upload_tenant_image
+from app.infra.storage import object_storage
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
 
@@ -17,7 +17,7 @@ async def upload_logo(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail="No tenant assigned")
-    url = await upload_tenant_image(tenant_id=current_user.tenant_id, folder="logos", file=file)
+    url = await object_storage.upload_tenant_image(tenant_id=current_user.tenant_id, folder="logos", file=file)
     return {"url": url}
 
 
@@ -30,5 +30,5 @@ async def upload_service_image(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=400, detail="No tenant assigned")
-    url = await upload_tenant_image(tenant_id=current_user.tenant_id, folder="services", file=file)
+    url = await object_storage.upload_tenant_image(tenant_id=current_user.tenant_id, folder="services", file=file)
     return {"url": url}

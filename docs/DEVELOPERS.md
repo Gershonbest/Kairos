@@ -201,6 +201,12 @@ Copy `backend/.env.example` → `backend/.env`. Key variables:
 | `LOCAL_UPLOAD_DIR` | Local upload folder for dev fallback (default: `uploads`) |
 | `MEDIA_BASE_URL` | Public URL prefix for local files (`/media` in dev) |
 | `SUPER_ADMIN_EMAIL` / `SUPER_ADMIN_PASSWORD` | Platform admin login |
+| `PAYSTACK_SECRET_KEY` | Paystack secret key (server) |
+| `PAYSTACK_PUBLIC_KEY` | Paystack public key (optional frontend) |
+| `PAYSTACK_WEBHOOK_SECRET` | Webhook HMAC secret (defaults to secret key) |
+| `PAYSTACK_PLATFORM_FEE_PERCENT` | Platform fee on booking payments (default `5`) |
+| `PAYSTACK_CHANNELS` | Checkout methods (`card,bank,ussd,bank_transfer,qr`; OPay under `bank`) |
+| `PAYSTACK_CALLBACK_BASE_URL` | Frontend origin for Paystack redirects |
 
 Frontend optional env:
 
@@ -208,6 +214,7 @@ Frontend optional env:
 |----------|---------|
 | `VITE_API_BASE_URL` | Override API base (default: `/api/v1` via proxy) |
 | `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `VITE_PAYSTACK_PUBLIC_KEY` | Optional Paystack public key for Inline JS |
 
 ---
 
@@ -315,13 +322,43 @@ When adding new tables or endpoints, always filter by `tenant_id` for authentica
 
 **Booking statuses**: `pending` → `confirmed` → `completed` / `cancelled`
 
-### Payments
+### Payments (Paystack)
 
-- Services can define `deposit_amount`; otherwise full `price_amount` is charged.
-- If `tenant.payments_enabled`, payment tx starts as `pending` and booking stays `pending` until `confirm-payment`.
-- If payments not enabled, tx auto-succeeds with provider `kairos` (demo mode).
-- Onboarding step 4 sets `payment_provider`, `payment_account_id`, `payments_enabled`.
-- Real Stripe/Paystack SDK integration is stubbed in `payments/providers.py` — extension point for production.
+Full setup, activation, and troubleshooting: [`docs/PAYMENTS.md`](./PAYMENTS.md).
+
+Kairos uses **Paystack** for two revenue streams:
+
+1. **Booking deposits** — Client pays via Paystack; tenant receives settlement through a **subaccount**; Kairos keeps `PAYSTACK_PLATFORM_FEE_PERCENT` (set as subaccount `percentage_charge`).
+2. **Tenant subscriptions** — Tenant pays Kairos via Paystack checkout (`POST /subscriptions/checkout`); no subaccount (100% to platform).
+
+**Booking flow**
+
+- Services can define `deposit_amount`; otherwise full `price_amount` is charged (NGN / kobo).
+- If `tenant.payments_enabled` and a Paystack subaccount is connected, booking stays `pending` and the API returns `payment_authorization_url`.
+- Client is redirected to Paystack; webhook `charge.success` (or `confirm-payment` verify) marks the tx succeeded and confirms the booking.
+- If payments are not enabled, tx auto-succeeds with provider `kairos` (demo mode).
+
+**Onboarding**
+
+- Step 4 creates a Paystack subaccount (`POST /tenants/me/payment-provider`) with bank code + account number.
+- Stores `payment_account_id` = `subaccount_code`. Do **not** store tenant API keys.
+
+**Webhooks**
+
+- `POST /api/v1/payments/webhooks/paystack` — verify `x-paystack-signature` (HMAC-SHA512 with `PAYSTACK_WEBHOOK_SECRET` or `PAYSTACK_SECRET_KEY`).
+- Configure the same URL in the Paystack dashboard.
+
+**Env vars**
+
+| Variable | Purpose |
+|----------|---------|
+| `PAYSTACK_SECRET_KEY` | Server API |
+| `PAYSTACK_PUBLIC_KEY` | Optional frontend Inline JS |
+| `PAYSTACK_WEBHOOK_SECRET` | Webhook HMAC (defaults to secret key) |
+| `PAYSTACK_PLATFORM_FEE_PERCENT` | Platform cut on booking payments (default 5) |
+| `PAYSTACK_CALLBACK_BASE_URL` | Frontend origin for Paystack return URLs |
+
+**Client helpers**: `backend/app/infra/paystack.py`
 
 ### Clients
 
@@ -372,7 +409,8 @@ Base URL: `/api/v1`
 | GET | `/me` | Tenant profile |
 | PUT | `/me/onboarding` | Complete/update onboarding |
 | PUT | `/me/public-profile` | Tagline, description, logo |
-| GET/POST | `/me/payment-provider` | Payment config |
+| GET/POST | `/me/payment-provider` | Paystack subaccount connect / status |
+| GET | `/me/paystack/banks` | List settlement banks |
 | GET | `/me/booking-links` | Public URLs |
 
 ### Core resources
@@ -384,7 +422,11 @@ Base URL: `/api/v1`
 | `/bookings` | GET list |
 | `/clients` | GET list, POST create, PATCH update, DELETE |
 | `/payments/transactions` | GET payment history |
-| `/payments/intent` | POST create payment intent (stub providers) |
+| `/payments/config` | GET public Paystack config |
+| `/payments/intent` | POST create payment intent |
+| `/payments/verify/{reference}` | POST verify Paystack payment |
+| `/payments/webhooks/paystack` | POST Paystack webhooks |
+| `/subscriptions/checkout` | POST start Paystack plan payment |
 | `/scheduling/insights` | GET smart scheduling data |
 | `/ai/assistant` | POST chat message |
 | `/dashboard/summary` | GET stats for dashboard home |
@@ -580,7 +622,8 @@ curl http://localhost:8000/health/ready   # checks DB + Redis
 
 | Area | Current state | How to extend |
 |------|---------------|---------------|
-| Payment providers | Stub intents; confirm-payment simulates charge | Implement real SDK in `payments/providers.py` |
+| Payment providers | Paystack subaccounts + webhooks | Set `PAYSTACK_*` keys; connect bank in onboarding |
+| Subscription billing | Paystack checkout (`/subscriptions/checkout`) | Falls back to simulated activate if Paystack unset |
 | AI assistant | Rule-based on calendar data | Swap `ai/router.py` for OpenAI/Anthropic |
 | Booking calendar | Read-only grid | Add create/reschedule endpoints + UI |
 | Team members | Only `tenant_admin` used | Add invites, `tenant_user` permissions |

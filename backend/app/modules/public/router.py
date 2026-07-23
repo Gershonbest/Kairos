@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.cache import get_redis
-from app.infra.calendar_ics import CalendarEventArgs, build_booking_ics, build_google_calendar_url
+from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
 from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
@@ -19,13 +19,22 @@ from app.infra.models import (
     SchedulingMode,
     Service,
     Tenant,
+    User,
+    UserRole,
 )
+from app.infra.paystack import PaystackError, paystack_client
 from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,
     send_new_booking_owner_email,
 )
-from app.modules.payments.service import booking_payment_amount, confirm_booking_payment, ensure_booking_payment
+from app.modules.payments.service import (
+    apply_successful_paystack_payment,
+    booking_payment_amount,
+    confirm_booking_payment,
+    ensure_booking_payment,
+    initialize_booking_paystack,
+)
 from app.modules.services.helpers import (
     resolve_appointment_format,
     resolve_service_location,
@@ -73,11 +82,15 @@ def _booking_response(
     service: Service,
     tenant: Tenant,
     payment_tx: PaymentTransaction | None,
+    *,
+    client: Client | None = None,
+    business_contact_email: str | None = None,
 ) -> BookingOut:
     amount = booking_payment_amount(service)
-    payment_required = bool(tenant.payments_enabled and amount > 0)
+    payment_required = bool(tenant.payments_enabled and amount > 0 and tenant.payment_account_id)
     is_confirmed = booking.status == BookingStatus.confirmed
     tenant_key = tenant.public_slug or tenant.id
+    appointment_format = booking.appointment_format or AppointmentFormat.onsite
     return BookingOut(
         id=booking.id,
         status=booking.status.value,
@@ -85,11 +98,14 @@ def _booking_response(
         end_at=booking.end_at,
         client_id=booking.client_id,
         service_id=booking.service_id,
-        payment_required=payment_required,
+        payment_required=payment_required and (payment_tx is None or payment_tx.status.value == "pending"),
         payment_amount=amount if amount > 0 else None,
         payment_status=payment_tx.status.value if payment_tx else None,
+        payment_authorization_url=payment_tx.authorization_url if payment_tx else None,
+        payment_access_code=payment_tx.access_code if payment_tx else None,
+        payment_reference=payment_tx.provider_reference if payment_tx else None,
         google_calendar_url=(
-            build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
+            calendar_invite_service.build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
             if is_confirmed
             else None
         ),
@@ -100,6 +116,57 @@ def _booking_response(
         ),
         is_all_day=bool(booking.is_all_day),
         scheduling_mode=service.scheduling_mode.value,
+        client_name=client.full_name if client else None,
+        client_email=client.email if client else None,
+        service_name=service.name,
+        service_price=float(service.price_amount or 0),
+        service_deposit=float(service.deposit_amount or 0),
+        service_image_url=service.image_url,
+        service_duration_minutes=service.duration_minutes,
+        host_name=service.host_name,
+        host_title=service.host_title,
+        appointment_format=appointment_format.value,
+        location=resolve_service_location(service, tenant, appointment_format),
+        business_name=tenant.name,
+        business_contact_email=business_contact_email,
+        business_help_email=tenant.help_email,
+    )
+
+
+async def _owner_contact_email(session: AsyncSession, tenant_id: str) -> str | None:
+    owner = (
+        await session.execute(
+            select(User).where(
+                User.tenant_id == tenant_id,
+                User.role == UserRole.tenant_admin,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    return owner.email if owner else None
+
+
+async def _enriched_booking_response(
+    session: AsyncSession,
+    booking: Booking,
+    service: Service,
+    tenant: Tenant,
+    payment_tx: PaymentTransaction | None,
+    *,
+    client: Client | None = None,
+) -> BookingOut:
+    if client is None:
+        client = (
+            await session.execute(select(Client).where(Client.id == booking.client_id))
+        ).scalar_one_or_none()
+    contact_email = await _owner_contact_email(session, tenant.id)
+    return _booking_response(
+        booking,
+        service,
+        tenant,
+        payment_tx,
+        client=client,
+        business_contact_email=contact_email,
     )
 
 
@@ -117,6 +184,7 @@ async def resolve_tenant_key(business_key: str, session: AsyncSession) -> Tenant
 @router.get("/businesses/{business_id}")
 async def get_public_business(business_id: str, session: AsyncSession = Depends(get_db_session)) -> dict:
     tenant = await resolve_tenant_key(business_id, session)
+    contact_email = await _owner_contact_email(session, tenant.id)
     return {
         "id": tenant.id,
         "name": tenant.name,
@@ -131,6 +199,8 @@ async def get_public_business(business_id: str, session: AsyncSession = Depends(
         "public_tagline": tenant.public_tagline,
         "public_description": tenant.public_description,
         "public_logo_url": tenant.public_logo_url,
+        "contact_email": contact_email,
+        "help_email": tenant.help_email or contact_email,
     }
 
 
@@ -245,7 +315,7 @@ async def download_booking_calendar_invite(
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    calendar_invite = build_booking_ics(**_calendar_event_args(booking, service, tenant))
+    calendar_invite = calendar_invite_service.build_booking_ics(**_calendar_event_args(booking, service, tenant))
     return Response(
         content=calendar_invite,
         media_type="text/calendar",
@@ -299,8 +369,26 @@ async def create_public_booking(
     ).scalar_one_or_none()
     if existing:
         payment_tx = await ensure_booking_payment(session, existing, service, payload.idempotency_key, tenant)
+        if (
+            payment_tx
+            and tenant.payments_enabled
+            and tenant.payment_account_id
+            and payment_tx.status.value == "pending"
+            and not payment_tx.authorization_url
+        ):
+            client_row = (
+                await session.execute(select(Client).where(Client.id == existing.client_id))
+            ).scalar_one()
+            payment_tx = await initialize_booking_paystack(
+                session,
+                tenant=tenant,
+                booking=existing,
+                client=client_row,
+                tx=payment_tx,
+                business_key=business_id,
+            )
         await session.commit()
-        return _booking_response(existing, service, tenant, payment_tx)
+        return await _enriched_booking_response(session, existing, service, tenant, payment_tx)
 
     nearby = (
         await session.execute(
@@ -317,20 +405,30 @@ async def create_public_booking(
     if any(booking_blocks_slot(row, start_at, end_at, buffer_minutes) for row in nearby):
         raise HTTPException(status_code=409, detail="Slot already booked")
 
+    client_email = payload.client_email.strip().lower()
+    client_name = payload.client_name.strip()
     client = (
         await session.execute(
-            select(Client).where(Client.tenant_id == tenant.id, Client.email == payload.client_email)
+            select(Client).where(Client.tenant_id == tenant.id, Client.email == client_email)
         )
     ).scalar_one_or_none()
     if not client:
         client = Client(
             tenant_id=tenant.id,
-            full_name=payload.client_name,
-            email=payload.client_email,
+            full_name=client_name,
+            email=client_email,
             phone=payload.client_phone,
             notes=payload.notes,
         )
         session.add(client)
+        await session.flush()
+    else:
+        # Returning email: keep client record but refresh name/phone from this booking.
+        client.full_name = client_name or client.full_name
+        if payload.client_phone:
+            client.phone = payload.client_phone
+        if payload.notes:
+            client.notes = payload.notes
         await session.flush()
 
     booking = Booking(
@@ -349,7 +447,7 @@ async def create_public_booking(
     await session.flush()
     payment_tx = await ensure_booking_payment(session, booking, service, payload.idempotency_key, tenant)
 
-    if not tenant.payments_enabled or booking_payment_amount(service) <= 0:
+    if not tenant.payments_enabled or not tenant.payment_account_id or booking_payment_amount(service) <= 0:
         booking.status = BookingStatus.confirmed
         owner = await create_booking_notifications(
             session, tenant=tenant, booking=booking, client=client, service=service
@@ -390,12 +488,27 @@ async def create_public_booking(
                 appointment_format=appointment_format.value,
                 booking_id=booking.id,
             )
-        return _booking_response(booking, service, tenant, payment_tx)
+        return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
+
+    if payment_tx:
+        try:
+            payment_tx = await initialize_booking_paystack(
+                session,
+                tenant=tenant,
+                booking=booking,
+                client=client,
+                tx=payment_tx,
+                business_key=business_id,
+            )
+        except (ValueError, PaystackError) as exc:
+            raise HTTPException(status_code=502, detail=f"Unable to start payment: {exc}") from exc
 
     await session.commit()
     await session.refresh(booking)
+    if payment_tx:
+        await session.refresh(payment_tx)
     await redis.delete(lock_key)
-    return _booking_response(booking, service, tenant, payment_tx)
+    return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
 
 
 @router.post("/businesses/{business_id}/bookings/{booking_id}/confirm-payment", response_model=BookingOut)
@@ -404,6 +517,7 @@ async def confirm_public_booking_payment(
     booking_id: str,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db_session),
+    reference: str | None = Query(default=None),
 ) -> BookingOut:
     tenant = await resolve_tenant_key(business_id, session)
     booking = (
@@ -420,10 +534,36 @@ async def confirm_public_booking_payment(
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    was_pending = booking.status == BookingStatus.pending
-    payment_tx = await confirm_booking_payment(session, booking)
+    payment_tx = (
+        await session.execute(
+            select(PaymentTransaction).where(
+                PaymentTransaction.tenant_id == tenant.id,
+                PaymentTransaction.booking_id == booking.id,
+            )
+        )
+    ).scalar_one_or_none()
     if not payment_tx:
         raise HTTPException(status_code=400, detail="No payment required for this booking")
+
+    was_pending = booking.status == BookingStatus.pending
+
+    # Paystack path: verify with gateway (webhook may already have confirmed).
+    if payment_tx.provider == "paystack":
+        ref = reference or payment_tx.provider_reference
+        try:
+            data = await paystack_client.verify_transaction(ref)
+        except PaystackError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if (data.get("status") or "").lower() != "success":
+            raise HTTPException(status_code=400, detail="Payment not completed yet")
+        await apply_successful_paystack_payment(session, reference=ref)
+        await session.refresh(booking)
+        await session.refresh(payment_tx)
+    else:
+        # Demo / non-Paystack fallback
+        payment_tx = await confirm_booking_payment(session, booking)
+        if not payment_tx:
+            raise HTTPException(status_code=400, detail="No payment required for this booking")
 
     client = (
         await session.execute(select(Client).where(Client.id == booking.client_id))
@@ -474,4 +614,4 @@ async def confirm_public_booking_payment(
                 booking_id=booking.id,
             )
 
-    return _booking_response(booking, service, tenant, payment_tx)
+    return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)

@@ -15,6 +15,8 @@ COPY src ./src
 # (separate services) this is overridden with the backend's public API URL.
 ARG VITE_API_BASE_URL=/api/v1
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ARG VITE_PAYSTACK_PUBLIC_KEY=
+ENV VITE_PAYSTACK_PUBLIC_KEY=$VITE_PAYSTACK_PUBLIC_KEY
 
 RUN npm run build
 

@@ -27,10 +27,28 @@ class BookingOut(BaseModel):
     payment_required: bool = False
     payment_amount: float | None = None
     payment_status: str | None = None
+    payment_authorization_url: str | None = None
+    payment_access_code: str | None = None
+    payment_reference: str | None = None
     google_calendar_url: str | None = None
     ics_download_path: str | None = None
     is_all_day: bool = False
     scheduling_mode: str | None = None
+    # Confirmation card fields (especially after Paystack redirect loses UI state)
+    client_name: str | None = None
+    client_email: str | None = None
+    service_name: str | None = None
+    service_price: float | None = None
+    service_deposit: float | None = None
+    service_image_url: str | None = None
+    service_duration_minutes: int | None = None
+    host_name: str | None = None
+    host_title: str | None = None
+    appointment_format: str | None = None
+    location: str | None = None
+    business_name: str | None = None
+    business_contact_email: str | None = None
+    business_help_email: str | None = None
 
 
 class UpdateBookingStatusRequest(BaseModel):

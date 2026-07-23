@@ -1,6 +1,7 @@
 // Plan selection and subscription activation after trial.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { Check, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -26,6 +27,8 @@ function formatPrice(amount: number): string {
 }
 
 export function ChoosePlan() {
+  const [searchParams] = useSearchParams();
+  const paymentHandledRef = useRef(false);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [status, setStatus] = useState<Awaited<ReturnType<typeof api.getSubscriptionStatus>> | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("premium");
@@ -51,6 +54,32 @@ export function ChoosePlan() {
       .finally(() => setIsLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (paymentHandledRef.current) return;
+    const paymentFlag = searchParams.get("payment");
+    const reference = searchParams.get("reference");
+    if (paymentFlag !== "1" || !reference) return;
+
+    paymentHandledRef.current = true;
+    setIsActivating(true);
+    setError("");
+    api
+      .verifyPaymentReference(reference)
+      .then(async (result) => {
+        if (!result.ok) {
+          throw new Error("Payment was not successful yet. Try again in a moment.");
+        }
+        const updated = await api.getSubscriptionStatus();
+        setStatus(updated);
+        setSuccess("Payment received — your plan is now active.");
+        setTimeout(() => {
+          window.location.href = "/dashboard";
+        }, 1200);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Unable to verify payment."))
+      .finally(() => setIsActivating(false));
+  }, [searchParams]);
+
   async function handleActivate() {
     setError("");
     setSuccess("");
@@ -63,14 +92,36 @@ export function ChoosePlan() {
 
     setIsActivating(true);
     try {
-      const updated = await api.activateSubscriptionPlan(selectedPlan);
+      const checkout = await api.checkoutSubscriptionPlan(selectedPlan);
+      if (checkout.authorization_url) {
+        window.location.href = checkout.authorization_url;
+        return;
+      }
+      // Free / zero-amount plans activate immediately.
+      const updated = await api.getSubscriptionStatus();
       setStatus(updated);
       setSuccess(`You're now on the ${plan.name} plan. Welcome back!`);
       setTimeout(() => {
         window.location.href = "/dashboard";
       }, 1200);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to activate plan.");
+      const message = err instanceof Error ? err.message : "Unable to start checkout.";
+      // Fallback for local/dev without Paystack configured.
+      if (message.toLowerCase().includes("not configured") || message.toLowerCase().includes("paystack")) {
+        try {
+          const updated = await api.activateSubscriptionPlan(selectedPlan);
+          setStatus(updated);
+          setSuccess(`You're now on the ${plan.name} plan (simulated billing).`);
+          setTimeout(() => {
+            window.location.href = "/dashboard";
+          }, 1200);
+          return;
+        } catch (activateErr) {
+          setError(activateErr instanceof Error ? activateErr.message : message);
+          return;
+        }
+      }
+      setError(message);
     } finally {
       setIsActivating(false);
     }
@@ -147,23 +198,29 @@ export function ChoosePlan() {
           <div>
             <p className="font-medium">Selected plan: {plans.find((p) => p.code === selectedPlan)?.name ?? "—"}</p>
             <p className="text-sm text-muted-foreground">
-              Billing is simulated for now — your account will be activated immediately for 30 days.
+              Secure Paystack checkout — card, bank transfer, OPay, USSD, and more. Your plan activates for 30 days after payment.
             </p>
           </div>
           <Button
             className="bg-primary hover:bg-primary/90"
             onClick={handleActivate}
             loading={isActivating}
-            loadingLabel="Activating..."
+            loadingLabel="Redirecting..."
             disabled={!plans.find((p) => p.code === selectedPlan)?.self_serve}
           >
-            Pay and activate plan
+            Pay with Paystack
           </Button>
         </CardContent>
       </Card>
 
+      {paymentPendingNotice(searchParams.get("payment") === "1")}
       {error && <p className="text-sm text-red-600 text-center">{error}</p>}
       {success && <p className="text-sm text-accent text-center">{success}</p>}
     </div>
   );
+}
+
+function paymentPendingNotice(show: boolean) {
+  if (!show) return null;
+  return <p className="text-sm text-muted-foreground text-center">Verifying your payment…</p>;
 }

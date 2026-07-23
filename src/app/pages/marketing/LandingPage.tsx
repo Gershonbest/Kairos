@@ -303,7 +303,7 @@ export function LandingPage() {
               whileHover={shouldReduceMotion ? undefined : { y: -4 }}
             >
               <p className="text-xs text-gray-500">Revenue this month</p>
-              <p className="text-lg font-semibold text-accent">$14,280</p>
+              <p className="text-lg font-semibold text-accent">₦14,280,000</p>
             </motion.div>
             {/* Floating elements */}
             <motion.div

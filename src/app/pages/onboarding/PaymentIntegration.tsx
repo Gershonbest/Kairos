@@ -1,178 +1,161 @@
-// Onboarding step to connect a payment provider.
+// Onboarding step to connect Paystack subaccount for booking settlements.
 
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { CreditCard, Check } from "lucide-react";
 import { OnboardingShell } from "../../components/layouts/OnboardingShell";
-import { useState } from "react";
-import { api } from "../../../lib/api/client";
+import { api, SessionExpiredError, SubscriptionRequiredError } from "../../../lib/api/client";
 
 export function PaymentIntegration() {
   const navigate = useNavigate();
-  const [selectedProvider, setSelectedProvider] = useState("stripe");
-  const [accountDetails, setAccountDetails] = useState({
-    accountId: "",
-    apiKey: "",
-  });
-
+  const [banks, setBanks] = useState<Array<{ name: string; code: string }>>([]);
+  const [businessName, setBusinessName] = useState("");
+  const [settlementBank, setSettlementBank] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [banksLoading, setBanksLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .listPaystackBanks()
+      .then((rows) => setBanks(rows.map((b) => ({ name: b.name, code: b.code }))))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : "";
+        if (err instanceof SessionExpiredError || /session expired|unauthor|log in/i.test(message)) {
+          setError("Please log in again, then return to this page to connect Paystack.");
+          return;
+        }
+        if (err instanceof SubscriptionRequiredError || /402|trial|subscription/i.test(message)) {
+          setError(message || "Your trial has ended. Choose a plan before connecting Paystack.");
+          return;
+        }
+        if (/504|timeout|gateway/i.test(message)) {
+          setError("Paystack is temporarily unreachable. Wait a moment and refresh this page.");
+          return;
+        }
+        setError(message || "Unable to load Paystack banks. Check server Paystack configuration.");
+      })
+      .finally(() => setBanksLoading(false));
+
+    api
+      .myTenant()
+      .then((tenant) => {
+        if (tenant.name) setBusinessName(tenant.name);
+      })
+      .catch(() => null);
+  }, []);
 
   const handleComplete = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!settlementBank || !accountNumber.trim()) {
+      setError("Bank and account number are required.");
+      return;
+    }
     setIsLoading(true);
     try {
       await api.connectPaymentProvider({
-        provider: selectedProvider,
-        ...(accountDetails.accountId ? { account_id: accountDetails.accountId } : {}),
-        ...(accountDetails.apiKey ? { api_key: accountDetails.apiKey } : {}),
+        provider: "paystack",
+        business_name: businessName.trim() || undefined,
+        settlement_bank: settlementBank,
+        account_number: accountNumber.trim(),
       });
       navigate("/dashboard");
-    } catch {
-      setError("Unable to connect payment provider.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to connect Paystack subaccount.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const providers = [
-    {
-      id: "stripe",
-      name: "Stripe",
-      description: "Accept payments from anywhere in the world",
-      popular: true,
-    },
-    {
-      id: "paystack",
-      name: "Paystack",
-      description: "Popular payment solution across Africa",
-      popular: true,
-    },
-    {
-      id: "flutterwave",
-      name: "Flutterwave",
-      description: "Pan-African payment platform",
-      popular: false,
-    },
-  ];
+  const handleSkip = () => {
+    navigate("/dashboard");
+  };
 
   return (
     <OnboardingShell
       step={4}
-      title="Connect payment provider"
-      description="Accept deposits and payments from clients"
+      title="Connect Paystack"
+      description="Create a settlement subaccount so client booking payments split between you and Kairos"
     >
-          <form onSubmit={handleComplete} className="space-y-6">
-            <div className="space-y-3">
-              <Label>Select Payment Provider</Label>
-              {providers.map((provider) => (
-                <div
-                  key={provider.id}
-                  onClick={() => !isLoading && setSelectedProvider(provider.id)}
-                  className={`
-                    relative p-4 border-2 rounded-lg cursor-pointer transition-all
-                    ${
-                      selectedProvider === provider.id
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:border-primary/40"
-                    }
-                  `}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={`
-                        w-10 h-10 rounded-lg flex items-center justify-center
-                        ${
-                          selectedProvider === provider.id
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground"
-                        }
-                      `}
-                      >
-                        <CreditCard className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-medium">{provider.name}</h3>
-                          {provider.popular && (
-                            <span className="px-2 py-0.5 bg-accent text-accent-foreground text-xs rounded-full">
-                              Popular
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground mt-1">{provider.description}</p>
-                      </div>
-                    </div>
-                    {selectedProvider === provider.id && (
-                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                        <Check className="w-4 h-4 text-primary-foreground" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+      <form onSubmit={handleComplete} className="space-y-6">
+        <div className="p-4 border-2 border-primary rounded-lg bg-primary/5">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+              <CreditCard className="w-5 h-5" />
             </div>
-
-            <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-              <h3 className="font-medium">Account Details (Optional)</h3>
-              <p className="text-sm text-muted-foreground">
-                You can skip this for now and configure it later in settings
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-medium">Paystack</h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent-foreground">Required</span>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                Clients pay Kairos via Paystack. Your share settles to this bank account; Kairos keeps the platform fee.
               </p>
-              <div>
-                <Label htmlFor="accountId">Account ID</Label>
-                <Input
-                  id="accountId"
-                  type="text"
-                  placeholder="acct_xxxxxxxxxxxxx"
-                  value={accountDetails.accountId}
-                  onChange={(e) =>
-                    setAccountDetails({ ...accountDetails, accountId: e.target.value })
-                  }
-                  className="mt-1"
-                  disabled={isLoading}
-                />
-              </div>
-              <div>
-                <Label htmlFor="apiKey">API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="sk_xxxxxxxxxxxxx"
-                  value={accountDetails.apiKey}
-                  onChange={(e) =>
-                    setAccountDetails({ ...accountDetails, apiKey: e.target.value })
-                  }
-                  className="mt-1"
-                  disabled={isLoading}
-                />
-              </div>
             </div>
+            <Check className="w-5 h-5 text-primary ml-auto" />
+          </div>
+        </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/onboarding/availability")}
-                className="flex-1"
-                disabled={isLoading}
-              >
-                Back
-              </Button>
-              <Button
-                type="submit"
-                className="flex-1 bg-gradient-to-r from-primary to-accent hover:opacity-90"
-                loading={isLoading}
-                loadingLabel="Completing setup..."
-              >
-                Complete Setup
-              </Button>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </form>
+        <div>
+          <Label htmlFor="businessName">Settlement business name</Label>
+          <Input
+            id="businessName"
+            className="mt-1"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            placeholder="Your business name on Paystack"
+            disabled={isLoading}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="bank">Settlement bank</Label>
+          <select
+            id="bank"
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            value={settlementBank}
+            onChange={(e) => setSettlementBank(e.target.value)}
+            disabled={isLoading || banksLoading}
+            required
+          >
+            <option value="">{banksLoading ? "Loading banks..." : "Select bank"}</option>
+            {banks.map((bank) => (
+              <option key={bank.code} value={bank.code}>
+                {bank.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <Label htmlFor="accountNumber">Account number</Label>
+          <Input
+            id="accountNumber"
+            className="mt-1"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            placeholder="0123456789"
+            required
+            disabled={isLoading}
+          />
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button type="submit" className="flex-1" loading={isLoading} loadingLabel="Connecting...">
+            Connect Paystack & finish
+          </Button>
+          <Button type="button" variant="outline" className="flex-1" onClick={handleSkip} disabled={isLoading}>
+            Skip for now
+          </Button>
+        </div>
+      </form>
     </OnboardingShell>
   );
 }

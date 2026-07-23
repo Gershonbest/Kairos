@@ -287,6 +287,129 @@ async def activate_plan(
     return subscription_status_payload(tenant, now=now)
 
 
+async def activate_plan_from_payment(session: AsyncSession, tx) -> None:
+    """Activate a tenant plan after a successful Paystack subscription payment (no commit)."""
+    plan_code = tenant_plan_from_reference(tx)
+    plan = (
+        await session.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not plan:
+        raise ValueError(f"Unknown subscription plan: {plan_code}")
+
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == tx.tenant_id))).scalar_one()
+    now = tx.paid_at or datetime.now(UTC)
+    tenant.plan_code = plan_code
+    tenant.status = "active"
+    tenant.subscription_paid_until = now + timedelta(days=30)
+    tenant.trial_warning_sent_at = None
+
+
+def tenant_plan_from_reference(tx) -> str:
+    # provider_reference format: sub_{plan}_{tenant8}_{rand}
+    ref = tx.provider_reference or ""
+    if ref.startswith("sub_"):
+        bits = ref.split("_")
+        if len(bits) >= 2:
+            return bits[1]
+    raise ValueError("Unable to determine plan from payment reference")
+
+
+async def create_subscription_checkout(
+    session: AsyncSession,
+    *,
+    tenant: Tenant,
+    owner: User,
+    plan_code: str,
+) -> dict:
+    """Create a Paystack checkout for monthly plan payment (100% to Kairos)."""
+    import uuid
+
+    from app.infra.paystack import paystack_client
+    from app.infra.models import PaymentStatus, PaymentTransaction
+    from app.modules.payments.service import callback_base_url
+
+    plan = (
+        await session.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not plan:
+        raise ValueError("Unknown subscription plan")
+    if not plan.self_serve:
+        raise ValueError("This plan requires sales assistance. Please contact us for Enterprise pricing.")
+    if not paystack_client.is_configured():
+        raise ValueError("Paystack is not configured on the server")
+
+    amount = float(plan.monthly_price)
+    if amount <= 0:
+        return await activate_plan(session, tenant, plan_code)
+
+    reference = f"sub_{plan_code}_{tenant.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:8]}"
+    idempotency_key = f"sub-{tenant.id}-{plan_code}-{uuid.uuid4().hex[:8]}"
+    callback_url = f"{callback_base_url()}/dashboard/choose-plan?payment=1&reference={reference}"
+
+    intent = await paystack_client.initialize_transaction(
+        email=owner.email,
+        amount_naira=amount,
+        reference=reference,
+        callback_url=callback_url,
+        metadata={
+            "tenant_id": tenant.id,
+            "plan_code": plan_code,
+            "purpose": "subscription",
+        },
+    )
+
+    tx = PaymentTransaction(
+        tenant_id=tenant.id,
+        booking_id=None,
+        provider="paystack",
+        provider_reference=intent.get("reference") or reference,
+        status=PaymentStatus.pending,
+        amount=amount,
+        currency="NGN",
+        platform_fee_amount=amount,
+        tenant_settlement_amount=0,
+        purpose="subscription",
+        authorization_url=intent.get("authorization_url"),
+        access_code=intent.get("access_code"),
+        idempotency_key=idempotency_key,
+    )
+    session.add(tx)
+    await session.commit()
+    await session.refresh(tx)
+    return {
+        "transaction_id": tx.id,
+        "provider": tx.provider,
+        "provider_reference": tx.provider_reference,
+        "authorization_url": tx.authorization_url,
+        "access_code": tx.access_code,
+        "amount": float(tx.amount),
+        "plan_code": plan_code,
+        "status": tx.status.value,
+    }
+
+
+async def tenant_allows_payment_processing(session: AsyncSession, tenant: Tenant) -> bool:
+    """Trial tenants can connect Paystack; paid tenants need payment_processing entitlement."""
+    status = subscription_status_payload(tenant)
+    if status.get("is_trial"):
+        return True
+    plan = (
+        await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == tenant.plan_code))
+    ).scalar_one_or_none()
+    entitlements = (plan.entitlements if plan else None) or {}
+    return bool(entitlements.get("payment_processing"))
+
+
 async def maybe_send_trial_warning(
     session: AsyncSession,
     tenant: Tenant,

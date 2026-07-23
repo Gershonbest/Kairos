@@ -33,10 +33,27 @@ async def get_platform_metrics(
 ) -> dict:
     tenant_count = (await session.execute(select(func.count(Tenant.id)))).scalar_one()
     booking_count = (await session.execute(select(func.count(Booking.id)))).scalar_one()
-    revenue = (
+    booking_gmv = (
         await session.execute(
             select(func.coalesce(func.sum(PaymentTransaction.amount), 0)).where(
-                PaymentTransaction.status == PaymentStatus.succeeded
+                PaymentTransaction.status == PaymentStatus.succeeded,
+                PaymentTransaction.purpose == "booking",
+            )
+        )
+    ).scalar_one()
+    platform_fee_earned = (
+        await session.execute(
+            select(func.coalesce(func.sum(PaymentTransaction.platform_fee_amount), 0)).where(
+                PaymentTransaction.status == PaymentStatus.succeeded,
+                PaymentTransaction.purpose == "booking",
+            )
+        )
+    ).scalar_one()
+    subscription_revenue = (
+        await session.execute(
+            select(func.coalesce(func.sum(PaymentTransaction.amount), 0)).where(
+                PaymentTransaction.status == PaymentStatus.succeeded,
+                PaymentTransaction.purpose == "subscription",
             )
         )
     ).scalar_one()
@@ -52,7 +69,9 @@ async def get_platform_metrics(
     return {
         "tenants": tenant_count,
         "bookings": booking_count,
-        "mrr": float(revenue),
+        "mrr": float(subscription_revenue),
+        "booking_gmv": float(booking_gmv),
+        "platform_fee_earned": float(platform_fee_earned),
         "active_tenants": active_count,
         "trial_tenants": trial_count,
         "suspended_tenants": suspended_count,

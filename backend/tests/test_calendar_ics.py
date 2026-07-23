@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
-from app.infra.calendar_ics import build_booking_ics, build_google_calendar_url
+from app.infra.calendar_ics import calendar_invite_service
 
 
 def _calendar_args() -> dict:
@@ -24,7 +24,7 @@ def _calendar_args() -> dict:
 
 
 def test_build_booking_ics_contains_event_and_reminder() -> None:
-    invite = build_booking_ics(**_calendar_args())
+    invite = calendar_invite_service.build_booking_ics(**_calendar_args())
 
     assert invite.startswith("BEGIN:VCALENDAR\r\n")
     assert "UID:booking-123@kairosbookings.com\r\n" in invite
@@ -37,7 +37,7 @@ def test_build_booking_ics_contains_event_and_reminder() -> None:
 
 
 def test_build_google_calendar_url_contains_prefilled_event() -> None:
-    url = build_google_calendar_url(**_calendar_args())
+    url = calendar_invite_service.build_google_calendar_url(**_calendar_args())
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
 
@@ -54,11 +54,11 @@ def test_all_day_ics_and_google_url_use_date_values() -> None:
     args["start_at"] = datetime(2026, 7, 20, 0, 0, tzinfo=UTC)
     args["end_at"] = datetime(2026, 7, 21, 0, 0, tzinfo=UTC)
 
-    invite = build_booking_ics(**args)
+    invite = calendar_invite_service.build_booking_ics(**args)
     assert "DTSTART;VALUE=DATE:20260720\r\n" in invite
     assert "DTEND;VALUE=DATE:20260721\r\n" in invite
     assert "TRIGGER:-P1D\r\n" in invite
 
-    url = build_google_calendar_url(**args)
+    url = calendar_invite_service.build_google_calendar_url(**args)
     query = parse_qs(urlparse(url).query)
     assert query["dates"] == ["20260720/20260721"]
