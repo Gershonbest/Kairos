@@ -107,19 +107,19 @@ function serviceDurationLabel(service: { scheduling_mode: string; duration: numb
 function getAIResponse(input: string): string {
   const q = input.toLowerCase();
   if (q.includes("price") || q.includes("cost") || q.includes("how much"))
-    return "Our treatments start at $120. Quick overview:\n\n• Swedish Massage — $120 ($40 deposit)\n• Deep Tissue — $160 ($55 deposit)\n• Signature Facial — $140 ($45 deposit)\n• Hot Stone Ritual — $175 ($60 deposit)\n\nDeposits are refundable if you cancel 24h+ in advance. Want to book?";
+    return "Our treatments start at ₦120. Quick overview:\n\n• Swedish Massage — ₦120 (₦40 deposit)\n• Deep Tissue — ₦160 (₦55 deposit)\n• Signature Facial — ₦140 (₦45 deposit)\n• Hot Stone Ritual — ₦175 (₦60 deposit)\n\nDeposits are refundable if you cancel 24h+ in advance. Want to book?";
   if (q.includes("available") || q.includes("slot") || q.includes("open"))
     return "We have openings starting tomorrow! Morning (9–11 AM), afternoon (12–3 PM), and evening slots (4–6 PM) are available Monday through Saturday. Which treatment interests you?";
   if (q.includes("swedish") || q.includes("relax"))
-    return "The Classic Swedish Massage (60 min, $120) is perfect for unwinding. It uses long, flowing strokes across the full body. Just $40 secures your spot — want me to walk you through booking?";
+    return "The Classic Swedish Massage (60 min, ₦120) is perfect for unwinding. It uses long, flowing strokes across the full body. Just ₦40 secures your spot — want me to walk you through booking?";
   if (q.includes("facial") || q.includes("skin"))
-    return "Our Signature Facial (75 min, $140) is customized to your skin type — cleansing, exfoliation, and serums tailored on the day. A $45 deposit holds your appointment.";
+    return "Our Signature Facial (75 min, ₦140) is customized to your skin type — cleansing, exfoliation, and serums tailored on the day. A ₦45 deposit holds your appointment.";
   if (q.includes("hot stone"))
-    return "The Hot Stone Ritual (90 min, $175) uses heated basalt stones to melt tension at a deeper level than hands alone. One of our most-booked treatments — $60 deposit required.";
+    return "The Hot Stone Ritual (90 min, ₦175) uses heated basalt stones to melt tension at a deeper level than hands alone. One of our most-booked treatments — ₦60 deposit required.";
   if (q.includes("cancel") || q.includes("reschedule"))
     return "No problem! You can cancel or reschedule at no cost up to 24 hours before your appointment. After that, the deposit is non-refundable. Need help with anything else?";
   if (q.includes("deposit") || q.includes("refund"))
-    return "Deposits hold your time slot and are fully refundable with 24h+ notice. The balance is paid at your appointment. Deposits range from $40–$60 depending on the service.";
+    return "Deposits hold your time slot and are fully refundable with 24h+ notice. The balance is paid at your appointment. Deposits range from ₦40–₦60 depending on the service.";
   if (q.includes("hi") || q.includes("hello") || q.includes("hey"))
     return "Hi there! I'm the Lumière booking assistant. Tell me what you're looking for — a treatment type, availability, pricing — and I'll help you get booked in minutes.";
   if (q.includes("book") || q.includes("appointment"))
@@ -733,7 +733,7 @@ export function PublicBooking() {
                             <Clock size={13} /> {serviceDurationLabel(svc)}
                           </span>
                           <span style={{ fontSize: 14, fontWeight: 600, color: dark }}>
-                            ${svc.price}
+                            ₦{svc.price}
                           </span>
                         </div>
                         <span
@@ -746,7 +746,7 @@ export function PublicBooking() {
                             fontWeight: 500,
                           }}
                         >
-                          ${svc.deposit} deposit
+                          ₦{svc.deposit} deposit
                         </span>
                       </div>
                     </div>
@@ -818,7 +818,7 @@ export function PublicBooking() {
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>{service.name}</p>
                   <p style={{ fontSize: 12, color: brandPrimary }}>
-                    {serviceDurationLabel(service)} · ${service.price} · ${service.deposit} deposit
+                    {serviceDurationLabel(service)} · ₦{service.price} · ₦{service.deposit} deposit
                   </p>
                 </div>
               </div>
@@ -1296,7 +1296,7 @@ export function PublicBooking() {
                 Secure your spot
               </h2>
               <p style={{ fontSize: 14, color: stone500, marginBottom: 28 }}>
-                Pay the ${service.deposit} deposit now. Remaining ${service.price - service.deposit} due at your appointment.
+                Pay the ₦{service.deposit} deposit now. Remaining ₦{service.price - service.deposit} due at your appointment.
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
@@ -1348,7 +1348,7 @@ export function PublicBooking() {
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginBottom: 2 }}>Amount due</p>
-                          <p style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>${service.deposit}</p>
+                          <p style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>₦{service.deposit}</p>
                         </div>
                       </div>
                     </div>
@@ -1440,15 +1440,15 @@ export function PublicBooking() {
                   <div style={{ borderTop: "1px solid var(--color-border)", marginTop: 14, paddingTop: 14 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
                       <span style={{ color: stone500 }}>Total</span>
-                      <span style={{ fontWeight: 500, color: dark }}>${service.price}</span>
+                      <span style={{ fontWeight: 500, color: dark }}>₦{service.price}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
                       <span style={{ color: stone500 }}>Due today</span>
-                      <span style={{ fontWeight: 700, color: brandPrimary }}>${service.deposit}</span>
+                      <span style={{ fontWeight: 700, color: brandPrimary }}>₦{service.deposit}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
                       <span style={{ color: stone400 }}>Due at appointment</span>
-                      <span style={{ color: stone400 }}>${service.price - service.deposit}</span>
+                      <span style={{ color: stone400 }}>₦{service.price - service.deposit}</span>
                     </div>
                   </div>
 
@@ -1492,7 +1492,7 @@ export function PublicBooking() {
                       </>
                     ) : (
                       <>
-                        <Lock size={15} /> Pay ${service.deposit} deposit
+                        <Lock size={15} /> Pay ₦{service.deposit} deposit
                       </>
                     )}
                   </button>
@@ -1599,8 +1599,8 @@ export function PublicBooking() {
                       ? []
                       : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
                     { label: "Duration", value: serviceDurationLabel(service) },
-                    { label: "Deposit paid", value: `$${service.deposit}` },
-                    { label: "Balance due", value: `$${service.price - service.deposit} at appointment` },
+                    { label: "Deposit paid", value: `₦${service.deposit}` },
+                    { label: "Balance due", value: `₦${service.price - service.deposit} at appointment` },
                   ].map(({ label, value }) => (
                     <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, textAlign: "left" }}>
                       <span style={{ color: stone500 }}>{label}</span>

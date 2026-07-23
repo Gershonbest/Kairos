@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = False
     smtp_timeout: int = 60
     brevo_api_key: str | None = None
+    # Gmail SMTP (Google account + app password). See:
+    # https://myaccount.google.com/apppasswords
+    google_gmail_sender: str | None = None
+    google_gmail_app_password: str | None = None
     email_verification_required: bool = True
     email_verification_token_expire_hours: int = 24
     google_client_id: str | None = None

@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 
 from app.core.config import get_settings
-from app.infra import paystack as paystack_client
+from app.infra.paystack import paystack_client
 
 
 @dataclass

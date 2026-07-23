@@ -7,10 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
-from app.infra import paystack as paystack_client
 from app.infra.db import get_db_session
 from app.infra.models import Service, Tenant, User
-from app.infra.paystack import PaystackError
+from app.infra.paystack import PaystackError, paystack_client
 from app.modules.tenants.helpers import branches_to_dict, tenant_display_location
 from app.modules.subscriptions.service import start_tenant_trial, tenant_allows_payment_processing
 from app.schemas.tenants import TenantOnboardingUpdate, TenantPublicProfileUpdate

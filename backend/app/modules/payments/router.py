@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, require_active_subscription
-from app.infra import paystack as paystack_client
 from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
@@ -20,7 +19,7 @@ from app.infra.models import (
     Tenant,
     WebhookEvent,
 )
-from app.infra.paystack import PaystackError
+from app.infra.paystack import PaystackError, paystack_client
 from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,

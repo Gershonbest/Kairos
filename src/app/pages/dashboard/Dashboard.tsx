@@ -199,7 +199,7 @@ export function Dashboard() {
             <DollarSign className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${(stats?.monthly_revenue ?? 0).toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{(stats?.monthly_revenue ?? 0).toFixed(2)}</div>
             <p className="text-xs text-primary flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>{stats?.revenue_change_pct ?? 0}% from last month</span>
@@ -224,7 +224,7 @@ export function Dashboard() {
             <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${(stats?.avg_booking_value ?? 0).toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{(stats?.avg_booking_value ?? 0).toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">Current month revenue / bookings</p>
           </CardContent>
         </Card>

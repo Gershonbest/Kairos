@@ -64,7 +64,7 @@ async def activate_subscription_plan(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """Legacy simulated activation — prefer /checkout when Paystack is configured."""
-    from app.infra import paystack as paystack_client
+    from app.infra.paystack import paystack_client
 
     if paystack_client.is_configured():
         raise HTTPException(

@@ -329,7 +329,7 @@ async def create_subscription_checkout(
     """Create a Paystack checkout for monthly plan payment (100% to Kairos)."""
     import uuid
 
-    from app.infra import paystack as paystack_client
+    from app.infra.paystack import paystack_client
     from app.infra.models import PaymentStatus, PaymentTransaction
     from app.modules.payments.service import callback_base_url
 

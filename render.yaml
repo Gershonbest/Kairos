@@ -62,6 +62,10 @@ services:
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
+      - key: GOOGLE_GMAIL_SENDER
+        sync: false
+      - key: GOOGLE_GMAIL_APP_PASSWORD
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: PAYMENT_WEBHOOK_SECRET

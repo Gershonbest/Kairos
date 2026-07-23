@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.infra import paystack as paystack_client
 from app.infra.models import Booking, BookingStatus, Client, PaymentStatus, PaymentTransaction, Service, Tenant
+from app.infra.paystack import paystack_client
 from app.modules.payments.providers import get_provider
 
 settings = get_settings()

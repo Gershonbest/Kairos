@@ -165,7 +165,7 @@ export function PaymentsDashboard() {
             <DollarSign className="w-4 h-4 text-accent" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${totalRevenue.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalRevenue.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live from transactions</span>
@@ -179,7 +179,7 @@ export function PaymentsDashboard() {
             <CreditCard className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${totalDeposits.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalDeposits.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">
               {totalRevenue > 0 ? Math.round((totalDeposits / totalRevenue) * 100) : 0}% of total revenue
             </p>
@@ -192,7 +192,7 @@ export function PaymentsDashboard() {
             <Clock className="w-4 h-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${pendingTotal.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{pendingTotal.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">{pendingPayments.length} outstanding payments</p>
           </CardContent>
         </Card>
@@ -203,7 +203,7 @@ export function PaymentsDashboard() {
             <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${averageTransaction.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{averageTransaction.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
               <span>Live average</span>
@@ -321,8 +321,8 @@ export function PaymentsDashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-lg">${transaction.deposit.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">Service total: ${transaction.amount.toFixed(2)}</p>
+                      <p className="font-semibold text-lg">₦{transaction.deposit.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">Service total: ₦{transaction.amount.toFixed(2)}</p>
                       <span
                         className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${getStatusColor(
                           transaction.status
@@ -370,12 +370,12 @@ export function PaymentsDashboard() {
                       <div>
                         <p className="text-xs text-muted-foreground">Deposit Paid</p>
                         <p className="font-semibold text-accent">
-                          ${deposit.depositPaid} / ${deposit.depositRequired}
+                          ₦{deposit.depositPaid} / ₦{deposit.depositRequired}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Remaining Balance</p>
-                        <p className="font-semibold">${deposit.remainingBalance}</p>
+                        <p className="font-semibold">₦{deposit.remainingBalance}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Due Date</p>

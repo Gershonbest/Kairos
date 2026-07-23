@@ -19,11 +19,11 @@ from app.core.observability import REQUEST_COUNT, REQUEST_LATENCY_MS, request_ob
 from app.core.telemetry import configure_telemetry
 from app.infra.cache import redis_client
 from app.infra.db import engine
-from app.infra.email import log_email_config_status
+from app.infra.email import email_service
 
 settings = get_settings()
 configure_logging()
-log_email_config_status()
+email_service.log_config_status()
 
 app = FastAPI(title=settings.app_name, debug=settings.app_debug)
 app.include_router(api_router)

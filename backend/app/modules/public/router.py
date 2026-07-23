@@ -7,7 +7,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.cache import get_redis
-from app.infra.calendar_ics import CalendarEventArgs, build_booking_ics, build_google_calendar_url
+from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
 from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
@@ -20,20 +20,19 @@ from app.infra.models import (
     Service,
     Tenant,
 )
+from app.infra.paystack import PaystackError, paystack_client
 from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,
     send_new_booking_owner_email,
 )
 from app.modules.payments.service import (
+    apply_successful_paystack_payment,
     booking_payment_amount,
     confirm_booking_payment,
     ensure_booking_payment,
     initialize_booking_paystack,
 )
-from app.infra import paystack as paystack_client
-from app.infra.paystack import PaystackError
-from app.modules.payments.service import apply_successful_paystack_payment
 from app.modules.services.helpers import (
     resolve_appointment_format,
     resolve_service_location,
@@ -100,7 +99,7 @@ def _booking_response(
         payment_access_code=payment_tx.access_code if payment_tx else None,
         payment_reference=payment_tx.provider_reference if payment_tx else None,
         google_calendar_url=(
-            build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
+            calendar_invite_service.build_google_calendar_url(**_calendar_event_args(booking, service, tenant))
             if is_confirmed
             else None
         ),
@@ -256,7 +255,7 @@ async def download_booking_calendar_invite(
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
 
-    calendar_invite = build_booking_ics(**_calendar_event_args(booking, service, tenant))
+    calendar_invite = calendar_invite_service.build_booking_ics(**_calendar_event_args(booking, service, tenant))
     return Response(
         content=calendar_invite,
         media_type="text/calendar",

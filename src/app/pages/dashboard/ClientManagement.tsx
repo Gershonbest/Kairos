@@ -228,7 +228,7 @@ export function ClientManagement() {
             <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Lifetime Value</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">${avgLifetimeValue.toFixed(0)}</div>
+            <div className="text-3xl font-semibold">₦{avgLifetimeValue.toFixed(0)}</div>
           </CardContent>
         </Card>
       </div>
@@ -279,7 +279,7 @@ export function ClientManagement() {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Total Spent</p>
-                          <p className="font-semibold text-accent">${client.totalSpent.toFixed(0)}</p>
+                          <p className="font-semibold text-accent">₦{client.totalSpent.toFixed(0)}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Last Visit</p>
@@ -336,7 +336,7 @@ export function ClientManagement() {
                               <DollarSign className="w-8 h-8 text-accent" />
                               <div>
                                 <p className="text-sm text-muted-foreground">Total Spent</p>
-                                <p className="text-2xl font-semibold">${client.totalSpent.toFixed(0)}</p>
+                                <p className="text-2xl font-semibold">₦{client.totalSpent.toFixed(0)}</p>
                               </div>
                             </div>
                           </CardContent>
