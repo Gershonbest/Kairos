@@ -134,6 +134,16 @@ def start_tenant_trial(tenant: Tenant, *, now: datetime | None = None) -> None:
         tenant.plan_code = "standard"
 
 
+def _tenant_phone(tenant: Tenant) -> str | None:
+    number = (tenant.phone_number or "").strip()
+    if not number:
+        return None
+    dial_code = (tenant.phone_country_code or "").strip()
+    if not dial_code or number.startswith("+"):
+        return number
+    return f"{dial_code}{number.lstrip('0')}"
+
+
 def _days_remaining(until: datetime, now: datetime) -> int:
     delta = until - now
     if delta.total_seconds() <= 0:
@@ -146,6 +156,33 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
     paid_until = _as_utc(tenant.subscription_paid_until)
     trial_ends = _as_utc(tenant.trial_ends_at)
 
+    # Admin/platform holds must win over an otherwise-valid paid period.
+    if tenant.status == "suspended":
+        return {
+            "status": "suspended",
+            "plan_code": tenant.plan_code,
+            "is_trial": False,
+            "requires_plan_selection": True,
+            "days_remaining": 0,
+            "trial_ends_at": trial_ends.isoformat() if trial_ends else None,
+            "subscription_paid_until": paid_until.isoformat() if paid_until else None,
+            "warning_level": "suspended",
+            "warning_message": "Your account is suspended. Please contact support.",
+        }
+
+    if tenant.status == "inactive":
+        return {
+            "status": "inactive",
+            "plan_code": tenant.plan_code,
+            "is_trial": False,
+            "requires_plan_selection": True,
+            "days_remaining": 0,
+            "trial_ends_at": trial_ends.isoformat() if trial_ends else None,
+            "subscription_paid_until": paid_until.isoformat() if paid_until else None,
+            "warning_level": "suspended",
+            "warning_message": "This business has been deactivated.",
+        }
+
     if paid_until and paid_until > now:
         return {
             "status": "active",
@@ -157,19 +194,6 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
             "subscription_paid_until": paid_until.isoformat(),
             "warning_level": None,
             "warning_message": None,
-        }
-
-    if tenant.status == "suspended":
-        return {
-            "status": "suspended",
-            "plan_code": tenant.plan_code,
-            "is_trial": False,
-            "requires_plan_selection": True,
-            "days_remaining": 0,
-            "trial_ends_at": trial_ends.isoformat() if trial_ends else None,
-            "subscription_paid_until": None,
-            "warning_level": "suspended",
-            "warning_message": "Your account is suspended. Please contact support.",
         }
 
     if trial_ends and trial_ends > now:
@@ -302,6 +326,8 @@ async def activate_plan_from_payment(session: AsyncSession, tx) -> None:
         raise ValueError(f"Unknown subscription plan: {plan_code}")
 
     tenant = (await session.execute(select(Tenant).where(Tenant.id == tx.tenant_id))).scalar_one()
+    if tenant.status == "inactive":
+        raise ValueError("Cannot activate a deactivated business")
     now = tx.paid_at or datetime.now(UTC)
     tenant.plan_code = plan_code
     tenant.status = "active"
@@ -366,6 +392,8 @@ async def create_subscription_checkout(
             "plan_code": plan_code,
             "purpose": "subscription",
         },
+        customer_name=owner.full_name,
+        customer_phone=_tenant_phone(tenant),
     )
 
     tx = PaymentTransaction(

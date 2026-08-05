@@ -7,8 +7,10 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 import { ServiceAppointmentFields } from "../../components/services/ServiceAppointmentFields";
 import {
   ServiceSchedulingFields,
@@ -37,14 +39,13 @@ interface Service {
 }
 
 export function ServicesManagement() {
-  const [services, setServices] = useState<Service[]>([]);
+  const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [businessLocation, setBusinessLocation] = useState("");
 
   const emptyForm = () => ({
     name: "",
@@ -59,42 +60,47 @@ export function ServicesManagement() {
 
   const [formData, setFormData] = useState(emptyForm);
 
-  useEffect(() => {
-    loadServices();
-    api.myTenant().then((tenant) => setBusinessLocation(tenant.location ?? "")).catch(() => undefined);
-  }, []);
+  const { data: serviceRows = [], isError: servicesFailed } = useQuery({
+    queryKey: queryKeys.services,
+    queryFn: () => api.listServices(),
+  });
+  const { data: tenant } = useQuery({
+    queryKey: queryKeys.tenant,
+    queryFn: () => api.myTenant(),
+  });
+  const businessLocation = tenant?.location ?? "";
 
-  const loadServices = async () => {
-    try {
-      const rows = await api.listServices();
-      setServices(
-        rows.map((row) => ({
-          id: row.id,
-          name: row.name,
-          description: row.description ?? "",
-          duration: row.duration_minutes,
-          schedulingMode: (row.scheduling_mode ?? "fixed") as SchedulingMode,
-          price: row.price_amount,
-          deposit: row.deposit_amount ?? 0,
-          active: row.active,
-          appointment: {
-            appointment_type: row.appointment_type ?? "onsite",
-            location: row.location ?? "",
-            use_business_location: row.use_business_location ?? true,
-            host_name: row.host_name ?? "",
-            host_title: row.host_title ?? "",
-            online_meeting_link: row.online_meeting_link ?? "",
-            client_instructions: row.client_instructions ?? "",
-            buffer_minutes: String(row.buffer_minutes ?? 0),
-          },
-          imageUrl: row.image_url ?? "",
-        }))
-      );
-      setError("");
-    } catch {
-      setError("Unable to load services from API.");
-    }
-  };
+  const services = useMemo(
+    () =>
+      serviceRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        description: row.description ?? "",
+        duration: row.duration_minutes,
+        schedulingMode: (row.scheduling_mode ?? "fixed") as SchedulingMode,
+        price: row.price_amount,
+        deposit: row.deposit_amount ?? 0,
+        active: row.active,
+        appointment: {
+          appointment_type: row.appointment_type ?? "onsite",
+          location: row.location ?? "",
+          use_business_location: row.use_business_location ?? true,
+          host_name: row.host_name ?? "",
+          host_title: row.host_title ?? "",
+          online_meeting_link: row.online_meeting_link ?? "",
+          client_instructions: row.client_instructions ?? "",
+          buffer_minutes: String(row.buffer_minutes ?? 0),
+        },
+        imageUrl: row.image_url ?? "",
+      })),
+    [serviceRows]
+  );
+
+  const displayError = error || (servicesFailed ? "Unable to load services from API." : "");
+
+  async function refreshServices() {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.services });
+  }
 
   const buildPayload = () => ({
     name: formData.name,
@@ -114,28 +120,6 @@ export function ServicesManagement() {
     image_url: formData.imageUrl || undefined,
   });
 
-  const mapCreatedService = (created: Awaited<ReturnType<typeof api.createService>>): Service => ({
-    id: created.id,
-    name: created.name,
-    description: created.description ?? "",
-    duration: created.duration_minutes,
-    schedulingMode: (created.scheduling_mode ?? "fixed") as SchedulingMode,
-    price: created.price_amount,
-    deposit: created.deposit_amount ?? 0,
-    active: created.active,
-    appointment: {
-      appointment_type: created.appointment_type ?? "onsite",
-      location: created.location ?? "",
-      use_business_location: created.use_business_location ?? true,
-      host_name: created.host_name ?? "",
-      host_title: created.host_title ?? "",
-      online_meeting_link: created.online_meeting_link ?? "",
-      client_instructions: created.client_instructions ?? "",
-      buffer_minutes: String(created.buffer_minutes ?? 0),
-    },
-    imageUrl: created.image_url ?? "",
-  });
-
   const handleCreateOrUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -146,11 +130,11 @@ export function ServicesManagement() {
           ...buildPayload(),
           active: editingService.active,
         });
-        await loadServices();
       } else {
-        const created = await api.createService(buildPayload());
-        setServices((prev) => [...prev, mapCreatedService(created)]);
+        await api.createService(buildPayload());
       }
+      await refreshServices();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings });
 
       setFormData(emptyForm());
       setEditingService(null);
@@ -182,7 +166,8 @@ export function ServicesManagement() {
     setDeletingId(id);
     try {
       await api.deleteService(id);
-      setServices((prev) => prev.filter((s) => s.id !== id));
+      await refreshServices();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.bookings });
       setError("");
     } catch {
       setError("Unable to delete service.");
@@ -212,7 +197,7 @@ export function ServicesManagement() {
         image_url: service.imageUrl || undefined,
         active: !service.active,
       });
-      await loadServices();
+      await refreshServices();
       setError("");
     } catch {
       setError("Unable to update service status.");
@@ -358,7 +343,7 @@ export function ServicesManagement() {
       </div>
 
       {/* Services Grid */}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {displayError && <p className="text-sm text-red-600">{displayError}</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {services.map((service) => (
           <Card key={service.id} className={`overflow-hidden ${!service.active ? "opacity-60" : ""} ${service.imageUrl ? "gap-0" : ""}`}>

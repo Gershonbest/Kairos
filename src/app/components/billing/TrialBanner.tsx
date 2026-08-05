@@ -7,11 +7,13 @@ import { Button } from "../ui/button";
 interface TrialBannerProps {
   message: string;
   daysRemaining?: number;
-  variant?: "ending_soon" | "expired";
+  variant?: "ending_soon" | "expired" | "suspended";
 }
 
 export function TrialBanner({ message, daysRemaining, variant = "ending_soon" }: TrialBannerProps) {
-  const isExpired = variant === "expired";
+  const isExpired = variant === "expired" || variant === "suspended";
+  const title =
+    variant === "suspended" ? "Account suspended" : isExpired ? "Trial ended" : "Trial ending soon";
 
   return (
     <div
@@ -23,7 +25,7 @@ export function TrialBanner({ message, daysRemaining, variant = "ending_soon" }:
         <div className="flex items-start gap-3">
           <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${isExpired ? "text-red-600" : "text-amber-600"}`} />
           <div>
-            <p className="font-medium">{isExpired ? "Trial ended" : "Trial ending soon"}</p>
+            <p className="font-medium">{title}</p>
             <p className="text-sm opacity-90">
               {message}
               {!isExpired && daysRemaining !== undefined ? ` (${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left)` : ""}
@@ -31,7 +33,9 @@ export function TrialBanner({ message, daysRemaining, variant = "ending_soon" }:
           </div>
         </div>
         <Button asChild size="sm" className={isExpired ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"}>
-          <Link to="/dashboard/choose-plan">Choose a plan</Link>
+          <Link to="/dashboard/choose-plan">
+            {variant === "suspended" ? "Reactivate account" : "Choose a plan"}
+          </Link>
         </Button>
       </div>
     </div>

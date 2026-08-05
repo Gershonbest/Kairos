@@ -24,6 +24,8 @@ import { SystemAdmin } from "./pages/admin/SystemAdmin";
 import { AdminLogin } from "./pages/admin/AdminLogin";
 import { SubscriberManagement } from "./pages/admin/SubscriberManagement";
 import { PlanSettings } from "./pages/admin/PlanSettings";
+import { PaymentLogs } from "./pages/admin/PaymentLogs";
+import { AdminLayout } from "./components/layouts/AdminLayout";
 import { DashboardLayout } from "./components/layouts/DashboardLayout";
 import { PublicLayout } from "./components/layouts/PublicLayout";
 import { AuthLayout } from "./components/layouts/AuthLayout";
@@ -51,9 +53,16 @@ export const router = createBrowserRouter([
   { path: "/verify-email", Component: VerifyEmail },
   // System Admin Routes
   { path: "/admin/login", Component: AdminLogin },
-  { path: "/admin", Component: SystemAdmin },
-  { path: "/admin/subscribers", Component: SubscriberManagement },
-  { path: "/admin/plans", Component: PlanSettings },
+  {
+    path: "/admin",
+    Component: AdminLayout,
+    children: [
+      { index: true, Component: SystemAdmin },
+      { path: "subscribers", Component: SubscriberManagement },
+      { path: "plans", Component: PlanSettings },
+      { path: "payments", Component: PaymentLogs },
+    ],
+  },
   {
     path: "/onboarding",
     Component: AuthLayout,

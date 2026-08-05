@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, Calendar, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import { Button } from "../../components/ui/button";
+import {
+  AdminHeader,
+  adminGhostLinkClass,
+  adminInputClass,
+  adminNavLinkClass,
+} from "../../components/layouts/AdminHeader";
 
 type AdminPlan = Awaited<ReturnType<typeof api.adminPlans>>[number];
 
@@ -159,68 +165,59 @@ export function PlanSettings() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link to="/admin" className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                  <Calendar className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">Plan Settings</h1>
-                  <p className="text-xs text-gray-500">Configure subscription plans and pricing</p>
-                </div>
-              </Link>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link
-                to="/admin"
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 flex items-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back to Dashboard
-              </Link>
-              <Button onClick={startCreate} className="bg-primary hover:bg-primary/90">
-                <Plus className="w-4 h-4 mr-2" />
-                New plan
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-background text-foreground">
+      <AdminHeader title="Plan Settings" subtitle="Configure subscription plans and pricing">
+        <Link to="/admin" className={adminGhostLinkClass}>
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </Link>
+        <Link to="/admin/payments" className={adminNavLinkClass}>
+          Payment Hub
+        </Link>
+        <Button onClick={startCreate} className="bg-primary hover:bg-primary/90">
+          <Plus className="w-4 h-4 mr-2" />
+          New plan
+        </Button>
+      </AdminHeader>
 
       <div className="p-6 max-w-[1600px] mx-auto">
-        {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
-        {success && <p className="text-sm text-green-600 mb-4">{success}</p>}
+        {error && (
+          <p className="text-sm text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2 mb-4">
+            {success}
+          </p>
+        )}
 
         {isLoading ? (
-          <p className="text-gray-500">Loading plans...</p>
+          <p className="text-muted-foreground">Loading plans...</p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="font-semibold text-gray-900">Plans</h2>
-                <p className="text-sm text-gray-500">{plans.length} configured</p>
+            <div className="bg-card rounded-xl border border-border overflow-hidden">
+              <div className="p-4 border-b border-border">
+                <h2 className="font-semibold text-foreground">Plans</h2>
+                <p className="text-sm text-muted-foreground">{plans.length} configured</p>
               </div>
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-border">
                 {plans.map((plan) => (
                   <button
                     key={plan.code}
                     onClick={() => selectPlan(plan)}
-                    className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+                    className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${
                       selectedCode === plan.code && !isCreating ? "bg-primary/10" : ""
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div>
-                        <p className="font-medium text-gray-900">{plan.name}</p>
-                        <p className="text-xs text-gray-500">{plan.code}</p>
+                        <p className="font-medium text-foreground">{plan.name}</p>
+                        <p className="text-xs text-muted-foreground">{plan.code}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-medium">{formatPrice(plan.monthly_price)}</p>
-                        <p className="text-xs text-gray-500">{plan.is_active ? "Active" : "Hidden"}</p>
+                        <p className="text-sm font-medium text-foreground">{formatPrice(plan.monthly_price)}</p>
+                        <p className="text-xs text-muted-foreground">{plan.is_active ? "Active" : "Hidden"}</p>
                       </div>
                     </div>
                   </button>
@@ -228,12 +225,12 @@ export function PlanSettings() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+            <div className="bg-card rounded-xl border border-border p-6 space-y-5">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
+                <h2 className="text-lg font-semibold text-foreground">
                   {isCreating ? "Create plan" : selectedCode ? `Edit ${selectedCode}` : "Select a plan"}
                 </h2>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-muted-foreground">
                   Changes apply immediately to the public choose-plan page and tenant billing.
                 </p>
               </div>
@@ -243,66 +240,70 @@ export function PlanSettings() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {isCreating && (
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Plan code</label>
+                        <label className="block text-sm font-medium text-foreground mb-1">Plan code</label>
                         <input
                           value={form.code}
                           onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toLowerCase() }))}
                           placeholder="e.g. premium"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                          className={`${adminInputClass} w-full`}
                         />
                       </div>
                     )}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Display name</label>
+                      <label className="block text-sm font-medium text-foreground mb-1">Display name</label>
                       <input
                         value={form.name}
                         onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        className={`${adminInputClass} w-full`}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Monthly price (NGN)</label>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Monthly price (NGN)
+                      </label>
                       <input
                         type="number"
                         min="0"
                         value={form.monthly_price}
                         onChange={(e) => setForm((prev) => ({ ...prev, monthly_price: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        className={`${adminInputClass} w-full`}
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Sort order</label>
+                      <label className="block text-sm font-medium text-foreground mb-1">Sort order</label>
                       <input
                         type="number"
                         value={form.sort_order}
                         onChange={(e) => setForm((prev) => ({ ...prev, sort_order: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        className={`${adminInputClass} w-full`}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">Description</label>
                     <textarea
                       value={form.description}
                       onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                       rows={2}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                      className={`${adminInputClass} w-full`}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Features (one per line)</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Features (one per line)
+                    </label>
                     <textarea
                       value={form.featuresText}
                       onChange={(e) => setForm((prev) => ({ ...prev, featuresText: e.target.value }))}
                       rows={8}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono"
+                      className={`${adminInputClass} w-full font-mono`}
                     />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <label className="flex items-center gap-2 text-sm text-foreground">
                       <input
                         type="checkbox"
                         checked={form.self_serve}
@@ -310,7 +311,7 @@ export function PlanSettings() {
                       />
                       Self-serve checkout
                     </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <label className="flex items-center gap-2 text-sm text-foreground">
                       <input
                         type="checkbox"
                         checked={form.is_active}
@@ -318,7 +319,7 @@ export function PlanSettings() {
                       />
                       Visible to tenants
                     </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <label className="flex items-center gap-2 text-sm text-foreground">
                       <input
                         type="checkbox"
                         checked={form.is_featured}
@@ -344,7 +345,7 @@ export function PlanSettings() {
                         onClick={() => void handleDelete()}
                         loading={isDeleting}
                         loadingLabel="Deleting..."
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="text-red-600 dark:text-red-400 hover:text-red-700 hover:bg-red-500/10"
                       >
                         <Trash2 className="w-4 h-4 mr-2" />
                         Delete

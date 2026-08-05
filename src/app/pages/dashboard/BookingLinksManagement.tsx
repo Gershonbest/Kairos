@@ -1,9 +1,10 @@
 // Manage and copy public booking URLs.
 
-import React, { useMemo, useState } from "react";
+import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Copy, Download, ExternalLink, Link as LinkIcon, QrCode } from "lucide-react";
-import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 import { Button } from "../../components/ui/button";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 
@@ -36,7 +37,8 @@ function qrImageUrl(value: string): string {
 }
 
 export function BookingLinksManagement() {
-  const [links, setLinks] = useState<BookingLink[]>([]);
+  const queryClient = useQueryClient();
+  const hydratedRef = useRef(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
   const [busyQr, setBusyQr] = useState("");
@@ -47,34 +49,39 @@ export function BookingLinksManagement() {
     public_logo_url: "",
   });
 
-  useEffect(() => {
-    api
-      .getBookingLinks()
-      .then((data) => {
-        const items: BookingLink[] = [
-          { label: "Main booking link (all services)", url: normalizeToCurrentOrigin(data.business_url) },
-          ...data.service_urls.map((item) => ({
-            label: `Service: ${item.service_name}`,
-            url: normalizeToCurrentOrigin(item.url),
-          })),
-        ];
-        setLinks(items);
-        setError("");
-      })
-      .catch(() => setError("Unable to load booking links."));
-    api
-      .myTenant()
-      .then((tenant) =>
-        setProfileForm({
-          public_tagline: tenant.public_tagline ?? "",
-          public_description: tenant.public_description ?? "",
-          public_logo_url: tenant.public_logo_url ?? "",
-        })
-      )
-      .catch(() => null);
-  }, []);
+  const { data: bookingLinks, isError: linksFailed } = useQuery({
+    queryKey: queryKeys.bookingLinks,
+    queryFn: () => api.getBookingLinks(),
+  });
 
-  const totalLinks = useMemo(() => links.length, [links]);
+  const { data: tenant } = useQuery({
+    queryKey: queryKeys.tenant,
+    queryFn: () => api.myTenant(),
+  });
+
+  const links = useMemo<BookingLink[]>(() => {
+    if (!bookingLinks) return [];
+    return [
+      { label: "Main booking link (all services)", url: normalizeToCurrentOrigin(bookingLinks.business_url) },
+      ...bookingLinks.service_urls.map((item) => ({
+        label: `Service: ${item.service_name}`,
+        url: normalizeToCurrentOrigin(item.url),
+      })),
+    ];
+  }, [bookingLinks]);
+
+  useLayoutEffect(() => {
+    if (!tenant || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setProfileForm({
+      public_tagline: tenant.public_tagline ?? "",
+      public_description: tenant.public_description ?? "",
+      public_logo_url: tenant.public_logo_url ?? "",
+    });
+  }, [tenant]);
+
+  const displayError = error || (linksFailed ? "Unable to load booking links." : "");
+  const totalLinks = links.length;
 
   const handleCopy = async (url: string) => {
     try {
@@ -114,6 +121,11 @@ export function BookingLinksManagement() {
         public_description: profileForm.public_description || undefined,
         public_logo_url: profileForm.public_logo_url || undefined,
       });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.tenant }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.bookingLinks }),
+      ]);
       setError("");
     } catch {
       setError("Unable to save public booking profile.");
@@ -131,7 +143,7 @@ export function BookingLinksManagement() {
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {displayError && <p className="text-sm text-red-600">{displayError}</p>}
 
       <div className="bg-card border border-border rounded-xl p-5">
         <p className="text-sm text-muted-foreground">

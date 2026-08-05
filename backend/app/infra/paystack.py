@@ -129,6 +129,81 @@ class PaystackClient:
         return data
 
     @staticmethod
+    def split_full_name(full_name: str | None) -> tuple[str | None, str | None]:
+        parts = (full_name or "").split()
+        if not parts:
+            return None, None
+        if len(parts) == 1:
+            return parts[0], None
+        return parts[0], " ".join(parts[1:])
+
+    async def upsert_customer(
+        self,
+        *,
+        email: str,
+        full_name: str | None = None,
+        phone: str | None = None,
+    ) -> dict | None:
+        """Create or update the Paystack customer so the dashboard shows name/phone.
+
+        Transaction metadata alone never populates the Customers table, so the
+        customer record itself has to carry these fields.
+        """
+        first_name, last_name = self.split_full_name(full_name)
+        if not any([first_name, last_name, phone]):
+            return None
+
+        body: dict[str, Any] = {"email": email}
+        if first_name:
+            body["first_name"] = first_name
+        if last_name:
+            body["last_name"] = last_name
+        if phone:
+            body["phone"] = phone
+
+        try:
+            customer = await self._request("POST", "/customer", json=body)
+        except PaystackError:
+            logger.warning("paystack.customer_upsert_failed", email=email)
+            return None
+        if not isinstance(customer, dict):
+            return None
+
+        # Creating an existing customer returns the stored record untouched, so
+        # push an explicit update whenever the saved details are stale.
+        code = customer.get("customer_code")
+        stale = any(
+            [
+                first_name and customer.get("first_name") != first_name,
+                last_name and customer.get("last_name") != last_name,
+                phone and customer.get("phone") != phone,
+            ]
+        )
+        if code and stale:
+            try:
+                updated = await self._request(
+                    "PUT", f"/customer/{code}", json={k: v for k, v in body.items() if k != "email"}
+                )
+                if isinstance(updated, dict):
+                    return updated
+            except PaystackError:
+                logger.warning("paystack.customer_update_failed", email=email, customer_code=code)
+        return customer
+
+    @staticmethod
+    def _customer_custom_fields(full_name: str | None, phone: str | None) -> list[dict[str, str]]:
+        fields: list[dict[str, str]] = []
+        if full_name:
+            fields.append(
+                {"display_name": "Customer Name", "variable_name": "customer_name", "value": full_name}
+            )
+        if phone:
+            fields.append(
+                {"display_name": "Phone Number", "variable_name": "phone_number", "value": phone}
+            )
+        return fields
+
+    @staticmethod
     def checkout_channels() -> list[str] | None:
         """Payment methods shown on Paystack Checkout (card, bank/OPay, transfer, etc.)."""
         raw = (get_settings().paystack_channels or "").strip()
@@ -148,14 +223,25 @@ class PaystackClient:
         subaccount_code: str | None = None,
         currency: str = "NGN",
         channels: list[str] | None = None,
+        customer_name: str | None = None,
+        customer_phone: str | None = None,
     ) -> dict:
+        if customer_name or customer_phone:
+            await self.upsert_customer(email=email, full_name=customer_name, phone=customer_phone)
+
+        merged_metadata: dict[str, Any] = dict(metadata or {})
+        custom_fields = list(merged_metadata.get("custom_fields") or [])
+        custom_fields.extend(self._customer_custom_fields(customer_name, customer_phone))
+        if custom_fields:
+            merged_metadata["custom_fields"] = custom_fields
+
         body: dict[str, Any] = {
             "email": email,
             "amount": self.to_kobo(amount_naira),
             "reference": reference,
             "callback_url": callback_url,
             "currency": currency,
-            "metadata": metadata or {},
+            "metadata": merged_metadata,
         }
         resolved_channels = channels if channels is not None else self.checkout_channels()
         if resolved_channels:

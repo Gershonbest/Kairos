@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.datetime_utils import as_utc, utc_now
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Booking, BookingStatus, Client, PaymentStatus, PaymentTransaction, Service
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
+
+DASHBOARD_CACHE = "dashboard:summary"
 
 
 @router.get("/summary")
@@ -22,6 +25,11 @@ async def get_dashboard_summary(
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, DASHBOARD_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
 
     bookings = (
         await session.execute(select(Booking).where(Booking.tenant_id == current_user.tenant_id))
@@ -52,20 +60,30 @@ async def get_dashboard_summary(
         if as_utc(b.start_at).month == previous_month and as_utc(b.start_at).year == previous_month_year
     ]
 
-    completed_transactions = [t for t in transactions if t.status == PaymentStatus.succeeded]
+    # Business dashboard revenue is client booking payments only — never include
+    # subscription fees the tenant paid to Kairos.
+    completed_transactions = [
+        t
+        for t in transactions
+        if t.status == PaymentStatus.succeeded and t.purpose == "booking"
+    ]
+
+    def transaction_month(tx: PaymentTransaction) -> tuple[int, int] | None:
+        when = tx.paid_at or tx.created_at
+        if not when:
+            return None
+        stamp = as_utc(when)
+        return stamp.year, stamp.month
+
     current_month_revenue = sum(
         float(t.amount)
         for t in completed_transactions
-        if t.created_at
-        and as_utc(t.created_at).month == current_month
-        and as_utc(t.created_at).year == current_year
+        if transaction_month(t) == (current_year, current_month)
     )
     previous_month_revenue = sum(
         float(t.amount)
         for t in completed_transactions
-        if t.created_at
-        and as_utc(t.created_at).month == previous_month
-        and as_utc(t.created_at).year == previous_month_year
+        if transaction_month(t) == (previous_month_year, previous_month)
     )
 
     avg_booking_value = (
@@ -74,9 +92,10 @@ async def get_dashboard_summary(
 
     monthly_revenue_map: dict[str, float] = defaultdict(float)
     for tx in completed_transactions:
-        if not tx.created_at:
+        when = tx.paid_at or tx.created_at
+        if not when:
             continue
-        key = as_utc(tx.created_at).strftime("%Y-%m")
+        key = as_utc(when).strftime("%Y-%m")
         monthly_revenue_map[key] += float(tx.amount)
 
     revenue_series: list[dict] = []
@@ -130,7 +149,7 @@ async def get_dashboard_summary(
             return 100.0 if current > 0 else 0.0
         return ((current - previous) / previous) * 100.0
 
-    return {
+    payload = {
         "stats": {
             "total_bookings": len(bookings),
             "monthly_revenue": round(current_month_revenue, 2),
@@ -145,3 +164,5 @@ async def get_dashboard_summary(
         "bookings_series": bookings_series,
         "upcoming_appointments": upcoming,
     }
+    await redis_cache.set_json(cache_key, payload)
+    return payload

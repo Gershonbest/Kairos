@@ -5,11 +5,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Booking, Client, PaymentStatus, PaymentTransaction
 from app.schemas.clients import ClientCreate, ClientOut, ClientUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
+
+CLIENTS_CACHE = "clients:list"
+BOOKINGS_CACHE = "bookings:list"
 
 
 async def _client_stats(session: AsyncSession, tenant_id: str, client_ids: list[str]) -> dict[str, dict]:
@@ -74,11 +78,19 @@ async def list_clients(
 ) -> list[ClientOut]:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, CLIENTS_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, list):
+        return [ClientOut.model_validate(item) for item in cached]
+
     rows = (
         await session.execute(select(Client).where(Client.tenant_id == current_user.tenant_id).order_by(Client.full_name))
     ).scalars().all()
     stats = await _client_stats(session, current_user.tenant_id, [row.id for row in rows])
-    return [_client_out(row, stats) for row in rows]
+    payload = [_client_out(row, stats) for row in rows]
+    await redis_cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload])
+    return payload
 
 
 @router.post("", response_model=ClientOut, status_code=201)
@@ -108,6 +120,7 @@ async def create_client(
     session.add(client)
     await session.commit()
     await session.refresh(client)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, CLIENTS_CACHE)
     return _client_out(client, {client.id: {"total_bookings": 0, "total_spent": 0.0, "last_visit_at": None}})
 
 
@@ -151,6 +164,7 @@ async def update_client(
 
     await session.commit()
     await session.refresh(client)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, CLIENTS_CACHE, BOOKINGS_CACHE)
     stats = await _client_stats(session, current_user.tenant_id, [client.id])
     return _client_out(client, stats)
 
@@ -182,4 +196,5 @@ async def delete_client(
 
     await session.delete(client)
     await session.commit()
+    await redis_cache.invalidate_tenant(current_user.tenant_id, CLIENTS_CACHE)
     return {"ok": True}

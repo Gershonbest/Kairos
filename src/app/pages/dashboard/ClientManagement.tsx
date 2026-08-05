@@ -8,8 +8,10 @@ import { Textarea } from "../../components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 import { Search, Plus, Mail, Phone, Calendar, DollarSign, MessageSquare } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 
 interface Client {
   id: string;
@@ -22,20 +24,8 @@ interface Client {
   notes: string;
 }
 
-interface BookingRow {
-  id: string;
-  status: string;
-  start_at: string;
-  end_at: string;
-  client_id: string;
-  service_id: string;
-  client_name: string;
-  service_name: string;
-}
-
 export function ClientManagement() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [bookings, setBookings] = useState<BookingRow[]>([]);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [error, setError] = useState("");
@@ -45,29 +35,39 @@ export function ClientManagement() {
   const [isAdding, setIsAdding] = useState(false);
   const [newClient, setNewClient] = useState({ name: "", email: "", phone: "", notes: "" });
 
-  const loadData = useCallback(() => {
-    Promise.all([api.listClients(), api.listBookings()])
-      .then(([clientRows, bookingRows]) => {
-        setBookings(bookingRows);
-        setClients(
-          clientRows.map((row) => ({
-            id: row.id,
-            name: row.full_name,
-            email: row.email,
-            phone: row.phone ?? "N/A",
-            totalBookings: row.total_bookings,
-            totalSpent: row.total_spent,
-            lastVisit: row.last_visit_at ?? new Date().toISOString(),
-            notes: row.notes ?? "",
-          }))
-        );
-      })
-      .catch(() => setError("Unable to load clients from API."));
-  }, []);
+  const { data: clientRows = [], isError: clientsFailed } = useQuery({
+    queryKey: queryKeys.clients,
+    queryFn: () => api.listClients(),
+  });
+  const { data: bookings = [], isError: bookingsFailed } = useQuery({
+    queryKey: queryKeys.bookings,
+    queryFn: () => api.listBookings(),
+  });
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const clients = useMemo(
+    () =>
+      clientRows.map((row) => ({
+        id: row.id,
+        name: row.full_name,
+        email: row.email,
+        phone: row.phone ?? "N/A",
+        totalBookings: row.total_bookings,
+        totalSpent: row.total_spent,
+        lastVisit: row.last_visit_at ?? new Date().toISOString(),
+        notes: row.notes ?? "",
+      })),
+    [clientRows]
+  );
+
+  const displayError =
+    error || (clientsFailed || bookingsFailed ? "Unable to load clients from API." : "");
+
+  async function refreshLists() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.clients }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.bookings }),
+    ]);
+  }
 
   const filteredClients = clients.filter(
     (client) =>
@@ -95,7 +95,7 @@ export function ClientManagement() {
       });
       setNewClient({ name: "", email: "", phone: "", notes: "" });
       setShowAddDialog(false);
-      loadData();
+      await refreshLists();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add client.");
     } finally {
@@ -110,7 +110,7 @@ export function ClientManagement() {
     try {
       await api.updateClient(selectedClient.id, { notes: noteDraft });
       setSelectedClient((prev) => (prev ? { ...prev, notes: noteDraft } : prev));
-      loadData();
+      await refreshLists();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save notes.");
     } finally {
@@ -233,7 +233,7 @@ export function ClientManagement() {
         </Card>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {displayError && <p className="text-sm text-red-600">{displayError}</p>}
       <Card>
         <CardHeader>
           <CardTitle>All Clients</CardTitle>

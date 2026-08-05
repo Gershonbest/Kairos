@@ -6,6 +6,7 @@ import { Shield, ArrowLeft } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { ThemeToggle } from "../../components/theme/ThemeToggle";
 import { api, setAuthTokens } from "../../../lib/api/client";
 
 export function AdminLogin() {
@@ -31,29 +32,32 @@ export function AdminLogin() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+    <div className="min-h-screen flex items-center justify-center bg-background p-6">
       <div className="w-full max-w-md">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-8 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to home
-        </Link>
+        <div className="flex items-center justify-between mb-8">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to home
+          </Link>
+          <ThemeToggle compact />
+        </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-200">
+        <div className="bg-card rounded-2xl shadow-xl p-8 border border-border">
           <div className="flex items-center justify-center gap-3 mb-8">
             <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
               <Shield className="w-7 h-7 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">System Admin</h1>
-              <p className="text-sm text-gray-500">Kairos Bookings</p>
+              <h1 className="text-2xl font-bold text-foreground">System Admin</h1>
+              <p className="text-sm text-muted-foreground">Kairos Bookings</p>
             </div>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <p className="text-sm text-yellow-800 flex items-center gap-2">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
               <Shield className="w-4 h-4" />
               Restricted access - Admin credentials required
             </p>
@@ -96,7 +100,7 @@ export function AdminLogin() {
             >
               Access Admin Dashboard
             </Button>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           </form>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">

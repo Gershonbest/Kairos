@@ -1,6 +1,7 @@
 // Tabbed settings hub: account, business, public page, payments, notifications, billing, danger zone.
 
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
@@ -12,6 +13,7 @@ import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
 import { api, clearAuthTokens, type TenantBranchPayload } from "../../../lib/api/client";
 import { COUNTRIES, getDialCodeForCountry } from "../../../lib/data/locations";
+import { queryKeys } from "../../../lib/queryClient";
 
 const TIMEZONES = [
   "Africa/Lagos",
@@ -39,8 +41,9 @@ function createBranch(countryCode: string, dialCode: string): TenantBranchPayloa
 
 export function AccountSettings() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const hydratedForUserRef = useRef<string | null>(null);
   const [tab, setTab] = useState("account");
-  const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -51,10 +54,15 @@ export function AccountSettings() {
   const [newEmail, setNewEmail] = useState("");
   const [hasPassword, setHasPassword] = useState(true);
   const [emailVerified, setEmailVerified] = useState(true);
+  const [emailPassword, setEmailPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [resendingVerification, setResendingVerification] = useState(false);
 
   // Business
   const [businessName, setBusinessName] = useState("");
@@ -112,107 +120,210 @@ export function AccountSettings() {
     setSuccess("");
   };
 
-  useEffect(() => {
-    Promise.all([
-      api.me(),
-      api.myTenant().catch(() => null),
-      api.getPaymentProvider().catch(() => null),
-      api.getNotificationPreferences().catch(() => null),
-      api.getSubscriptionStatus().catch(() => null),
-      api.listPaystackBanks().catch(() => [] as Array<{ name: string; code: string }>),
-    ])
-      .then(([profile, tenant, payment, prefs, sub, bankRows]) => {
-        setFullName(profile.full_name);
-        setEmail(profile.email);
-        setNewEmail(profile.email);
-        setHasPassword(Boolean(profile.has_password));
-        setEmailVerified(Boolean(profile.email_verified ?? true));
-        setOnboardingCompleted(tenant?.onboarding_completed ?? profile.onboarding_completed ?? true);
+  const {
+    data: settings,
+    isPending,
+    isError: settingsFailed,
+  } = useQuery({
+    queryKey: queryKeys.settingsBundle,
+    queryFn: async () => {
+      const [profile, tenant, payment, prefs, sub, bankRows] = await Promise.all([
+        api.me(),
+        api.myTenant().catch(() => null),
+        api.getPaymentProvider().catch(() => null),
+        api.getNotificationPreferences().catch(() => null),
+        api.getSubscriptionStatus().catch(() => null),
+        api.listPaystackBanks().catch(() => [] as Array<{ name: string; code: string }>),
+      ]);
+      return { profile, tenant, payment, prefs, sub, bankRows };
+    },
+  });
 
-        if (tenant) {
-          setBusinessName(tenant.name || "");
-          setBusinessType(tenant.business_type || "");
-          setHelpEmail(tenant.help_email || "");
-          setTimezone(tenant.timezone || "Africa/Lagos");
-          setLogoUrl(tenant.public_logo_url || "");
-          setCountryCode(tenant.country_code || "NG");
-          setDialCode(tenant.phone_country_code || getDialCodeForCountry(tenant.country_code || "NG"));
-          setPhoneNumber(tenant.phone_number || "");
-          setState(tenant.state || "");
-          setAddressLine(tenant.address_line || "");
-          setBranches(tenant.branches || []);
-          setPublicTagline(tenant.public_tagline || "");
-          setPublicDescription(tenant.public_description || "");
-          setPublicLogoUrl(tenant.public_logo_url || "");
-          setPublicSlug(tenant.public_slug || "");
-          setReconnectBusinessName(tenant.name || "");
-          setPlanCode(tenant.plan_code || "standard");
-        }
+  const isLoading = isPending && !settings;
 
-        if (payment) {
-          setPaymentsEnabled(Boolean(payment.payments_enabled));
-          setSettlementBank(payment.settlement_bank_code || "");
-          setSettlementLast4(payment.settlement_account_last4 || "");
-          setPlatformFee(Number(payment.platform_fee_percent ?? 5));
-          setReconnectBank(payment.settlement_bank_code || "");
-        }
+  useLayoutEffect(() => {
+    // Re-hydrate whenever the signed-in account changes so one user never
+    // sees form values left behind by another.
+    if (!settings || hydratedForUserRef.current === settings.profile.id) return;
+    hydratedForUserRef.current = settings.profile.id;
 
-        if (prefs) {
-          setEmailEnabled(Boolean(prefs.email_enabled ?? prefs.email ?? true));
-          setBookingCreatedEmail(Boolean(prefs.booking_created_email ?? true));
-          setPaymentReceivedEmail(Boolean(prefs.payment_received_email ?? true));
-          setSmsEnabled(Boolean(prefs.sms_enabled ?? prefs.sms ?? false));
-        }
+    const { profile, tenant, payment, prefs, sub, bankRows } = settings;
+    setFullName(profile.full_name);
+    setEmail(profile.email);
+    setNewEmail(profile.email);
+    setHasPassword(Boolean(profile.has_password));
+    setEmailVerified(Boolean(profile.email_verified ?? true));
+    setOnboardingCompleted(tenant?.onboarding_completed ?? profile.onboarding_completed ?? true);
 
-        if (sub) {
-          setPlanCode(sub.plan_code);
-          setIsTrial(sub.is_trial);
-          setDaysRemaining(sub.days_remaining);
-          setTrialEndsAt(sub.trial_ends_at);
-          setPaidUntil(sub.subscription_paid_until);
-          setBillingStatus(sub.status);
-        }
+    if (tenant) {
+      setBusinessName(tenant.name || "");
+      setBusinessType(tenant.business_type || "");
+      setHelpEmail(tenant.help_email || "");
+      setTimezone(tenant.timezone || "Africa/Lagos");
+      setLogoUrl(tenant.public_logo_url || "");
+      setCountryCode(tenant.country_code || "NG");
+      setDialCode(tenant.phone_country_code || getDialCodeForCountry(tenant.country_code || "NG"));
+      setPhoneNumber(tenant.phone_number || "");
+      setState(tenant.state || "");
+      setAddressLine(tenant.address_line || "");
+      setBranches(tenant.branches || []);
+      setPublicTagline(tenant.public_tagline || "");
+      setPublicDescription(tenant.public_description || "");
+      setPublicLogoUrl(tenant.public_logo_url || "");
+      setPublicSlug(tenant.public_slug || "");
+      setReconnectBusinessName(tenant.name || "");
+      setPlanCode(tenant.plan_code || "standard");
+    }
 
-        setBanks((bankRows || []).map((b) => ({ name: b.name, code: b.code })));
-      })
-      .catch(() => setError("Unable to load settings."))
-      .finally(() => setIsLoading(false));
-  }, []);
+    if (payment) {
+      setPaymentsEnabled(Boolean(payment.payments_enabled));
+      setSettlementBank(payment.settlement_bank_code || "");
+      setSettlementLast4(payment.settlement_account_last4 || "");
+      setPlatformFee(Number(payment.platform_fee_percent ?? 5));
+      setReconnectBank(payment.settlement_bank_code || "");
+    }
 
-  const handleSaveAccount = async (e: React.FormEvent) => {
+    if (prefs) {
+      setEmailEnabled(Boolean(prefs.email_enabled ?? prefs.email ?? true));
+      setBookingCreatedEmail(Boolean(prefs.booking_created_email ?? true));
+      setPaymentReceivedEmail(Boolean(prefs.payment_received_email ?? true));
+      setSmsEnabled(Boolean(prefs.sms_enabled ?? prefs.sms ?? false));
+    }
+
+    if (sub) {
+      setPlanCode(sub.plan_code);
+      setIsTrial(sub.is_trial);
+      setDaysRemaining(sub.days_remaining);
+      setTrialEndsAt(sub.trial_ends_at);
+      setPaidUntil(sub.subscription_paid_until);
+      setBillingStatus(sub.status);
+    }
+
+    setBanks((bankRows || []).map((b) => ({ name: b.name, code: b.code })));
+  }, [settings]);
+
+  // Keep billing fields in sync when subscription status changes after mount
+  // (e.g. admin suspension while settings are open / cached).
+  useLayoutEffect(() => {
+    const sub = settings?.sub;
+    if (!sub) return;
+    setPlanCode(sub.plan_code);
+    setIsTrial(sub.is_trial);
+    setDaysRemaining(sub.days_remaining);
+    setTrialEndsAt(sub.trial_ends_at);
+    setPaidUntil(sub.subscription_paid_until);
+    setBillingStatus(sub.status);
+  }, [settings?.sub]);
+
+  useLayoutEffect(() => {
+    if (settingsFailed) setError("Unable to load settings.");
+  }, [settingsFailed]);
+
+  const invalidateRelatedCaches = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenant }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.paymentProvider }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPrefs }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.bookingLinks }),
+    ]);
+  };
+
+  const refreshProfileCaches = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+    setSavingProfile(true);
     setError("");
     try {
-      if (newPassword && newPassword !== confirmPassword) {
-        throw new Error("New passwords do not match.");
+      const updated = await api.updateProfile({ full_name: fullName.trim() });
+      setFullName(updated.full_name);
+      flash("Profile saved.");
+      refreshProfileCaches();
+    } catch (err) {
+      fail(err, "Unable to save your profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleChangeEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingEmail(true);
+    setError("");
+    try {
+      const nextEmail = newEmail.trim();
+      if (nextEmail.toLowerCase() === email.toLowerCase()) {
+        throw new Error("Enter an email address different from your current one.");
       }
-      const emailChanging = hasPassword && newEmail.trim().toLowerCase() !== email.toLowerCase();
-      if ((newPassword || emailChanging) && !currentPassword) {
-        throw new Error("Current password is required to change email or password.");
+      if (!emailPassword) {
+        throw new Error("Enter your current password to change your email.");
       }
       const updated = await api.updateProfile({
-        full_name: fullName.trim(),
-        ...(newPassword ? { current_password: currentPassword, new_password: newPassword } : {}),
-        ...(emailChanging
-          ? { new_email: newEmail.trim(), current_password: currentPassword }
-          : {}),
+        new_email: nextEmail,
+        current_password: emailPassword,
       });
       setEmail(updated.email);
       setNewEmail(updated.email);
       setEmailVerified(updated.email_verified);
+      setEmailPassword("");
+      flash(
+        updated.email_verified
+          ? "Login email updated."
+          : `Login email updated. We sent a verification link to ${updated.email}.`
+      );
+      refreshProfileCaches();
+    } catch (err) {
+      fail(err, "Unable to change your email.");
+    } finally {
+      setSavingEmail(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPassword(true);
+    setError("");
+    try {
+      if (newPassword.length < 8) {
+        throw new Error("New password must be at least 8 characters.");
+      }
+      if (newPassword !== confirmPassword) {
+        throw new Error("New passwords do not match.");
+      }
+      if (newPassword === currentPassword) {
+        throw new Error("New password must be different from your current password.");
+      }
+      await api.updateProfile({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      flash(
-        emailChanging && !updated.email_verified
-          ? "Account updated. Check your inbox to verify the new email."
-          : "Account settings saved."
-      );
+      flash("Password updated.");
     } catch (err) {
-      fail(err, "Unable to save account settings.");
+      fail(err, "Unable to update your password.");
     } finally {
-      setSaving(false);
+      setSavingPassword(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setResendingVerification(true);
+    setError("");
+    try {
+      await api.resendVerification({ email });
+      flash(`Verification link sent to ${email}.`);
+    } catch (err) {
+      fail(err, "Unable to resend the verification email.");
+    } finally {
+      setResendingVerification(false);
     }
   };
 
@@ -239,6 +350,7 @@ export function AccountSettings() {
         branches,
       });
       flash("Business profile saved.");
+      await invalidateRelatedCaches();
     } catch (err) {
       fail(err, "Unable to save business profile.");
     } finally {
@@ -258,6 +370,7 @@ export function AccountSettings() {
         public_slug: publicSlug.trim() || undefined,
       });
       flash("Public booking page saved.");
+      await invalidateRelatedCaches();
     } catch (err) {
       fail(err, "Unable to save public profile.");
     } finally {
@@ -285,6 +398,8 @@ export function AccountSettings() {
       setPlatformFee(Number(result.platform_fee_percent ?? platformFee));
       setReconnectAccount("");
       flash("Paystack settlement account connected.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.paymentProvider });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
     } catch (err) {
       fail(err, "Unable to connect Paystack.");
     } finally {
@@ -308,6 +423,8 @@ export function AccountSettings() {
       setPaymentReceivedEmail(prefs.payment_received_email);
       setSmsEnabled(prefs.sms_enabled);
       flash("Notification preferences saved.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.notificationPrefs });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
     } catch (err) {
       fail(err, "Unable to save notification preferences.");
     } finally {
@@ -374,51 +491,175 @@ export function AccountSettings() {
           <TabsTrigger value="danger">Danger zone</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="account" className="mt-4">
-          <form onSubmit={handleSaveAccount} className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <TabsContent value="account" className="mt-4 space-y-4">
+          <form onSubmit={handleSaveProfile} className="bg-card border border-border rounded-xl p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-medium">Profile</h2>
+              <p className="text-sm text-muted-foreground">The name shown to your team and on emails you send.</p>
+            </div>
             <div>
               <Label htmlFor="fullName">Full name</Label>
-              <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} className="mt-1" required disabled={saving} />
-            </div>
-            <div>
-              <Label htmlFor="email">Login email</Label>
               <Input
-                id="email"
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
+                id="fullName"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
                 className="mt-1"
-                disabled={saving || !hasPassword}
                 required
+                disabled={savingProfile}
               />
-              {!hasPassword ? (
-                <p className="text-xs text-muted-foreground mt-1">Google accounts cannot change email here.</p>
-              ) : !emailVerified ? (
-                <p className="text-xs text-amber-600 mt-1">Email is unverified. Check your inbox for a verification link.</p>
+            </div>
+            <Button
+              type="submit"
+              className="bg-primary hover:bg-primary/90"
+              loading={savingProfile}
+              loadingLabel="Saving..."
+            >
+              Save profile
+            </Button>
+          </form>
+
+          <form onSubmit={handleChangeEmail} className="bg-card border border-border rounded-xl p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-medium">Login email</h2>
+              <p className="text-sm text-muted-foreground">
+                You sign in with this address. Changing it requires your password and a new verification link.
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs text-muted-foreground">Current email</p>
+                <p className="font-medium">{email}</p>
+              </div>
+              {emailVerified ? (
+                <span className="text-xs font-medium rounded-full bg-accent/15 text-accent px-2 py-1">Verified</span>
               ) : (
-                <p className="text-xs text-muted-foreground mt-1">Changing email requires your current password.</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium rounded-full bg-amber-100 text-amber-800 px-2 py-1">
+                    Unverified
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    loading={resendingVerification}
+                    loadingLabel="Sending..."
+                    onClick={() => void handleResendVerification()}
+                  >
+                    Resend link
+                  </Button>
+                </div>
               )}
             </div>
-            {hasPassword && (
-              <div className="border-t border-border pt-5 space-y-4">
-                <h2 className="text-lg font-medium">Change password</h2>
+
+            {hasPassword ? (
+              <>
+                <div>
+                  <Label htmlFor="newEmail">New email</Label>
+                  <Input
+                    id="newEmail"
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className="mt-1"
+                    required
+                    disabled={savingEmail}
+                    autoComplete="email"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="emailPassword">Current password</Label>
+                  <Input
+                    id="emailPassword"
+                    type="password"
+                    value={emailPassword}
+                    onChange={(e) => setEmailPassword(e.target.value)}
+                    className="mt-1"
+                    required
+                    disabled={savingEmail}
+                    autoComplete="current-password"
+                    placeholder="Confirm it's you"
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90"
+                  loading={savingEmail}
+                  loadingLabel="Updating..."
+                  disabled={!newEmail.trim() || newEmail.trim().toLowerCase() === email.toLowerCase()}
+                >
+                  Update email
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                This account signs in with Google, so the email is managed there and cannot be changed here.
+              </p>
+            )}
+          </form>
+
+          <form onSubmit={handleChangePassword} className="bg-card border border-border rounded-xl p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-medium">Password</h2>
+              <p className="text-sm text-muted-foreground">Use at least 8 characters.</p>
+            </div>
+            {hasPassword ? (
+              <>
                 <div>
                   <Label htmlFor="currentPassword">Current password</Label>
-                  <Input id="currentPassword" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="mt-1" disabled={saving} />
+                  <Input
+                    id="currentPassword"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="mt-1"
+                    required
+                    disabled={savingPassword}
+                    autoComplete="current-password"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="newPassword">New password</Label>
-                  <Input id="newPassword" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="mt-1" minLength={8} disabled={saving} />
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="mt-1"
+                    minLength={8}
+                    required
+                    disabled={savingPassword}
+                    autoComplete="new-password"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="confirmPassword">Confirm new password</Label>
-                  <Input id="confirmPassword" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="mt-1" minLength={8} disabled={saving} />
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="mt-1"
+                    minLength={8}
+                    required
+                    disabled={savingPassword}
+                    autoComplete="new-password"
+                  />
                 </div>
-              </div>
+                <Button
+                  type="submit"
+                  className="bg-primary hover:bg-primary/90"
+                  loading={savingPassword}
+                  loadingLabel="Updating..."
+                >
+                  Update password
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                This account signs in with Google, so there is no password to change.
+              </p>
             )}
-            <Button type="submit" className="bg-primary hover:bg-primary/90" loading={saving} loadingLabel="Saving...">
-              Save account
-            </Button>
           </form>
         </TabsContent>
 
@@ -670,7 +911,21 @@ export function AccountSettings() {
             <div className="grid sm:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Status</p>
-                <p className="font-medium capitalize">{billingStatus}{isTrial ? " (trial)" : ""}</p>
+                <p
+                  className={`font-medium capitalize ${
+                    billingStatus === "suspended" || billingStatus === "inactive"
+                      ? "text-destructive"
+                      : ""
+                  }`}
+                >
+                  {billingStatus}
+                  {isTrial ? " (trial)" : ""}
+                </p>
+                {(billingStatus === "suspended" || billingStatus === "inactive") && (
+                  <p className="text-xs text-destructive mt-1">
+                    This account is locked. Contact support to restore access.
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-muted-foreground">Days remaining</p>

@@ -22,11 +22,12 @@ import { useEffect, useState } from "react";
 import kairosLogo from "../../../assets/kairos-logo.png";
 import {
   api,
-  clearAuthTokens,
   hasAccessToken,
-  isSessionExpiredError,
+  hasLiveSession,
+  isPlatformAdminSession,
   type SubscriptionStatus,
 } from "../../../lib/api/client";
+import { useSessionGuard } from "../../../lib/auth/useSessionGuard";
 
 export function DashboardLayout() {
   const navigate = useNavigate();
@@ -36,13 +37,19 @@ export function DashboardLayout() {
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
 
   const handleLogout = () => {
-    clearAuthTokens();
-    navigate("/");
+    setUser(null);
+    setSubscription(null);
+    void api.logout().finally(() => navigate("/", { replace: true }));
   };
 
+  useSessionGuard({
+    forbiddenRole: "platform_admin",
+    redirectOnRoleMismatch: "/admin",
+    redirectWhenSignedOut: "/auth/login",
+  });
+
   useEffect(() => {
-    if (!hasAccessToken()) {
-      navigate("/auth/login", { replace: true });
+    if (!hasAccessToken() || isPlatformAdminSession()) {
       return;
     }
 
@@ -54,26 +61,34 @@ export function DashboardLayout() {
           setSubscription(profile.subscription);
           if (
             profile.subscription.requires_plan_selection &&
-            !location.pathname.startsWith("/dashboard/choose-plan")
+            !location.pathname.startsWith("/dashboard/choose-plan") &&
+            !(
+              profile.subscription.status === "suspended" &&
+              location.pathname.startsWith("/dashboard/settings")
+            )
           ) {
             navigate("/dashboard/choose-plan", { replace: true });
           }
         }
       })
-      .catch((error) => {
-        if (isSessionExpiredError(error)) return;
-        clearAuthTokens();
-        navigate("/auth/login", { replace: true });
+      .catch(() => {
+        // The API client already redirects to login on a real 401. Aborted
+        // fetches (e.g. the 402 redirect to /dashboard/choose-plan) must not
+        // clear the session, or a locked-out tenant gets signed out instead.
       });
   }, [navigate, location.pathname]);
 
   useEffect(() => {
-    if (!hasAccessToken() || location.pathname.startsWith("/dashboard/choose-plan")) return;
+    if (!hasAccessToken() || isPlatformAdminSession()) return;
+    if (location.pathname.startsWith("/dashboard/choose-plan")) return;
     api
       .getSubscriptionStatus()
       .then((status) => {
         setSubscription(status);
-        if (status.requires_plan_selection) {
+        if (
+          status.requires_plan_selection &&
+          !(status.status === "suspended" && location.pathname.startsWith("/dashboard/settings"))
+        ) {
           navigate("/dashboard/choose-plan", { replace: true });
         }
       })
@@ -102,6 +117,10 @@ export function DashboardLayout() {
     { path: "/dashboard/settings", icon: Settings, label: "Settings" },
     { path: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant" },
   ];
+
+  // Child pages fetch on mount, so an admin (or expired) session must not
+  // reach them even for the frame before the guard redirects.
+  if (!hasLiveSession() || isPlatformAdminSession()) return null;
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -213,6 +232,9 @@ export function DashboardLayout() {
           )}
           {subscription?.warning_level === "expired" && subscription.warning_message && (
             <TrialBanner message={subscription.warning_message} variant="expired" />
+          )}
+          {subscription?.warning_level === "suspended" && subscription.warning_message && (
+            <TrialBanner message={subscription.warning_message} variant="suspended" />
           )}
           <Outlet />
         </main>

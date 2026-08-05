@@ -12,10 +12,12 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 import kairosLogo from "../../../assets/kairos-logo.png";
 
 const PUBLIC_UI_BASE_URL =
@@ -75,69 +77,29 @@ function buildUpcomingAppointments(
 }
 
 export function Dashboard() {
-  const [summary, setSummary] = useState<{
-    stats: {
-      total_bookings: number;
-      monthly_revenue: number;
-      active_clients: number;
-      avg_booking_value: number;
-      bookings_change_pct: number;
-      revenue_change_pct: number;
-    };
-    revenue_series: Array<{ month: string; revenue: number }>;
-    bookings_series: Array<{ day: string; bookings: number }>;
-    upcoming_appointments: Array<{
-      id: string;
-      client: string;
-      service: string;
-      status: string;
-      start_at: string;
-      time: string;
-      date: string;
-    }>;
-  } | null>(null);
-  const [upcomingAppointments, setUpcomingAppointments] = useState<
-    Array<{
-      id: string;
-      client: string;
-      service: string;
-      status: string;
-      start_at: string;
-      time: string;
-      date: string;
-    }>
-  >([]);
-  const [loadingAppointments, setLoadingAppointments] = useState(true);
-  const [summaryError, setSummaryError] = useState("");
-  const [appointmentsError, setAppointmentsError] = useState("");
-  const [bookingLinks, setBookingLinks] = useState<{
-    business_url: string;
-    service_urls: Array<{ service_id: string; service_name: string; url: string }>;
-  } | null>(null);
+  const {
+    data: summary,
+    isError: summaryFailed,
+  } = useQuery({
+    queryKey: queryKeys.dashboardSummary,
+    queryFn: () => api.dashboardSummary(),
+  });
+  const {
+    data: bookings = [],
+    isPending: loadingAppointments,
+    isError: appointmentsFailed,
+  } = useQuery({
+    queryKey: queryKeys.bookings,
+    queryFn: () => api.listBookings(),
+  });
+  const { data: bookingLinks = null } = useQuery({
+    queryKey: queryKeys.bookingLinks,
+    queryFn: () => api.getBookingLinks(),
+  });
 
-  useEffect(() => {
-    api
-      .dashboardSummary()
-      .then((data) => {
-        setSummary(data);
-        setSummaryError("");
-      })
-      .catch(() => setSummaryError("Unable to load dashboard metrics."));
-
-    api.getBookingLinks().then(setBookingLinks).catch(() => null);
-
-    api
-      .listBookings()
-      .then((bookings) => {
-        setUpcomingAppointments(buildUpcomingAppointments(bookings));
-        setAppointmentsError("");
-      })
-      .catch(() => {
-        setUpcomingAppointments([]);
-        setAppointmentsError("Unable to load upcoming appointments.");
-      })
-      .finally(() => setLoadingAppointments(false));
-  }, []);
+  const summaryError = summaryFailed ? "Unable to load dashboard metrics." : "";
+  const appointmentsError = appointmentsFailed ? "Unable to load upcoming appointments." : "";
+  const upcomingAppointments = useMemo(() => buildUpcomingAppointments(bookings), [bookings]);
 
   const stats = summary?.stats;
   const revenueData = summary?.revenue_series ?? [];

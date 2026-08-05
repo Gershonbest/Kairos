@@ -49,6 +49,9 @@ class BookingOut(BaseModel):
     business_name: str | None = None
     business_contact_email: str | None = None
     business_help_email: str | None = None
+    receipt_download_path: str | None = None
+    paid_at: datetime | None = None
+    payment_currency: str | None = None
 
 
 class UpdateBookingStatusRequest(BaseModel):

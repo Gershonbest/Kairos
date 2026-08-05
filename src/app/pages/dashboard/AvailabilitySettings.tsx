@@ -1,11 +1,13 @@
 // Dashboard page to view and edit weekly booking availability.
 
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Clock, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { WeeklyAvailabilityEditor } from "../../components/forms/WeeklyAvailabilityEditor";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 import {
   countEnabledDays,
   DEFAULT_WEEKLY_AVAILABILITY,
@@ -17,19 +19,27 @@ import {
 } from "../../../lib/data/availability";
 
 export function AvailabilitySettings() {
+  const queryClient = useQueryClient();
   const [availability, setAvailability] = useState<Record<WeekDayKey, DayAvailability>>(DEFAULT_WEEKLY_AVAILABILITY);
-  const [isLoading, setIsLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const {
+    data: rules,
+    isPending,
+    isError,
+  } = useQuery({
+    queryKey: queryKeys.availability,
+    queryFn: () => api.listAvailability(),
+  });
+
   useEffect(() => {
-    api
-      .listAvailability()
-      .then((rules) => setAvailability(rulesToWeeklyAvailability(rules)))
-      .catch(() => setError("Unable to load your availability."))
-      .finally(() => setIsLoading(false));
-  }, []);
+    if (!rules || hydrated) return;
+    setAvailability(rulesToWeeklyAvailability(rules));
+    setHydrated(true);
+  }, [rules, hydrated]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -44,7 +54,9 @@ export function AvailabilitySettings() {
 
     setIsSaving(true);
     try {
-      await api.replaceAvailability({ rules: weeklyAvailabilityToRules(availability) });
+      const nextRules = weeklyAvailabilityToRules(availability);
+      await api.replaceAvailability({ rules: nextRules });
+      queryClient.setQueryData(queryKeys.availability, nextRules);
       setSuccess("Weekly hours saved. Your public booking page will use the updated schedule.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save availability.");
@@ -54,6 +66,7 @@ export function AvailabilitySettings() {
   }
 
   const enabledDays = countEnabledDays(availability);
+  const loadError = isError ? "Unable to load your availability." : error;
 
   return (
     <div className="p-6 space-y-6 max-w-3xl">
@@ -96,13 +109,13 @@ export function AvailabilitySettings() {
           <CardTitle>Your weekly hours</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isPending && !hydrated ? (
             <p className="text-sm text-muted-foreground">Loading availability...</p>
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
               <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isSaving} />
 
-              {error && <p className="text-sm text-red-600">{error}</p>}
+              {loadError && <p className="text-sm text-red-600">{loadError}</p>}
               {success && <p className="text-sm text-accent">{success}</p>}
 
               <Button type="submit" className="bg-primary hover:bg-primary/90" loading={isSaving} loadingLabel="Saving...">

@@ -1,22 +1,13 @@
 // Plan selection and subscription activation after trial.
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
-import { Check, Sparkles } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { AlertTriangle, ArrowLeft, Check, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import { api } from "../../../lib/api/client";
-
-interface Plan {
-  code: string;
-  name: string;
-  monthly_price: number;
-  description: string;
-  features: string[];
-  entitlements: Record<string, unknown>;
-  self_serve: boolean;
-  is_featured: boolean;
-}
+import { api, clearAuthTokens } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 
 function formatPrice(amount: number): string {
   return new Intl.NumberFormat("en-NG", {
@@ -27,37 +18,75 @@ function formatPrice(amount: number): string {
 }
 
 export function ChoosePlan() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
   const paymentHandledRef = useRef(false);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [status, setStatus] = useState<Awaited<ReturnType<typeof api.getSubscriptionStatus>> | null>(null);
   const [selectedPlan, setSelectedPlan] = useState("premium");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [isActivating, setIsActivating] = useState(false);
+  const [paymentVerified, setPaymentVerified] = useState(false);
+  const planInitializedRef = useRef(false);
+
+  const {
+    data: plans = [],
+    isPending: plansPending,
+    isError: plansFailed,
+  } = useQuery({
+    queryKey: queryKeys.subscriptionPlans,
+    queryFn: () => api.listSubscriptionPlans(),
+    staleTime: 5 * 60_000,
+  });
+
+  const {
+    data: status = null,
+    isPending: statusPending,
+    isError: statusFailed,
+  } = useQuery({
+    queryKey: queryKeys.subscriptionStatus,
+    queryFn: () => api.getSubscriptionStatus(),
+  });
+
+  const isLoading = (plansPending || statusPending) && plans.length === 0 && !status;
+  const isSuspended = status?.status === "suspended";
+  const isDeactivated = status?.status === "inactive";
+  const lockedOut = Boolean(status?.requires_plan_selection) && !paymentVerified;
+  const trialExpired = lockedOut && !isSuspended && !isDeactivated;
+
+  async function refreshSubscriptionCaches() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenant }),
+    ]);
+  }
+
+  function goToDashboard() {
+    navigate("/dashboard", { replace: true });
+  }
 
   useEffect(() => {
-    Promise.all([api.listSubscriptionPlans(), api.getSubscriptionStatus()])
-      .then(([planRows, subscriptionStatus]) => {
-        setPlans(planRows);
-        setStatus(subscriptionStatus);
-        const defaultPlan =
-          planRows.find((p) => p.is_featured)?.code ??
-          planRows.find((p) => p.code === subscriptionStatus.plan_code)?.code ??
-          planRows[0]?.code;
-        if (defaultPlan) {
-          setSelectedPlan(defaultPlan);
-        }
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : "Unable to load plans."))
-      .finally(() => setIsLoading(false));
-  }, []);
+    if (planInitializedRef.current || plans.length === 0 || !status) return;
+    planInitializedRef.current = true;
+    const defaultPlan =
+      plans.find((p) => p.is_featured)?.code ??
+      plans.find((p) => p.code === status.plan_code)?.code ??
+      plans[0]?.code;
+    if (defaultPlan) setSelectedPlan(defaultPlan);
+  }, [plans, status]);
+
+  useEffect(() => {
+    if (plansFailed || statusFailed) {
+      setError("Unable to load plans.");
+    }
+  }, [plansFailed, statusFailed]);
 
   useEffect(() => {
     if (paymentHandledRef.current) return;
     const paymentFlag = searchParams.get("payment");
-    const reference = searchParams.get("reference");
+    const reference = searchParams.get("reference") || searchParams.get("trxref");
     if (paymentFlag !== "1" || !reference) return;
 
     paymentHandledRef.current = true;
@@ -69,16 +98,14 @@ export function ChoosePlan() {
         if (!result.ok) {
           throw new Error("Payment was not successful yet. Try again in a moment.");
         }
-        const updated = await api.getSubscriptionStatus();
-        setStatus(updated);
-        setSuccess("Payment received — your plan is now active.");
-        setTimeout(() => {
-          window.location.href = "/dashboard";
-        }, 1200);
+        // Verification activates the plan and queues the receipt email. Require
+        // a fresh login so the restored account starts with a clean session.
+        clearAuthTokens();
+        navigate("/auth/login?payment=success", { replace: true });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to verify payment."))
       .finally(() => setIsActivating(false));
-  }, [searchParams]);
+  }, [navigate, searchParams]);
 
   async function handleActivate() {
     setError("");
@@ -97,24 +124,31 @@ export function ChoosePlan() {
         window.location.href = checkout.authorization_url;
         return;
       }
-      // Free / zero-amount plans activate immediately.
-      const updated = await api.getSubscriptionStatus();
-      setStatus(updated);
+      await refreshSubscriptionCaches();
+      const latest = await api.getSubscriptionStatus();
+      queryClient.setQueryData(queryKeys.subscriptionStatus, latest);
+      setPaymentVerified(true);
       setSuccess(`You're now on the ${plan.name} plan. Welcome back!`);
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 1200);
+      if (!latest.requires_plan_selection) {
+        setTimeout(() => {
+          goToDashboard();
+        }, 800);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to start checkout.";
-      // Fallback for local/dev without Paystack configured.
       if (message.toLowerCase().includes("not configured") || message.toLowerCase().includes("paystack")) {
         try {
-          const updated = await api.activateSubscriptionPlan(selectedPlan);
-          setStatus(updated);
+          await api.activateSubscriptionPlan(selectedPlan);
+          await refreshSubscriptionCaches();
+          const latest = await api.getSubscriptionStatus();
+          queryClient.setQueryData(queryKeys.subscriptionStatus, latest);
+          setPaymentVerified(true);
           setSuccess(`You're now on the ${plan.name} plan (simulated billing).`);
-          setTimeout(() => {
-            window.location.href = "/dashboard";
-          }, 1200);
+          if (!latest.requires_plan_selection) {
+            setTimeout(() => {
+              goToDashboard();
+            }, 800);
+          }
           return;
         } catch (activateErr) {
           setError(activateErr instanceof Error ? activateErr.message : message);
@@ -131,23 +165,79 @@ export function ChoosePlan() {
     return <div className="p-6 text-muted-foreground">Loading plans...</div>;
   }
 
-  const trialExpired = status?.requires_plan_selection;
+  if (isDeactivated) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto">
+        <div className="text-center space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-8">
+          <h1 className="text-2xl font-semibold text-destructive">Business deactivated</h1>
+          <p className="text-sm">
+            {status?.warning_message || "This business has been deactivated."}
+          </p>
+          <p className="text-sm">
+            Contact{" "}
+            <a className="underline" href="mailto:support@kairosbookings.com">
+              support@kairosbookings.com
+            </a>{" "}
+            to restore it.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const verifyingPayment = searchParams.get("payment") === "1" && isActivating && !paymentVerified;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {!lockedOut && (
+        <div>
+          <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2 text-muted-foreground">
+            <Link to="/dashboard">
+              <ArrowLeft className="w-4 h-4" />
+              Back to dashboard
+            </Link>
+          </Button>
+        </div>
+      )}
+
+      {isSuspended && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-medium text-destructive">Your account is suspended</p>
+            <p className="text-sm text-muted-foreground">
+              {status?.warning_message ||
+                "Your account is suspended. Please contact support."}{" "}
+              Dashboard, bookings, and your public booking page stay locked until a plan payment
+              clears. If you have already paid, contact{" "}
+              <a className="underline" href="mailto:support@kairosbookings.com">
+                support@kairosbookings.com
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="text-center space-y-2">
         <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1 text-sm text-primary dark:text-primary-foreground">
           <Sparkles className="w-4 h-4" />
-          {trialExpired ? "Trial ended" : "Choose your plan"}
+          {isSuspended ? "Account suspended" : trialExpired ? "Trial ended" : "Choose your plan"}
         </div>
         <h1 className="text-3xl font-semibold">
-          {trialExpired ? "Continue with Kairos Bookings" : "Upgrade before your trial ends"}
+          {isSuspended
+            ? "Reactivate your account"
+            : trialExpired
+              ? "Continue with Kairos Bookings"
+              : "Upgrade before your trial ends"}
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          {trialExpired
-            ? "Your 7-day free trial has ended. Select a plan to restore full access to your dashboard, bookings, and clients."
-            : status?.warning_message ||
-              "Pick the plan that fits your business. You can change plans later as you grow."}
+          {isSuspended
+            ? "Choose a plan and complete payment to restore access to your dashboard, bookings, and clients."
+            : trialExpired
+              ? "Your 7-day free trial has ended. Select a plan to restore full access to your dashboard, bookings, and clients."
+              : status?.warning_message ||
+                "Pick the plan that fits your business. You can change plans later as you grow."}
         </p>
       </div>
 
@@ -206,21 +296,25 @@ export function ChoosePlan() {
             onClick={handleActivate}
             loading={isActivating}
             loadingLabel="Redirecting..."
-            disabled={!plans.find((p) => p.code === selectedPlan)?.self_serve}
+            disabled={!plans.find((p) => p.code === selectedPlan)?.self_serve || paymentVerified}
           >
-            Pay with Paystack
+            Pay now
           </Button>
         </CardContent>
       </Card>
 
-      {paymentPendingNotice(searchParams.get("payment") === "1")}
+      {verifyingPayment && (
+        <p className="text-sm text-muted-foreground text-center">Verifying your payment…</p>
+      )}
       {error && <p className="text-sm text-red-600 text-center">{error}</p>}
-      {success && <p className="text-sm text-accent text-center">{success}</p>}
+      {success && (
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-sm text-accent text-center">{success}</p>
+          <Button className="bg-primary hover:bg-primary/90" onClick={goToDashboard}>
+            Go to dashboard
+          </Button>
+        </div>
+      )}
     </div>
   );
-}
-
-function paymentPendingNotice(show: boolean) {
-  if (!show) return null;
-  return <p className="text-sm text-muted-foreground text-center">Verifying your payment…</p>;
 }

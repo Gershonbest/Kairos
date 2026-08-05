@@ -25,7 +25,11 @@ export function Login() {
   const [isResending, setIsResending] = useState(false);
 
   useEffect(() => {
-    if (searchParams.get("redirect")) {
+    if (searchParams.get("payment") === "success") {
+      setSessionNotice(
+        "Payment successful. Your account is active and a receipt has been sent to your email. Please sign in again."
+      );
+    } else if (searchParams.get("redirect")) {
       setSessionNotice("Your session expired. Please sign in again to continue.");
     }
   }, [searchParams]);

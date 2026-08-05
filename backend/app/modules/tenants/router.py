@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Service, Tenant, User
 from app.infra.paystack import PaystackError, paystack_client
@@ -16,6 +17,10 @@ from app.schemas.tenants import TenantOnboardingUpdate, TenantProfileUpdate, Ten
 
 router = APIRouter()
 settings = get_settings()
+
+TENANT_CACHE = "tenant:me"
+PAYMENT_PROVIDER_CACHE = "payment-provider"
+BOOKING_LINKS_CACHE = "booking-links"
 
 
 class PaymentProviderConnectRequest(BaseModel):
@@ -71,8 +76,16 @@ async def get_my_tenant(
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, TENANT_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     tenant = (await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
-    return _tenant_payload(tenant)
+    payload = _tenant_payload(tenant)
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.patch("/me")
@@ -135,7 +148,12 @@ async def update_my_tenant(
 
     await session.commit()
     await session.refresh(tenant)
-    return _tenant_payload(tenant)
+    payload = _tenant_payload(tenant)
+    await redis_cache.invalidate_tenant(
+        current_user.tenant_id, TENANT_CACHE, BOOKING_LINKS_CACHE, PAYMENT_PROVIDER_CACHE
+    )
+    await redis_cache.set_json(redis_cache.tenant_key(current_user.tenant_id, TENANT_CACHE), payload)
+    return payload
 
 
 @router.put("/me/onboarding")
@@ -190,6 +208,12 @@ async def get_booking_links(
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, BOOKING_LINKS_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     tenant = (await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
     tenant_key = tenant.public_slug or tenant.id
     base_link = f"{settings.public_booking_base_url}/{tenant_key}"
@@ -204,7 +228,9 @@ async def get_booking_links(
         }
         for service in services
     ]
-    return {"business_url": base_link, "service_urls": service_links}
+    payload = {"business_url": base_link, "service_urls": service_links}
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.put("/me/public-profile")
@@ -226,6 +252,7 @@ async def update_public_profile(
         await _ensure_unique_slug(session, payload.public_slug, tenant.id)
         tenant.public_slug = payload.public_slug
     await session.commit()
+    await redis_cache.invalidate_tenant(current_user.tenant_id, TENANT_CACHE, BOOKING_LINKS_CACHE)
     return {"ok": True}
 
 
@@ -298,6 +325,7 @@ async def connect_payment_provider(
     tenant.platform_fee_percent = fee_percent
     tenant.payments_enabled = True
     await session.commit()
+    await redis_cache.invalidate_tenant(current_user.tenant_id, PAYMENT_PROVIDER_CACHE, TENANT_CACHE)
     return {
         "ok": True,
         "provider": "paystack",
@@ -314,12 +342,18 @@ async def get_payment_provider(
 ) -> dict:
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, PAYMENT_PROVIDER_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, dict):
+        return cached
+
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     ).scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    return {
+    payload = {
         "provider": tenant.payment_provider,
         "account_id": tenant.payment_account_id,
         "payments_enabled": tenant.payments_enabled,
@@ -329,6 +363,8 @@ async def get_payment_provider(
         if tenant.platform_fee_percent is not None
         else float(settings.paystack_platform_fee_percent),
     }
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.post("/me/deactivate")
