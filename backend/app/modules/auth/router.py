@@ -295,19 +295,22 @@ async def admin_login(payload: AdminLoginRequest, session: AsyncSession = Depend
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(payload: RefreshRequest, session: AsyncSession = Depends(get_db_session)) -> TokenPair:
     token_hash = sha256_text(payload.refresh_token)
-    record = (
-        await session.execute(
-            select(RefreshToken).where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked.is_(False),
-                RefreshToken.expires_at > datetime.now(UTC),
-            )
+    # Atomically claim the token so concurrent refreshes cannot both rotate it.
+    result = await session.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.expires_at > datetime.now(UTC),
         )
-    ).scalar_one_or_none()
-    if not record:
+        .values(revoked=True)
+        .returning(RefreshToken.user_id)
+    )
+    user_id = result.scalar_one_or_none()
+    if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
-    user = (await session.execute(select(User).where(User.id == record.user_id))).scalar_one()
-    await session.execute(update(RefreshToken).where(RefreshToken.id == record.id).values(revoked=True))
+
+    user = (await session.execute(select(User).where(User.id == user_id))).scalar_one()
     access_token = create_access_token(user_id=user.id, role=user.role.value, tenant_id=user.tenant_id)
     refresh_token = create_refresh_token(user_id=user.id)
     session.add(
@@ -380,7 +383,12 @@ async def update_me(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="This account uses Google sign-in and cannot set a password here",
             )
-        if not payload.current_password or not verify_password(payload.current_password, user.password_hash):
+        if not payload.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Enter your current password to set a new one",
+            )
+        if not verify_password(payload.current_password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
         user.password_hash = hash_password(payload.new_password)
 
@@ -392,10 +400,15 @@ async def update_me(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="This account uses Google sign-in and cannot change email here",
                 )
-            if not payload.current_password or not verify_password(payload.current_password, user.password_hash):
+            if not payload.current_password:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Current password is required to change email",
+                    detail="Enter your current password to change your email",
+                )
+            if not verify_password(payload.current_password, user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect",
                 )
             taken = (
                 await session.execute(select(User).where(User.email == new_email, User.id != user.id))

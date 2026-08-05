@@ -1,6 +1,7 @@
 // Calendar view of tenant bookings with month/week/day layouts.
 
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
 import { Calendar as CalendarIcon, CheckCircle2, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, User, UserX, XCircle } from "lucide-react";
 import { Card, CardContent } from "../../components/ui/card";
@@ -14,6 +15,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { api, type BookingListItem } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 
 type CalendarView = "month" | "week" | "day";
 
@@ -92,20 +94,18 @@ function isLikelyUrl(value: string): boolean {
 
 export function BookingCalendar() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<CalendarView>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [bookings, setBookings] = useState<BookingListItem[]>([]);
   const [selectedBooking, setSelectedBooking] = useState<BookingListItem | null>(null);
   const [outcomeUpdating, setOutcomeUpdating] = useState<string | null>(null);
   const [outcomeError, setOutcomeError] = useState("");
 
-  useEffect(() => {
-    api
-      .listBookings()
-      .then((rows) => setBookings(rows))
-      .catch(() => setBookings([]));
-  }, []);
+  const { data: bookings = [] } = useQuery({
+    queryKey: queryKeys.bookings,
+    queryFn: () => api.listBookings(),
+  });
 
   useEffect(() => {
     const bookingId = searchParams.get("booking");
@@ -181,14 +181,24 @@ export function BookingCalendar() {
     setSearchParams(next, { replace: true });
   };
 
+  const updateOutcomeMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "completed" | "no_show" | "cancelled" | "confirmed" }) =>
+      api.updateBookingStatus(id, status),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<BookingListItem[]>(queryKeys.bookings, (rows) =>
+        (rows ?? []).map((row) => (row.id === updated.id ? updated : row))
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.clients });
+      setSelectedBooking(updated);
+    },
+  });
+
   const updateOutcome = async (status: "completed" | "no_show" | "cancelled" | "confirmed") => {
     if (!selectedBooking) return;
     setOutcomeError("");
     setOutcomeUpdating(status);
     try {
-      const updated = await api.updateBookingStatus(selectedBooking.id, status);
-      setBookings((rows) => rows.map((row) => (row.id === updated.id ? updated : row)));
-      setSelectedBooking(updated);
+      await updateOutcomeMutation.mutateAsync({ id: selectedBooking.id, status });
     } catch (err) {
       setOutcomeError(err instanceof Error ? err.message : "Unable to update appointment outcome.");
     } finally {

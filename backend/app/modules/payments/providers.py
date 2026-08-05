@@ -32,6 +32,8 @@ class BaseProvider:
         metadata: dict | None = None,
         subaccount_code: str | None = None,
         reference: str | None = None,
+        customer_name: str | None = None,
+        customer_phone: str | None = None,
     ) -> ProviderIntent:
         ref = reference or f"{self.code}_{booking_id}_{uuid.uuid4().hex[:10]}"
         return ProviderIntent(reference=ref, status="pending")
@@ -58,6 +60,8 @@ class PaystackProvider(BaseProvider):
         metadata: dict | None = None,
         subaccount_code: str | None = None,
         reference: str | None = None,
+        customer_name: str | None = None,
+        customer_phone: str | None = None,
     ) -> ProviderIntent:
         ref = reference or f"ps_{booking_id.replace('-', '')[:12]}_{uuid.uuid4().hex[:10]}"
         data = await paystack_client.initialize_transaction(
@@ -67,6 +71,8 @@ class PaystackProvider(BaseProvider):
             callback_url=callback_url,
             metadata=metadata,
             subaccount_code=subaccount_code,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
         )
         return ProviderIntent(
             reference=data.get("reference") or ref,

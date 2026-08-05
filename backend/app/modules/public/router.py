@@ -6,7 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.cache import get_redis
+from app.infra.cache import get_redis, redis_cache
 from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
 from app.infra.db import get_db_session
 from app.infra.models import (
@@ -24,10 +24,13 @@ from app.infra.models import (
 )
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.notifications.service import (
+    build_booking_receipt_data,
     create_booking_notifications,
     send_booking_confirmation_email,
+    send_booking_receipt_from_data,
     send_new_booking_owner_email,
 )
+from app.modules.notifications.receipt import build_receipt_html
 from app.modules.payments.service import (
     apply_successful_paystack_payment,
     booking_payment_amount,
@@ -114,6 +117,11 @@ def _booking_response(
             if is_confirmed
             else None
         ),
+        receipt_download_path=(
+            f"/api/v1/public/businesses/{tenant_key}/bookings/{booking.id}/receipt"
+            if is_confirmed
+            else None
+        ),
         is_all_day=bool(booking.is_all_day),
         scheduling_mode=service.scheduling_mode.value,
         client_name=client.full_name if client else None,
@@ -130,6 +138,8 @@ def _booking_response(
         business_name=tenant.name,
         business_contact_email=business_contact_email,
         business_help_email=tenant.help_email,
+        paid_at=payment_tx.paid_at if payment_tx else None,
+        payment_currency=payment_tx.currency if payment_tx else None,
     )
 
 
@@ -455,8 +465,10 @@ async def create_public_booking(
         await session.commit()
         await session.refresh(booking)
         await redis.delete(lock_key)
+        await redis_cache.invalidate_tenant(tenant.id, "bookings:list", "clients:list", "transactions:list", "dashboard:summary")
 
         appointment_location = resolve_service_location(service, tenant, appointment_format)
+        contact_email = await _owner_contact_email(session, tenant.id)
         background_tasks.add_task(
             send_booking_confirmation_email,
             to=client.email,
@@ -473,6 +485,15 @@ async def create_public_booking(
             online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
+            business_logo_url=tenant.public_logo_url,
+            business_contact_email=contact_email or tenant.help_email,
+            amount_paid=float(payment_tx.amount) if payment_tx and payment_tx.amount is not None else None,
+            currency=(payment_tx.currency if payment_tx and payment_tx.currency else "NGN"),
+            payment_reference=payment_tx.provider_reference if payment_tx else None,
+            payment_status=payment_tx.status.value if payment_tx else None,
+            paid_at=payment_tx.paid_at if payment_tx else None,
+            service_price=float(service.price_amount) if service.price_amount is not None else None,
+            service_deposit=float(service.deposit_amount) if service.deposit_amount is not None else None,
         )
         if owner and owner.email:
             background_tasks.add_task(
@@ -508,6 +529,7 @@ async def create_public_booking(
     if payment_tx:
         await session.refresh(payment_tx)
     await redis.delete(lock_key)
+    await redis_cache.invalidate_tenant(tenant.id, "bookings:list", "clients:list", "transactions:list", "dashboard:summary")
     return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
 
 
@@ -580,8 +602,10 @@ async def confirm_public_booking_payment(
     await session.refresh(booking)
 
     if newly_confirmed:
+        await redis_cache.invalidate_tenant(tenant.id, "bookings:list", "clients:list", "transactions:list", "dashboard:summary")
         appointment_format = booking.appointment_format or AppointmentFormat.onsite
         appointment_location = resolve_service_location(service, tenant, appointment_format)
+        contact_email = await _owner_contact_email(session, tenant.id)
         background_tasks.add_task(
             send_booking_confirmation_email,
             to=client.email,
@@ -598,6 +622,15 @@ async def confirm_public_booking_payment(
             online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
+            business_logo_url=tenant.public_logo_url,
+            business_contact_email=contact_email or tenant.help_email,
+            amount_paid=float(payment_tx.amount) if payment_tx and payment_tx.amount is not None else None,
+            currency=(payment_tx.currency if payment_tx and payment_tx.currency else "NGN"),
+            payment_reference=payment_tx.provider_reference if payment_tx else None,
+            payment_status=payment_tx.status.value if payment_tx else None,
+            paid_at=payment_tx.paid_at if payment_tx else None,
+            service_price=float(service.price_amount) if service.price_amount is not None else None,
+            service_deposit=float(service.deposit_amount) if service.deposit_amount is not None else None,
         )
         if owner and owner.email:
             background_tasks.add_task(
@@ -615,3 +648,83 @@ async def confirm_public_booking_payment(
             )
 
     return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
+
+
+async def _load_confirmed_booking_receipt_context(
+    session: AsyncSession,
+    *,
+    business_id: str,
+    booking_id: str,
+):
+    tenant = await resolve_tenant_key(business_id, session)
+    booking = (
+        await session.execute(
+            select(Booking).where(Booking.id == booking_id, Booking.tenant_id == tenant.id)
+        )
+    ).scalar_one_or_none()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.status != BookingStatus.confirmed:
+        raise HTTPException(status_code=400, detail="Receipt is available after the booking is confirmed")
+
+    service = (
+        await session.execute(select(Service).where(Service.id == booking.service_id))
+    ).scalar_one_or_none()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    client = (
+        await session.execute(select(Client).where(Client.id == booking.client_id))
+    ).scalar_one()
+    payment_tx = (
+        await session.execute(
+            select(PaymentTransaction).where(
+                PaymentTransaction.tenant_id == tenant.id,
+                PaymentTransaction.booking_id == booking.id,
+            )
+        )
+    ).scalar_one_or_none()
+    appointment_format = booking.appointment_format or AppointmentFormat.onsite
+    location = resolve_service_location(service, tenant, appointment_format)
+    contact_email = await _owner_contact_email(session, tenant.id)
+    receipt = build_booking_receipt_data(
+        tenant=tenant,
+        service=service,
+        booking=booking,
+        client=client,
+        payment_tx=payment_tx,
+        location=location,
+        business_contact_email=contact_email or tenant.help_email,
+    )
+    return receipt
+
+
+@router.get("/businesses/{business_id}/bookings/{booking_id}/receipt")
+async def download_booking_receipt(
+    business_id: str,
+    booking_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    receipt = await _load_confirmed_booking_receipt_context(
+        session, business_id=business_id, booking_id=booking_id
+    )
+    html = build_receipt_html(receipt)
+    filename = f"receipt-{booking_id[:8]}.html"
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/businesses/{business_id}/bookings/{booking_id}/receipt/email")
+async def email_booking_receipt(
+    business_id: str,
+    booking_id: str,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    receipt = await _load_confirmed_booking_receipt_context(
+        session, business_id=business_id, booking_id=booking_id
+    )
+    background_tasks.add_task(send_booking_receipt_from_data, receipt)
+    return {"ok": True, "email": receipt.client_email}

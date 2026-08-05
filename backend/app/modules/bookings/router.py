@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import AppointmentFormat, Booking, BookingStatus, Client, Service, Tenant
 from app.modules.services.helpers import resolve_service_location
@@ -18,6 +19,9 @@ OUTCOME_STATUSES = {
     BookingStatus.cancelled,
     BookingStatus.confirmed,
 }
+
+BOOKINGS_CACHE = "bookings:list"
+CLIENTS_CACHE = "clients:list"
 
 
 def _serialize_booking(booking: Booking, client: Client, service: Service, tenant: Tenant) -> dict:
@@ -54,6 +58,14 @@ async def list_bookings(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, BOOKINGS_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, list):
+        return cached
+
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     ).scalar_one()
@@ -66,7 +78,9 @@ async def list_bookings(
             .order_by(Booking.start_at.asc())
         )
     ).all()
-    return [_serialize_booking(booking, client, service, tenant) for booking, client, service in rows]
+    payload = [_serialize_booking(booking, client, service, tenant) for booking, client, service in rows]
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.patch("/{booking_id}")
@@ -84,6 +98,9 @@ async def update_booking_status(
 
     if next_status not in OUTCOME_STATUSES:
         raise HTTPException(status_code=400, detail="Status is not allowed")
+
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
 
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
@@ -107,4 +124,5 @@ async def update_booking_status(
     booking.version = int(booking.version or 1) + 1
     await session.commit()
     await session.refresh(booking)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary")
     return _serialize_booking(booking, client, service, tenant)

@@ -74,4 +74,13 @@ async def metrics() -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    # Reload requires an import string plus a watch dir that resolves from the
+    # project root, since this file is usually run from `backend/app`.
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        reload_dirs=[str(PROJECT_ROOT / "app")],
+    )

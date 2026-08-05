@@ -25,8 +25,10 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 
 type Transaction = {
   id: string;
@@ -40,60 +42,62 @@ type Transaction = {
 };
 
 export function PaymentsDashboard() {
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [revenueData, setRevenueData] = useState<Array<{ month: string; revenue: number; deposits: number }>>([]);
-  const [settlementSplit, setSettlementSplit] = useState<Array<{ name: string; value: number; color: string }>>([]);
-  const [platformFeePercent, setPlatformFeePercent] = useState(5);
-  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
-  const [error, setError] = useState("");
+  const {
+    data: provider,
+    isError: providerFailed,
+  } = useQuery({
+    queryKey: queryKeys.paymentProvider,
+    queryFn: () => api.getPaymentProvider(),
+  });
 
-  useEffect(() => {
-    api
-      .getPaymentProvider()
-      .then((provider) => {
-        const fee = Number(provider.platform_fee_percent ?? 5);
-        setPlatformFeePercent(fee);
-        setPaymentsEnabled(Boolean(provider.payments_enabled && provider.account_id));
-        setSettlementSplit([
-          { name: "Your settlement", value: Math.max(0, 100 - fee), color: "var(--color-primary)" },
-          { name: "Kairos fee", value: fee, color: "var(--color-accent)" },
-        ]);
-      })
-      .catch(() => {
-        setSettlementSplit([
-          { name: "Your settlement", value: 95, color: "var(--color-primary)" },
-          { name: "Kairos fee", value: 5, color: "var(--color-accent)" },
-        ]);
-      });
+  const {
+    data: transactionRows = [],
+    isError: transactionsFailed,
+  } = useQuery({
+    queryKey: queryKeys.transactions,
+    queryFn: () => api.listTransactions(),
+  });
 
-    api
-      .listTransactions()
-      .then((rows) => {
-        const mapped = rows.map((row) => ({
-          id: row.id,
-          client: row.client_name,
-          service: row.service_name,
-          amount: row.service_price,
-          deposit: row.amount,
-          status: row.status === "succeeded" ? "completed" : row.status,
-          date: row.created_at,
-          method: row.provider === "kairos" ? "Demo" : "Paystack",
-        }));
-        setRecentTransactions(mapped);
+  const platformFeePercent = Number(provider?.platform_fee_percent ?? 5);
+  const paymentsEnabled = Boolean(provider?.payments_enabled && provider?.account_id);
+  const settlementSplit = useMemo(
+    () => [
+      { name: "Your settlement", value: Math.max(0, 100 - platformFeePercent), color: "var(--color-primary)" },
+      { name: "Kairos fee", value: platformFeePercent, color: "var(--color-accent)" },
+    ],
+    [platformFeePercent]
+  );
 
-        const monthly: Record<string, { month: string; revenue: number; deposits: number }> = {};
-        for (const tx of mapped) {
-          const month = new Date(tx.date).toLocaleDateString("en-US", { month: "short" });
-          if (!monthly[month]) {
-            monthly[month] = { month, revenue: 0, deposits: 0 };
-          }
-          monthly[month].revenue += tx.amount;
-          monthly[month].deposits += tx.deposit;
-        }
-        setRevenueData(Object.values(monthly));
-      })
-      .catch(() => setError("Unable to load payment data."));
-  }, []);
+  const recentTransactions = useMemo<Transaction[]>(
+    () =>
+      transactionRows.map((row) => ({
+        id: row.id,
+        client: row.client_name ?? "Unknown",
+        service: row.service_name ?? "Service",
+        amount: row.service_price ?? 0,
+        deposit: row.amount,
+        status: row.status === "succeeded" ? "completed" : row.status,
+        date: row.created_at,
+        method: row.provider === "kairos" ? "Demo" : "Paystack",
+      })),
+    [transactionRows]
+  );
+
+  const revenueData = useMemo(() => {
+    const monthly: Record<string, { month: string; revenue: number; deposits: number }> = {};
+    for (const tx of recentTransactions) {
+      const month = new Date(tx.date).toLocaleDateString("en-US", { month: "short" });
+      if (!monthly[month]) {
+        monthly[month] = { month, revenue: 0, deposits: 0 };
+      }
+      monthly[month].revenue += tx.amount;
+      monthly[month].deposits += tx.deposit;
+    }
+    return Object.values(monthly);
+  }, [recentTransactions]);
+
+  const error =
+    transactionsFailed || providerFailed ? "Unable to load payment data." : "";
 
   const totalRevenue = recentTransactions
     .filter((tx) => tx.status === "completed")

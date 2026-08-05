@@ -1,10 +1,14 @@
 // Typed HTTP API client with auth token handling.
 
+import { decodeToken, isTokenExpired } from "../auth/token";
+import { queryClient } from "../queryClient";
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
 
 let accessToken: string | null = localStorage.getItem("kairos_access_token");
 let refreshToken: string | null = localStorage.getItem("kairos_refresh_token");
 let isRedirectingToLogin = false;
+let refreshInFlight: Promise<boolean> | null = null;
 
 const AUTH_PATHS_WITHOUT_SESSION = new Set([
   "/auth/login",
@@ -30,11 +34,25 @@ export class SubscriptionRequiredError extends Error {
   }
 }
 
+function tokenSubject(token: string | null): string | null {
+  return decodeToken(token)?.sub ?? null;
+}
+
 export function setAuthTokens(tokens: { access_token: string; refresh_token: string }) {
+  syncAuthTokensFromStorage();
+  const previousSubject = tokenSubject(accessToken);
+
   accessToken = tokens.access_token;
   refreshToken = tokens.refresh_token;
   localStorage.setItem("kairos_access_token", tokens.access_token);
   localStorage.setItem("kairos_refresh_token", tokens.refresh_token);
+
+  // A different user in the same tab must never inherit the previous
+  // session's cached data. Token refresh keeps the same subject, so it
+  // does not wipe the cache.
+  if (tokenSubject(tokens.access_token) !== previousSubject) {
+    queryClient.clear();
+  }
 }
 
 export function clearAuthTokens() {
@@ -42,6 +60,7 @@ export function clearAuthTokens() {
   refreshToken = null;
   localStorage.removeItem("kairos_access_token");
   localStorage.removeItem("kairos_refresh_token");
+  queryClient.clear();
 }
 
 function syncAuthTokensFromStorage() {
@@ -84,24 +103,52 @@ function handleUnauthorized(path: string) {
   redirectToLogin();
 }
 
-async function refreshAccessToken(): Promise<boolean> {
+/**
+ * Refresh (or end) the session before a request goes out, so an expired
+ * session signs the user out instead of rendering stale screens.
+ */
+async function ensureLiveSession(path: string): Promise<void> {
+  if (!shouldHandleUnauthorized(path)) return;
   syncAuthTokensFromStorage();
-  if (!refreshToken) return false;
+  if (!accessToken && !refreshToken) return;
+  if (accessToken && !isTokenExpired(accessToken)) return;
 
-  try {
-    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (!response.ok) return false;
-
-    const tokens = (await response.json()) as { access_token: string; refresh_token: string };
-    setAuthTokens(tokens);
-    return true;
-  } catch {
-    return false;
+  if (refreshToken && !isTokenExpired(refreshToken, 0) && (await refreshAccessToken())) {
+    return;
   }
+
+  handleUnauthorized(path);
+  throw new SessionExpiredError();
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  // Multiple 401s often fire together (dashboard + notifications + status).
+  // Share one refresh so concurrent callers don't race the same token.
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    syncAuthTokensFromStorage();
+    if (!refreshToken) return false;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!response.ok) return false;
+
+      const tokens = (await response.json()) as { access_token: string; refresh_token: string };
+      setAuthTokens(tokens);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+
+  return refreshInFlight;
 }
 
 function authHeaders(): Record<string, string> {
@@ -134,6 +181,7 @@ function formatApiError(body: string, status: number): string {
 }
 
 async function request<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<T> {
+  if (allowRefresh) await ensureLiveSession(path);
   const hasBody = init.body !== undefined && init.body !== null && init.body !== "";
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -165,6 +213,7 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
 }
 
 async function uploadMultipart(path: string, file: File, allowRefresh = true): Promise<{ url: string }> {
+  if (allowRefresh) await ensureLiveSession(path);
   const formData = new FormData();
   formData.append("file", file);
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -239,6 +288,9 @@ export interface PublicBookingResponse {
   business_name?: string | null;
   business_contact_email?: string | null;
   business_help_email?: string | null;
+  receipt_download_path?: string | null;
+  paid_at?: string | null;
+  payment_currency?: string | null;
 }
 
 export interface BookingListItem {
@@ -366,6 +418,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  logout: async () => {
+    const token = refreshToken;
+    try {
+      if (token) {
+        await request<{ ok: boolean }>("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refresh_token: token }),
+        });
+      }
+    } catch {
+      // Revoking server-side is best effort; the local session is cleared either way.
+    } finally {
+      clearAuthTokens();
+    }
+  },
   adminLogin: (payload: { email: string; password: string }) =>
     request<{ access_token: string; refresh_token: string }>("/auth/admin/login", {
       method: "POST",
@@ -694,6 +761,28 @@ export const api = {
       }`,
       { method: "POST" }
     ),
+  downloadPublicReceipt: async (businessId: string, bookingId: string) => {
+    const response = await fetch(
+      `${API_BASE_URL}/public/businesses/${encodeURIComponent(businessId)}/bookings/${encodeURIComponent(bookingId)}/receipt`
+    );
+    if (!response.ok) {
+      throw new Error("Unable to download receipt");
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `receipt-${bookingId.slice(0, 8)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+  emailPublicReceipt: (businessId: string, bookingId: string) =>
+    request<{ ok: boolean; email: string }>(
+      `/public/businesses/${businessId}/bookings/${bookingId}/receipt/email`,
+      { method: "POST" }
+    ),
   listTransactions: () =>
     request<
       Array<{
@@ -722,6 +811,195 @@ export const api = {
     request<{ ok: boolean }>(`/admin/subscribers/${tenantId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSubscriber: (tenantId: string) =>
     request<{ ok: boolean }>(`/admin/subscribers/${tenantId}`, { method: "DELETE" }),
+  adminPayments: (params?: {
+    q?: string;
+    tenant_id?: string;
+    purpose?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const search = new URLSearchParams();
+    if (params?.q) search.set("q", params.q);
+    if (params?.tenant_id) search.set("tenant_id", params.tenant_id);
+    if (params?.purpose) search.set("purpose", params.purpose);
+    if (params?.status) search.set("status", params.status);
+    if (params?.from) search.set("from", params.from);
+    if (params?.to) search.set("to", params.to);
+    if (params?.page) search.set("page", String(params.page));
+    if (params?.page_size) search.set("page_size", String(params.page_size));
+    const qs = search.toString();
+    return request<{
+      items: Array<{
+        id: string;
+        tenant_id: string;
+        tenant_name?: string | null;
+        booking_id?: string | null;
+        purpose: string;
+        status: string;
+        amount: number;
+        platform_fee_amount?: number | null;
+        tenant_settlement_amount?: number | null;
+        currency: string;
+        provider: string;
+        provider_reference: string;
+        paid_at?: string | null;
+        created_at?: string | null;
+        client_name?: string | null;
+        client_email?: string | null;
+        client_phone?: string | null;
+      }>;
+      total: number;
+      page: number;
+      page_size: number;
+    }>(`/admin/payments${qs ? `?${qs}` : ""}`);
+  },
+  adminPaymentSummary: (params?: { tenant_id?: string; from?: string; to?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.tenant_id) search.set("tenant_id", params.tenant_id);
+    if (params?.from) search.set("from", params.from);
+    if (params?.to) search.set("to", params.to);
+    const qs = search.toString();
+    return request<{
+      booking: {
+        transactions: number;
+        gross: number;
+        platform_fee: number;
+        settlement: number;
+        succeeded: number;
+        pending: number;
+        failed: number;
+        refunded: number;
+        paying_clients: number;
+        businesses_collecting: number;
+      };
+      subscription: {
+        transactions: number;
+        gross: number;
+        platform_fee: number;
+        settlement: number;
+        succeeded: number;
+        pending: number;
+        failed: number;
+        refunded: number;
+      };
+    }>(`/admin/payments/summary${qs ? `?${qs}` : ""}`);
+  },
+  adminPaymentsByTenant: (params?: { from?: string; to?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.from) search.set("from", params.from);
+    if (params?.to) search.set("to", params.to);
+    const qs = search.toString();
+    return request<
+      Array<{
+        tenant_id: string;
+        tenant_name: string;
+        tenant_status: string;
+        plan_code: string;
+        transactions: number;
+        clients: number;
+        gross: number;
+        platform_fee: number;
+        settlement: number;
+        pending: number;
+        failed: number;
+        last_payment_at?: string | null;
+      }>
+    >(`/admin/payments/by-tenant${qs ? `?${qs}` : ""}`);
+  },
+  adminTenantClientPayments: (tenantId: string, params?: { from?: string; to?: string }) => {
+    const search = new URLSearchParams();
+    if (params?.from) search.set("from", params.from);
+    if (params?.to) search.set("to", params.to);
+    const qs = search.toString();
+    return request<
+      Array<{
+        client_id: string;
+        client_name: string;
+        client_email: string;
+        client_phone?: string | null;
+        transactions: number;
+        paid: number;
+        pending: number;
+        failed: number;
+        last_payment_at?: string | null;
+      }>
+    >(`/admin/payments/tenant/${tenantId}/clients${qs ? `?${qs}` : ""}`);
+  },
+  adminPaymentDetail: (transactionId: string) =>
+    request<{
+      id: string;
+      tenant_id: string;
+      tenant_name?: string | null;
+      booking_id?: string | null;
+      purpose: string;
+      status: string;
+      amount: number;
+      platform_fee_amount?: number | null;
+      tenant_settlement_amount?: number | null;
+      currency: string;
+      provider: string;
+      provider_reference: string;
+      paid_at?: string | null;
+      created_at?: string | null;
+      client_name?: string | null;
+      client_email?: string | null;
+      client_phone?: string | null;
+      idempotency_key?: string;
+      authorization_url?: string | null;
+      access_code?: string | null;
+      tenant?: {
+        id: string;
+        name: string;
+        status: string;
+        plan_code: string;
+        public_slug?: string | null;
+        help_email?: string | null;
+        phone_number?: string | null;
+        location?: string | null;
+        paystack_subaccount_id?: string | null;
+        settlement_account_last4?: string | null;
+        owner_name?: string | null;
+        owner_email?: string | null;
+      } | null;
+      booking?: {
+        id: string;
+        status: string;
+        start_at?: string | null;
+        end_at?: string | null;
+        notes?: string | null;
+        service?: {
+          id: string;
+          name: string;
+          price_amount: number;
+          deposit_amount?: number | null;
+        } | null;
+        client?: {
+          id: string;
+          full_name: string;
+          email: string;
+          phone?: string | null;
+        } | null;
+      } | null;
+      webhooks: Array<{
+        id: string;
+        provider: string;
+        event_id: string;
+        processed: boolean;
+        attempts: number;
+        next_attempt_at?: string | null;
+        created_at?: string | null;
+        payload: Record<string, unknown>;
+      }>;
+      timeline: Array<{
+        label: string;
+        at?: string | null;
+        event_id?: string;
+        processed?: boolean;
+      }>;
+    }>(`/admin/payments/${transactionId}`),
   adminPlans: () =>
     request<
       Array<{
@@ -801,6 +1079,28 @@ export function hasAccessToken(): boolean {
 
 export function isSessionExpiredError(error: unknown): boolean {
   return error instanceof SessionExpiredError;
+}
+
+/** True while the stored tokens can still authenticate a request. */
+export function hasLiveSession(): boolean {
+  syncAuthTokensFromStorage();
+  if (!accessToken && !refreshToken) return false;
+  if (accessToken && !isTokenExpired(accessToken)) return true;
+  return Boolean(refreshToken) && !isTokenExpired(refreshToken, 0);
+}
+
+export function getSessionRole(): string | null {
+  syncAuthTokensFromStorage();
+  return decodeToken(accessToken)?.role ?? null;
+}
+
+export function isPlatformAdminSession(): boolean {
+  return getSessionRole() === "platform_admin";
+}
+
+export function endSession() {
+  clearAuthTokens();
+  redirectToLogin();
 }
 
 export function getRefreshToken(): string | null {

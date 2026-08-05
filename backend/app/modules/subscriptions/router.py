@@ -48,6 +48,11 @@ async def checkout_subscription_plan(
         raise HTTPException(status_code=400, detail="No tenant assigned")
 
     tenant = (await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
+    if tenant.status == "inactive":
+        raise HTTPException(
+            status_code=403,
+            detail="This business has been deactivated. Please contact support.",
+        )
     owner = (await session.execute(select(User).where(User.id == current_user.id))).scalar_one()
     try:
         return await create_subscription_checkout(
@@ -76,6 +81,11 @@ async def activate_subscription_plan(
         raise HTTPException(status_code=400, detail="No tenant assigned")
 
     tenant = (await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
+    if tenant.status == "inactive":
+        raise HTTPException(
+            status_code=403,
+            detail="This business has been deactivated. Please contact support.",
+        )
     try:
         return await activate_plan(session, tenant, payload.plan_code)
     except ValueError as exc:

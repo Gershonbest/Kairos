@@ -1,5 +1,6 @@
 """Password hashing and JWT access/refresh token creation."""
 
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -22,7 +23,13 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_token(subject: str, expires_delta: timedelta, extra: dict[str, Any] | None = None) -> str:
     settings = get_settings()
     now = datetime.now(UTC)
-    payload: dict[str, Any] = {"sub": subject, "iat": now, "exp": now + expires_delta}
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "iat": now,
+        "exp": now + expires_delta,
+        # Unique per issuance so concurrent refreshes never collide on token_hash.
+        "jti": secrets.token_urlsafe(16),
+    }
     if extra:
         payload.update(extra)
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")

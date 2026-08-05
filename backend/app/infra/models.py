@@ -308,3 +308,21 @@ class NotificationPreference(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class AuditEvent(Base):
+    """Immutable append-only trail for admin and money-affecting actions."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = uuid_pk()
+    actor_user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    actor_role: Mapped[str | None] = mapped_column(String(40))
+    action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    entity_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(400))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

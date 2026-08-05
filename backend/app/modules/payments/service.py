@@ -132,6 +132,8 @@ async def initialize_booking_paystack(
         },
         subaccount_code=tenant.payment_account_id,
         reference=reference,
+        customer_name=client.full_name,
+        customer_phone=client.phone,
     )
     tx.provider_reference = intent.reference
     tx.authorization_url = intent.authorization_url
@@ -160,10 +162,29 @@ async def confirm_booking_payment(
     if tx.status == PaymentStatus.succeeded:
         return tx
 
+    previous_status = tx.status.value
     tx.status = PaymentStatus.succeeded
     tx.paid_at = paid_at or datetime.now(UTC)
     if booking.status == BookingStatus.pending:
         booking.status = BookingStatus.confirmed
+    from app.modules.audit.service import record_audit_event
+
+    await record_audit_event(
+        session,
+        action="payment.status_changed",
+        entity_type="payment_transaction",
+        entity_id=tx.id,
+        tenant_id=tx.tenant_id,
+        actor_role="system",
+        metadata={
+            "from_status": previous_status,
+            "to_status": PaymentStatus.succeeded.value,
+            "purpose": tx.purpose,
+            "provider_reference": tx.provider_reference,
+            "amount": float(tx.amount),
+            "source": "confirm_booking_payment",
+        },
+    )
     return tx
 
 
@@ -183,6 +204,7 @@ async def apply_successful_paystack_payment(
     if tx.status == PaymentStatus.succeeded:
         return tx
 
+    previous_status = tx.status.value
     tx.status = PaymentStatus.succeeded
     tx.paid_at = paid_at or datetime.now(UTC)
 
@@ -196,5 +218,24 @@ async def apply_successful_paystack_payment(
         from app.modules.subscriptions.service import activate_plan_from_payment
 
         await activate_plan_from_payment(session, tx)
+
+    from app.modules.audit.service import record_audit_event
+
+    await record_audit_event(
+        session,
+        action="payment.status_changed",
+        entity_type="payment_transaction",
+        entity_id=tx.id,
+        tenant_id=tx.tenant_id,
+        actor_role="system",
+        metadata={
+            "from_status": previous_status,
+            "to_status": PaymentStatus.succeeded.value,
+            "purpose": tx.purpose,
+            "provider_reference": tx.provider_reference,
+            "amount": float(tx.amount),
+            "source": "apply_successful_paystack_payment",
+        },
+    )
 
     return tx

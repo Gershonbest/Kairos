@@ -24,6 +24,7 @@ import {
   CalendarPlus,
   Lock,
   Loader2,
+  Download,
 } from "lucide-react";
 import { api, type PublicBookingResponse } from "../../../lib/api/client";
 import {
@@ -179,6 +180,7 @@ export function PublicBooking() {
   const [phoneCountryCode, setPhoneCountryCode] = useState("GH");
   const [phoneDialCode, setPhoneDialCode] = useState("+233");
   const [availableSlotIsos, setAvailableSlotIsos] = useState<string[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", phone: "", notes: "" });
   const [confirmedBooking, setConfirmedBooking] = useState<PublicBookingResponse | null>(null);
   const [calendarLinks, setCalendarLinks] = useState<{
@@ -190,6 +192,8 @@ export function PublicBooking() {
   const [chatInput, setChatInput] = useState("");
   const [bookingError, setBookingError] = useState("");
   const [isBooking, setIsBooking] = useState(false);
+  const [receiptBusy, setReceiptBusy] = useState<"download" | "email" | null>(null);
+  const [receiptMessage, setReceiptMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "0",
@@ -225,10 +229,13 @@ export function PublicBooking() {
       .confirmPublicPayment(businessId, bookingId, reference)
       .then((confirmed) => {
         applyConfirmedBooking(confirmed);
+        // Drop Paystack query params so refresh doesn't re-verify awkwardly.
+        const path = window.location.pathname;
+        window.history.replaceState({}, "", path);
       })
       .catch((err) => {
         setBookingError(err instanceof Error ? err.message : "Payment verification failed.");
-        setStep("payment");
+        // Stay on confirmation with error — payment step needs local service state we no longer have.
       })
       .finally(() => {
         setIsBooking(false);
@@ -311,22 +318,36 @@ export function PublicBooking() {
   useEffect(() => {
     if (!businessId || !service || !selectedDate) {
       setAvailableSlotIsos([]);
+      setSlotsLoading(false);
       return;
     }
+    // A later date selection must win even if an earlier request resolves after it.
+    let cancelled = false;
     const from = new Date(`${selectedDate}T00:00:00.000Z`);
     const to = new Date(`${selectedDate}T23:59:59.000Z`);
+    setSlotsLoading(true);
+    setAvailableSlotIsos([]);
     api
       .listPublicAvailability(businessId, service.id, from.toISOString(), to.toISOString())
       .then((res) => {
+        if (cancelled) return;
         setAvailableSlotIsos(res.slots);
         if (service.scheduling_mode === "all_day") {
           setSelectedSlotIso(res.slots[0] ?? "");
         }
       })
       .catch(() => {
+        if (cancelled) return;
         setAvailableSlotIsos([]);
         if (service.scheduling_mode === "all_day") setSelectedSlotIso("");
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [businessId, service, selectedDate]);
 
   const groupedSlots = availableSlotIsos.reduce<Record<string, string[]>>((acc, slotIso) => {
@@ -414,7 +435,37 @@ export function PublicBooking() {
     setForm({ name: "", email: "", phone: "", notes: "" });
     setConfirmedBooking(null);
     setCalendarLinks(null);
+    setReceiptBusy(null);
+    setReceiptMessage("");
     paymentHandledRef.current = false;
+  }
+
+  async function handleDownloadReceipt() {
+    if (!businessId || !confirmedBooking?.id) return;
+    setReceiptBusy("download");
+    setReceiptMessage("");
+    try {
+      await api.downloadPublicReceipt(businessId, confirmedBooking.id);
+      setReceiptMessage("Receipt downloaded. Open it and use Print → Save as PDF if you want a PDF.");
+    } catch {
+      setReceiptMessage("Could not download the receipt. Please try again.");
+    } finally {
+      setReceiptBusy(null);
+    }
+  }
+
+  async function handleEmailReceipt() {
+    if (!businessId || !confirmedBooking?.id) return;
+    setReceiptBusy("email");
+    setReceiptMessage("");
+    try {
+      const result = await api.emailPublicReceipt(businessId, confirmedBooking.id);
+      setReceiptMessage(`Receipt and booking details sent to ${result.email}.`);
+    } catch {
+      setReceiptMessage("Could not send the receipt email. Please try again.");
+    } finally {
+      setReceiptBusy(null);
+    }
   }
 
   function openCalendar(calendar: "google" | "ics") {
@@ -1002,7 +1053,11 @@ export function PublicBooking() {
                     <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
                       {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
                     </p>
-                    {selectedSlotIso ? (
+                    {slotsLoading ? (
+                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
+                        Checking availability…
+                      </p>
+                    ) : selectedSlotIso ? (
                       <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
                         This books the entire calendar day — no start time needed.
                       </p>
@@ -1094,7 +1149,10 @@ export function PublicBooking() {
                         </div>
                       </div>
                     ))}
-                    {Object.keys(groupedSlots).length === 0 && (
+                    {slotsLoading && (
+                      <p style={{ fontSize: 13, color: stone500 }}>Loading available times…</p>
+                    )}
+                    {!slotsLoading && Object.keys(groupedSlots).length === 0 && (
                       <p style={{ fontSize: 13, color: stone500 }}>
                         No available slots for this date. Please pick another day.
                       </p>
@@ -1541,7 +1599,7 @@ export function PublicBooking() {
           )}
 
           {/* ── Step 5: Confirmation ── */}
-          {step === "confirmation" && (service || confirmedBooking) && (
+          {step === "confirmation" && (
             <motion.div
               key="confirmation"
               initial={{ opacity: 0, scale: 0.97 }}
@@ -1549,9 +1607,58 @@ export function PublicBooking() {
               transition={{ duration: 0.28 }}
               style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}
             >
-              {isBooking && (
-                <p style={{ fontSize: 14, color: stone500, marginBottom: 16 }}>Confirming your payment…</p>
+              {isBooking && !confirmedBooking && (
+                <>
+                  <Loader2 size={36} color={brandPrimary} className="animate-spin" style={{ marginBottom: 16 }} />
+                  <p style={{ fontSize: 14, color: stone500, marginBottom: 8 }}>Confirming your payment…</p>
+                  <p style={{ fontSize: 12, color: stone400, maxWidth: 320, lineHeight: 1.5 }}>
+                    Please wait while we verify your payment and prepare your receipt.
+                  </p>
+                </>
               )}
+
+              {!isBooking && bookingError && !confirmedBooking && (
+                <>
+                  <h2
+                    style={{
+                      fontFamily: "'Playfair Display', serif",
+                      fontSize: "1.8rem",
+                      fontWeight: 600,
+                      color: dark,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Payment check failed
+                  </h2>
+                  <p style={{ fontSize: 14, color: "#E74C3C", marginBottom: 16, maxWidth: 380, lineHeight: 1.6 }}>
+                    {bookingError}
+                  </p>
+                  <p style={{ fontSize: 13, color: stone500, marginBottom: 20, maxWidth: 380, lineHeight: 1.6 }}>
+                    If you were charged, your booking may still confirm shortly. You can also try refreshing this page
+                    or contact the business for help.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={resetBooking}
+                    style={{
+                      padding: "12px 20px",
+                      borderRadius: 13,
+                      border: "none",
+                      backgroundColor: brandPrimary,
+                      color: "#fff",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    Start over
+                  </button>
+                </>
+              )}
+
+              {(confirmedBooking || (service && !isBooking && !bookingError)) && (
+                <>
               <motion.div
                 initial={{ scale: 0, rotate: -20 }}
                 animate={{ scale: 1, rotate: 0 }}
@@ -1582,11 +1689,12 @@ export function PublicBooking() {
                 You&apos;re all set
               </h2>
               <p style={{ fontSize: 14, color: stone500, marginBottom: 32, maxWidth: 380, lineHeight: 1.7 }}>
-                A confirmation email with your calendar invite has been sent to{" "}
+                A confirmation email with your receipt and calendar invite
+                {confirmedBooking?.payment_reference ? " (including payment reference)" : ""} has been sent to{" "}
                 <strong style={{ color: dark }}>
                   {confirmedBooking?.client_email || form.email}
                 </strong>
-                .
+                . You can also download or resend it below.
               </p>
 
               {/* Booking card */}
@@ -1700,6 +1808,10 @@ export function PublicBooking() {
                             },
                           ]
                         : [{ label: "Amount paid", value: `₦${price}` }]),
+                      ...(confirmedBooking?.payment_reference
+                        ? [{ label: "Payment ref", value: confirmedBooking.payment_reference }]
+                        : []),
+                      { label: "Paid to", value: confirmedBooking?.business_name || businessProfile.name },
                     ];
                     return rows.map(({ label, value }) => (
                       <div
@@ -1714,8 +1826,62 @@ export function PublicBooking() {
                 </div>
               </div>
 
-              {/* Calendar actions */}
+              {/* Calendar + receipt actions */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 400 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={!confirmedBooking?.id || receiptBusy === "download"}
+                    onClick={handleDownloadReceipt}
+                    style={{
+                      padding: "12px 10px",
+                      borderRadius: 12,
+                      border: "1px solid var(--color-border)",
+                      backgroundColor: "var(--color-card)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: brandPrimary,
+                      cursor: confirmedBooking?.id ? "pointer" : "not-allowed",
+                      opacity: confirmedBooking?.id ? 1 : 0.55,
+                      fontFamily: "'DM Sans', sans-serif",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {receiptBusy === "download" ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                    Download receipt
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!confirmedBooking?.id || receiptBusy === "email"}
+                    onClick={handleEmailReceipt}
+                    style={{
+                      padding: "12px 10px",
+                      borderRadius: 12,
+                      border: "1px solid var(--color-border)",
+                      backgroundColor: "var(--color-card)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: brandPrimary,
+                      cursor: confirmedBooking?.id ? "pointer" : "not-allowed",
+                      opacity: confirmedBooking?.id ? 1 : 0.55,
+                      fontFamily: "'DM Sans', sans-serif",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    {receiptBusy === "email" ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
+                    Email receipt
+                  </button>
+                </div>
+                {receiptMessage && (
+                  <p style={{ fontSize: 12, color: stone500, lineHeight: 1.5, margin: 0 }}>{receiptMessage}</p>
+                )}
+
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
                   {[
                     { label: "Google Calendar", kind: "google" as const },
@@ -1802,6 +1968,8 @@ export function PublicBooking() {
                   )}
                 .
               </p>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

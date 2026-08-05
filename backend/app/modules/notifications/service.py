@@ -2,26 +2,128 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
+from html import escape
 
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
+from app.infra.cache import redis_cache
 from app.infra.email import EmailAttachment, email_service
 from app.infra.models import (
     Booking,
     Client,
     Notification,
     NotificationType,
+    PaymentTransaction,
     Service,
     Tenant,
     User,
     UserRole,
 )
+from app.modules.notifications.receipt import (
+    BookingReceiptData,
+    build_receipt_html,
+    build_receipt_plain_text,
+)
 
 logger = structlog.get_logger()
+
+
+def send_subscription_payment_receipt_email(
+    *,
+    to: str,
+    customer_name: str,
+    business_name: str,
+    plan_name: str,
+    amount: float,
+    currency: str,
+    payment_reference: str,
+    paid_at: datetime | None,
+    paid_until: datetime | None,
+) -> bool:
+    """Send a subscription payment receipt and report delivery success."""
+    symbol = "₦" if currency.upper() == "NGN" else f"{currency.upper()} "
+    amount_label = f"{symbol}{amount:,.2f}"
+    paid_at_label = paid_at.strftime("%Y-%m-%d %H:%M UTC") if paid_at else "—"
+    paid_until_label = paid_until.strftime("%Y-%m-%d") if paid_until else "—"
+    subject = f"Payment receipt — {plan_name} plan"
+    html = f"""
+    <h1 style="font-size:22px;color:#1c1917;">Payment receipt</h1>
+    <p>Hi {escape(customer_name)},</p>
+    <p>Your Kairos Bookings subscription payment was successful.</p>
+    <table style="width:100%;max-width:520px;border-collapse:collapse;">
+      <tr><td style="padding:8px 0;color:#78716c;">Business</td><td style="text-align:right;font-weight:600;">{escape(business_name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Plan</td><td style="text-align:right;font-weight:600;">{escape(plan_name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Amount paid</td><td style="text-align:right;font-weight:600;">{escape(amount_label)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Payment reference</td><td style="text-align:right;font-weight:600;">{escape(payment_reference)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Paid at</td><td style="text-align:right;font-weight:600;">{paid_at_label}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Access paid until</td><td style="text-align:right;font-weight:600;">{paid_until_label}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;">Status</td><td style="text-align:right;font-weight:600;">Succeeded</td></tr>
+    </table>
+    <p style="color:#78716c;font-size:13px;">Keep this receipt for your records.</p>
+    <p>— Kairos Bookings</p>
+    """
+    text = (
+        f"Payment receipt\n\nHi {customer_name},\n\n"
+        "Your Kairos Bookings subscription payment was successful.\n\n"
+        f"Business: {business_name}\n"
+        f"Plan: {plan_name}\n"
+        f"Amount paid: {amount_label}\n"
+        f"Payment reference: {payment_reference}\n"
+        f"Paid at: {paid_at_label}\n"
+        f"Access paid until: {paid_until_label}\n"
+        "Status: Succeeded\n\n"
+        "Keep this receipt for your records.\n\n— Kairos Bookings"
+    )
+    try:
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
+        return True
+    except Exception:
+        logger.exception(
+            "notifications.subscription_receipt_failed",
+            to=to,
+            payment_reference=payment_reference,
+        )
+        return False
+
+
+async def send_subscription_payment_receipt_once(
+    *,
+    transaction_id: str,
+    to: str,
+    customer_name: str,
+    business_name: str,
+    plan_name: str,
+    amount: float,
+    currency: str,
+    payment_reference: str,
+    paid_at: datetime | None,
+    paid_until: datetime | None,
+) -> bool:
+    """Send one receipt per transaction across callback/webhook retries."""
+    marker = f"notification:subscription-receipt:{transaction_id}"
+    claimed = await redis_cache.client.set(marker, "sending", nx=True, ex=60 * 60 * 24 * 90)
+    if not claimed:
+        return False
+    sent = await asyncio.to_thread(
+        send_subscription_payment_receipt_email,
+        to=to,
+        customer_name=customer_name,
+        business_name=business_name,
+        plan_name=plan_name,
+        amount=amount,
+        currency=currency,
+        payment_reference=payment_reference,
+        paid_at=paid_at,
+        paid_until=paid_until,
+    )
+    if not sent:
+        await redis_cache.client.delete(marker)
+    return sent
 
 
 def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) -> None:
@@ -48,6 +150,76 @@ def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) 
         logger.exception("notifications.verification_email_failed", to=to)
 
 
+def build_booking_receipt_data(
+    *,
+    tenant: Tenant,
+    service: Service,
+    booking: Booking,
+    client: Client,
+    payment_tx: PaymentTransaction | None = None,
+    location: str | None = None,
+    business_contact_email: str | None = None,
+) -> BookingReceiptData:
+    appointment_format = booking.appointment_format.value if booking.appointment_format else "onsite"
+    amount = float(payment_tx.amount) if payment_tx and payment_tx.amount is not None else None
+    return BookingReceiptData(
+        booking_id=booking.id,
+        client_name=client.full_name,
+        client_email=client.email,
+        business_name=tenant.name,
+        business_logo_url=tenant.public_logo_url,
+        business_contact_email=business_contact_email,
+        service_name=service.name,
+        start_at=booking.start_at,
+        end_at=booking.end_at,
+        is_all_day=bool(booking.is_all_day),
+        appointment_format=appointment_format,
+        location=location,
+        host_name=service.host_name,
+        host_title=service.host_title,
+        client_instructions=service.client_instructions,
+        online_meeting_link=(
+            service.online_meeting_link if appointment_format == "online" else None
+        ),
+        amount_paid=amount,
+        currency=(payment_tx.currency if payment_tx and payment_tx.currency else "NGN"),
+        payment_reference=payment_tx.provider_reference if payment_tx else None,
+        payment_status=payment_tx.status.value if payment_tx else None,
+        paid_at=payment_tx.paid_at if payment_tx else None,
+        service_price=float(service.price_amount) if service.price_amount is not None else None,
+        service_deposit=float(service.deposit_amount) if service.deposit_amount is not None else None,
+    )
+
+
+def send_booking_receipt_from_data(receipt: BookingReceiptData) -> None:
+    """Send receipt + booking confirmation email (with ICS + HTML receipt attachments)."""
+    send_booking_confirmation_email(
+        to=receipt.client_email,
+        client_name=receipt.client_name,
+        business_name=receipt.business_name,
+        service_name=receipt.service_name,
+        start_at=receipt.start_at,
+        end_at=receipt.end_at,
+        location=receipt.location,
+        host_name=receipt.host_name,
+        host_title=receipt.host_title,
+        appointment_format=receipt.appointment_format,
+        client_instructions=receipt.client_instructions,
+        online_meeting_link=receipt.online_meeting_link,
+        booking_id=receipt.booking_id,
+        is_all_day=receipt.is_all_day,
+        business_logo_url=receipt.business_logo_url,
+        business_contact_email=receipt.business_contact_email,
+        amount_paid=receipt.amount_paid,
+        currency=receipt.currency,
+        payment_reference=receipt.payment_reference,
+        payment_status=receipt.payment_status,
+        paid_at=receipt.paid_at,
+        service_price=receipt.service_price,
+        service_deposit=receipt.service_deposit,
+    )
+
+
 def send_booking_confirmation_email(
     *,
     to: str,
@@ -64,15 +236,41 @@ def send_booking_confirmation_email(
     online_meeting_link: str | None,
     booking_id: str,
     is_all_day: bool = False,
+    business_logo_url: str | None = None,
+    business_contact_email: str | None = None,
+    amount_paid: float | None = None,
+    currency: str = "NGN",
+    payment_reference: str | None = None,
+    payment_status: str | None = None,
+    paid_at: datetime | None = None,
+    service_price: float | None = None,
+    service_deposit: float | None = None,
 ) -> None:
-    if is_all_day:
-        when_label = start_at.strftime("%A, %B %d, %Y (all day)")
-    else:
-        when_label = (
-            f"{start_at.strftime('%A, %B %d, %Y at %I:%M %p UTC')} – "
-            f"{end_at.strftime('%I:%M %p UTC')}"
-        )
-    format_label = "Online" if appointment_format == "online" else "In person"
+    receipt = BookingReceiptData(
+        booking_id=booking_id,
+        client_name=client_name,
+        client_email=to,
+        business_name=business_name,
+        business_logo_url=business_logo_url,
+        business_contact_email=business_contact_email,
+        service_name=service_name,
+        start_at=start_at,
+        end_at=end_at,
+        is_all_day=is_all_day,
+        appointment_format=appointment_format,
+        location=location,
+        host_name=host_name,
+        host_title=host_title,
+        client_instructions=client_instructions,
+        online_meeting_link=online_meeting_link,
+        amount_paid=amount_paid,
+        currency=currency,
+        payment_reference=payment_reference,
+        payment_status=payment_status,
+        paid_at=paid_at,
+        service_price=service_price,
+        service_deposit=service_deposit,
+    )
     calendar_args: CalendarEventArgs = {
         "booking_id": booking_id,
         "business_name": business_name,
@@ -89,65 +287,18 @@ def send_booking_confirmation_email(
     }
     calendar_invite = calendar_invite_service.build_booking_ics(**calendar_args)
     google_calendar_url = calendar_invite_service.build_google_calendar_url(**calendar_args)
-    host_line = ""
-    host_text = ""
-    if host_name:
-        host_line = f"<p><strong>You'll meet with:</strong> {host_name}"
-        if host_title:
-            host_line += f" ({host_title})"
-        host_line += "</p>"
-        host_text = f"You'll meet with: {host_name}"
-        if host_title:
-            host_text += f" ({host_title})"
-        host_text += "\n"
 
-    location_line = f"<p><strong>Location:</strong> {location}</p>" if location else ""
-    location_text = f"Location: {location}\n" if location else ""
-    link_line = (
-        f'<p><strong>Join link:</strong> <a href="{online_meeting_link}">{online_meeting_link}</a></p>'
-        if online_meeting_link
-        else ""
-    )
-    link_text = f"Join link: {online_meeting_link}\n" if online_meeting_link else ""
-    instructions_line = (
-        f"<p><strong>Before your visit:</strong> {client_instructions}</p>" if client_instructions else ""
-    )
-    instructions_text = f"Before your visit: {client_instructions}\n" if client_instructions else ""
-
-    subject = f"Booking confirmed — {service_name} with {business_name}"
+    receipt_body = build_receipt_html(receipt, for_email=True)
+    subject = f"Receipt & booking confirmed — {service_name} with {business_name}"
     html = f"""
-    <p>Hi {client_name},</p>
-    <p>Your appointment is confirmed.</p>
-    <p><strong>Service:</strong> {service_name}</p>
-    <p><strong>Business:</strong> {business_name}</p>
-    <p><strong>Format:</strong> {format_label}</p>
-    <p><strong>When:</strong> {when_label}</p>
-    {host_line}
-    {location_line}
-    {link_line}
-    {instructions_line}
-    <p><strong>Reference:</strong> {booking_id}</p>
-    <p><a href="{google_calendar_url}">Add to Google Calendar</a></p>
-    <p>A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.</p>
-    <p>If you need to make changes, please contact {business_name} directly.</p>
-    <p>— Kairos Bookings</p>
+    {receipt_body}
+    <p style="font-size:14px;margin-top:18px;"><a href="{google_calendar_url}">Add to Google Calendar</a></p>
+    <p style="font-size:13px;color:#78716c;">A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.</p>
     """
     text = (
-        f"Hi {client_name},\n\n"
-        "Your appointment is confirmed.\n\n"
-        f"Service: {service_name}\n"
-        f"Business: {business_name}\n"
-        f"Format: {format_label}\n"
-        f"When: {when_label}\n"
-        f"{host_text}"
-        f"{location_text}"
-        f"{link_text}"
-        f"{instructions_text}"
-        f"Reference: {booking_id}\n\n"
-        f"Add to Google Calendar: {google_calendar_url}\n"
-        "A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.\n\n"
-        f"If you need to make changes, please contact {business_name} directly.\n\n"
-        "— Kairos Bookings"
+        build_receipt_plain_text(receipt)
+        + f"\n\nAdd to Google Calendar: {google_calendar_url}\n"
+        "A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.\n"
     )
     try:
         email_service.send(
@@ -160,7 +311,12 @@ def send_booking_confirmation_email(
                     filename=f"booking-{booking_id}.ics",
                     content=calendar_invite.encode("utf-8"),
                     content_type="text/calendar",
-                )
+                ),
+                EmailAttachment(
+                    filename=f"receipt-{booking_id}.html",
+                    content=build_receipt_html(receipt).encode("utf-8"),
+                    content_type="text/html",
+                ),
             ],
         )
     except Exception:

@@ -2,12 +2,13 @@
 
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
@@ -16,7 +17,10 @@ from app.infra.models import (
     PaymentStatus,
     PaymentTransaction,
     Service,
+    SubscriptionPlan,
     Tenant,
+    User,
+    UserRole,
     WebhookEvent,
 )
 from app.infra.paystack import PaystackError, paystack_client
@@ -24,6 +28,7 @@ from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,
     send_new_booking_owner_email,
+    send_subscription_payment_receipt_once,
 )
 from app.modules.payments.providers import get_provider, verify_paystack_signature, verify_webhook_signature
 from app.modules.payments.service import apply_successful_paystack_payment, ensure_booking_payment
@@ -32,6 +37,58 @@ from app.schemas.payments import PaymentIntentRequest, PaymentIntentResponse
 
 router = APIRouter()
 settings = get_settings()
+TRANSACTIONS_CACHE = "transactions:list"
+DASHBOARD_CACHE = "dashboard:summary"
+
+
+async def _subscription_receipt_args(
+    session: AsyncSession,
+    tx: PaymentTransaction,
+) -> dict | None:
+    if tx.purpose != "subscription":
+        return None
+    tenant = (
+        await session.execute(select(Tenant).where(Tenant.id == tx.tenant_id))
+    ).scalar_one_or_none()
+    if not tenant:
+        return None
+    owner = (
+        await session.execute(
+            select(User).where(
+                User.tenant_id == tenant.id,
+                User.role == UserRole.tenant_admin,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not owner:
+        owner = (
+            await session.execute(
+                select(User).where(
+                    User.tenant_id == tenant.id,
+                    User.is_active.is_(True),
+                )
+            )
+        ).scalars().first()
+    if not owner:
+        return None
+    plan = (
+        await session.execute(
+            select(SubscriptionPlan).where(SubscriptionPlan.code == tenant.plan_code)
+        )
+    ).scalar_one_or_none()
+    return {
+        "transaction_id": tx.id,
+        "to": owner.email,
+        "customer_name": owner.full_name,
+        "business_name": tenant.name,
+        "plan_name": plan.name if plan else tenant.plan_code.title(),
+        "amount": float(tx.amount),
+        "currency": tx.currency or "NGN",
+        "payment_reference": tx.provider_reference,
+        "paid_at": tx.paid_at,
+        "paid_until": tenant.subscription_paid_until,
+    }
 
 
 @router.get("/config")
@@ -53,6 +110,10 @@ async def list_transactions(
         raise HTTPException(status_code=400, detail="No tenant assigned")
 
     tenant_id = current_user.tenant_id
+    cache_key = redis_cache.tenant_key(tenant_id, TRANSACTIONS_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, list):
+        return cached
 
     orphan_rows = (
         await session.execute(
@@ -77,7 +138,7 @@ async def list_transactions(
             .order_by(PaymentTransaction.created_at.desc())
         )
     ).all()
-    return [
+    payload = [
         {
             "id": tx.id,
             "provider": tx.provider,
@@ -99,6 +160,8 @@ async def list_transactions(
         }
         for tx, _booking, client, service in rows
     ]
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.post("/intent", response_model=PaymentIntentResponse)
@@ -174,6 +237,7 @@ async def create_payment_intent(
 @router.post("/verify/{reference}")
 async def verify_payment_reference(
     reference: str,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     """Verify a Paystack transaction and apply booking/subscription side effects."""
@@ -190,6 +254,9 @@ async def verify_payment_reference(
         raise HTTPException(status_code=404, detail="Payment transaction not found")
 
     await session.commit()
+    receipt_args = await _subscription_receipt_args(session, tx)
+    if receipt_args:
+        background_tasks.add_task(send_subscription_payment_receipt_once, **receipt_args)
     return {
         "ok": True,
         "status": "succeeded",
@@ -262,10 +329,34 @@ async def receive_webhook(
                 tx = await apply_successful_paystack_payment(session, reference=str(reference))
                 if tx and tx.purpose == "booking" and tx.booking_id and not already_paid:
                     await _send_booking_emails_after_payment(session, tx.booking_id)
+                    if tx.tenant_id:
+                        await redis_cache.invalidate_tenant(
+                            tx.tenant_id,
+                            "bookings:list",
+                            "clients:list",
+                            TRANSACTIONS_CACHE,
+                            DASHBOARD_CACHE,
+                        )
+                elif tx and tx.purpose == "subscription":
+                    receipt_args = await _subscription_receipt_args(session, tx)
+                    if receipt_args:
+                        await send_subscription_payment_receipt_once(**receipt_args)
         elif event_type == "payment.succeeded":
             ref = payload.get("data", {}).get("provider_reference")
             if ref:
-                await apply_successful_paystack_payment(session, reference=str(ref))
+                tx = await apply_successful_paystack_payment(session, reference=str(ref))
+                if tx and tx.purpose == "booking" and tx.tenant_id:
+                    await redis_cache.invalidate_tenant(
+                        tx.tenant_id,
+                        "bookings:list",
+                        "clients:list",
+                        TRANSACTIONS_CACHE,
+                        DASHBOARD_CACHE,
+                    )
+                elif tx and tx.purpose == "subscription":
+                    receipt_args = await _subscription_receipt_args(session, tx)
+                    if receipt_args:
+                        await send_subscription_payment_receipt_once(**receipt_args)
         event.processed = True
     except Exception:
         event.attempts += 1
@@ -289,6 +380,24 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
     )
     appointment_format = booking.appointment_format or AppointmentFormat.onsite
     appointment_location = resolve_service_location(service, tenant, appointment_format)
+    payment_tx = (
+        await session.execute(
+            select(PaymentTransaction).where(
+                PaymentTransaction.tenant_id == booking.tenant_id,
+                PaymentTransaction.booking_id == booking.id,
+            )
+        )
+    ).scalar_one_or_none()
+    contact_email = (
+        await session.execute(
+            select(User).where(
+                User.tenant_id == tenant.id,
+                User.role == UserRole.tenant_admin,
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    owner_email = contact_email.email if contact_email else None
     try:
         send_booking_confirmation_email(
             to=client.email,
@@ -305,6 +414,15 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
             online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
+            business_logo_url=tenant.public_logo_url,
+            business_contact_email=owner_email or tenant.help_email,
+            amount_paid=float(payment_tx.amount) if payment_tx and payment_tx.amount is not None else None,
+            currency=(payment_tx.currency if payment_tx and payment_tx.currency else "NGN"),
+            payment_reference=payment_tx.provider_reference if payment_tx else None,
+            payment_status=payment_tx.status.value if payment_tx else None,
+            paid_at=payment_tx.paid_at if payment_tx else None,
+            service_price=float(service.price_amount) if service.price_amount is not None else None,
+            service_deposit=float(service.deposit_amount) if service.deposit_amount is not None else None,
         )
         if owner and owner.email:
             send_new_booking_owner_email(

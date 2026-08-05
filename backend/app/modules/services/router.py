@@ -5,11 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import AppointmentType, SchedulingMode, Service, Tenant
 from app.schemas.services import ServiceCreate, ServiceOut, ServiceUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
+
+SERVICES_CACHE = "services:list"
+BOOKINGS_CACHE = "bookings:list"
 
 
 def _to_service_out(service: Service) -> ServiceOut:
@@ -58,10 +62,20 @@ async def list_services(
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[ServiceOut]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant context")
+
+    cache_key = redis_cache.tenant_key(current_user.tenant_id, SERVICES_CACHE)
+    cached = await redis_cache.get_json(cache_key)
+    if isinstance(cached, list):
+        return [ServiceOut.model_validate(item) for item in cached]
+
     rows = (
         await session.execute(select(Service).where(Service.tenant_id == current_user.tenant_id))
     ).scalars()
-    return [_to_service_out(row) for row in rows]
+    payload = [_to_service_out(row) for row in rows]
+    await redis_cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload])
+    return payload
 
 
 @router.post("", response_model=ServiceOut)
@@ -80,6 +94,8 @@ async def create_service(
     session.add(service)
     await session.commit()
     await session.refresh(service)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, SERVICES_CACHE)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, "booking-links")
     return _to_service_out(service)
 
 
@@ -100,6 +116,7 @@ async def update_service(
     _apply_service_payload(service, payload)
     await session.commit()
     await session.refresh(service)
+    await redis_cache.invalidate_tenant(current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links")
     return _to_service_out(service)
 
 
@@ -118,4 +135,5 @@ async def delete_service(
         raise HTTPException(status_code=404, detail="Service not found")
     await session.delete(service)
     await session.commit()
+    await redis_cache.invalidate_tenant(current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links")
     return {"ok": True}

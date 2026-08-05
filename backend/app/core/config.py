@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_debug: bool = False
     database_url: str = "sqlite+aiosqlite:///./kairos.db"
     redis_url: str = "redis://localhost:6379/0"
+    cache_ttl_seconds: int = 300
     jwt_secret: str = "change-me"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
