@@ -117,13 +117,21 @@ export function SubscriberManagement() {
   };
 
   const handleChangePlan = async (tenantId: string, newPlan: string) => {
+    const confirmed = window.confirm(
+      `Grant the "${newPlan}" plan for free for 30 days?\n\nThis activates the account without charging the business.`
+    );
+    if (!confirmed) {
+      await load();
+      return;
+    }
     setPlanUpdatingId(tenantId);
     try {
-      await api.updateSubscriber(tenantId, { plan_code: newPlan });
+      await api.updateSubscriber(tenantId, { plan_code: newPlan, grant_days: 30 });
       await load();
       setError("");
     } catch {
-      setError("Unable to update tenant plan.");
+      setError("Unable to grant tenant plan.");
+      await load();
     } finally {
       setPlanUpdatingId(null);
     }

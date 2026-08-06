@@ -126,7 +126,7 @@ async def load_scheduling_context(
             select(Service).where(Service.tenant_id == tenant_id, Service.active.is_(True))
         )
     ).scalars().all()
-    return rules, bookings, services
+    return list(rules), list(bookings), list(services)
 
 
 def _format_slot_label(slot_iso: str) -> str:

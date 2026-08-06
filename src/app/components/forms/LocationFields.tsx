@@ -1,5 +1,6 @@
 // Address fields with country/state dropdowns and optional Google Maps preview.
 
+import { useEffect } from "react";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import {
@@ -9,7 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { COUNTRIES, formatAddressQuery, googleMapsEmbedUrl, googleMapsSearchUrl } from "../../../lib/data/locations";
+import {
+  COUNTRIES,
+  formatAddressQuery,
+  googleMapsEmbedUrl,
+  googleMapsSearchUrl,
+  normalizeStateForCountry,
+} from "../../../lib/data/locations";
 import { ExternalLink, MapPin } from "lucide-react";
 
 export interface LocationFormValue {
@@ -39,9 +46,24 @@ export function LocationFields({
 }: LocationFieldsProps) {
   const country = COUNTRIES.find((item) => item.code === value.country_code);
   const states = country?.states ?? [];
+  // Only treat a region as selected when it matches a real dropdown option.
+  // Invalid / legacy labels (e.g. "Abuja" vs "Abuja FCT") become empty so the
+  // placeholder shows instead of a filled-looking but unsaved value.
+  const resolvedState = normalizeStateForCountry(value.country_code, value.state);
+
+  useEffect(() => {
+    if (!value.country_code) return;
+    if (resolvedState === (value.state ?? "").trim()) return;
+    // Keep parent form state in sync with what the select can actually show.
+    onChange({ ...value, state: resolvedState });
+    // Intentionally depend on the derived region + country only; `value` /
+    // `onChange` identity changes every render from some parents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value.country_code, value.state, resolvedState]);
+
   const addressQuery = formatAddressQuery({
     address_line: value.address_line,
-    state: value.state,
+    state: resolvedState,
     country_code: value.country_code,
     country_name: country?.name,
   });
@@ -52,7 +74,7 @@ export function LocationFields({
         <div>
           <Label htmlFor={`${idPrefix}-country`}>Country</Label>
           <Select
-            value={value.country_code}
+            value={value.country_code || undefined}
             onValueChange={(code) => {
               const selected = COUNTRIES.find((item) => item.code === code);
               onChange({ ...value, country_code: code, state: "" });
@@ -81,10 +103,10 @@ export function LocationFields({
           </Label>
           {states.length > 0 ? (
             <Select
-              value={value.state || undefined}
+              key={`${idPrefix}-${value.country_code}-state`}
+              value={resolvedState || undefined}
               onValueChange={(state) => onChange({ ...value, state })}
               disabled={disabled || !value.country_code}
-              required
             >
               <SelectTrigger id={`${idPrefix}-state`} className="mt-1 bg-input-background">
                 <SelectValue placeholder="Select state or region" />

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
 from app.infra.cache import redis_cache
 from app.infra.email import EmailAttachment, email_service
+from app.core.config import get_settings
 from app.infra.models import (
     Booking,
     Client,
@@ -148,6 +149,58 @@ def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) 
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
     except Exception:
         logger.exception("notifications.verification_email_failed", to=to)
+
+
+def send_password_reset_email(*, to: str, full_name: str, reset_url: str, expire_hours: int = 1) -> None:
+    subject = "Reset your Kairos Bookings password"
+    hour_label = "1 hour" if expire_hours == 1 else f"{expire_hours} hours"
+    html = f"""
+    <p>Hi {full_name},</p>
+    <p>We received a request to reset the password for your Kairos Bookings account.</p>
+    <p><a href="{reset_url}">Reset password</a></p>
+    <p>If the button does not work, copy and paste this link into your browser:</p>
+    <p>{reset_url}</p>
+    <p>This link expires in {hour_label}. If you did not request a reset, you can ignore this email.</p>
+    <p>— Kairos Bookings</p>
+    """
+    text = (
+        f"Hi {full_name},\n\n"
+        "We received a request to reset the password for your Kairos Bookings account.\n"
+        f"Reset your password: {reset_url}\n\n"
+        f"This link expires in {hour_label}. If you did not request a reset, ignore this email.\n\n"
+        "— Kairos Bookings"
+    )
+    try:
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
+        logger.info("notifications.password_reset_email_sent", to=to)
+    except Exception:
+        logger.exception("notifications.password_reset_email_failed", to=to)
+
+
+def send_password_reset_google_hint_email(*, to: str, full_name: str) -> None:
+    subject = "Sign in to Kairos Bookings with Google"
+    frontend = get_settings().frontend_base_url.rstrip("/")
+    login_url = f"{frontend}/auth/login"
+    html = f"""
+    <p>Hi {full_name},</p>
+    <p>We received a password reset request for this email, but your Kairos Bookings account uses Google sign-in.</p>
+    <p>There is no password to reset. Please sign in with Google instead:</p>
+    <p><a href="{login_url}">Go to sign in</a></p>
+    <p>If you did not request this, you can ignore this email.</p>
+    <p>— Kairos Bookings</p>
+    """
+    text = (
+        f"Hi {full_name},\n\n"
+        "We received a password reset request for this email, but your Kairos Bookings account uses Google sign-in.\n"
+        f"Sign in here: {login_url}\n\n"
+        "If you did not request this, ignore this email.\n\n"
+        "— Kairos Bookings"
+    )
+    try:
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
+        logger.info("notifications.password_reset_google_hint_sent", to=to)
+    except Exception:
+        logger.exception("notifications.password_reset_google_hint_failed", to=to)
 
 
 def build_booking_receipt_data(

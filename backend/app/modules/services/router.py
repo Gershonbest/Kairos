@@ -116,7 +116,10 @@ async def update_service(
     _apply_service_payload(service, payload)
     await session.commit()
     await session.refresh(service)
-    await redis_cache.invalidate_tenant(current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links")
+    if current_user.tenant_id:
+        await redis_cache.invalidate_tenant(
+            current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links"
+        )
     return _to_service_out(service)
 
 
@@ -135,5 +138,8 @@ async def delete_service(
         raise HTTPException(status_code=404, detail="Service not found")
     await session.delete(service)
     await session.commit()
-    await redis_cache.invalidate_tenant(current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links")
+    if current_user.tenant_id:
+        await redis_cache.invalidate_tenant(
+            current_user.tenant_id, SERVICES_CACHE, BOOKINGS_CACHE, "booking-links"
+        )
     return {"ok": True}

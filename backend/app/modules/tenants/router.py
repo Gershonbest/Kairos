@@ -148,12 +148,12 @@ async def update_my_tenant(
 
     await session.commit()
     await session.refresh(tenant)
-    payload = _tenant_payload(tenant)
+    body = _tenant_payload(tenant)
     await redis_cache.invalidate_tenant(
         current_user.tenant_id, TENANT_CACHE, BOOKING_LINKS_CACHE, PAYMENT_PROVIDER_CACHE
     )
-    await redis_cache.set_json(redis_cache.tenant_key(current_user.tenant_id, TENANT_CACHE), payload)
-    return payload
+    await redis_cache.set_json(redis_cache.tenant_key(current_user.tenant_id, TENANT_CACHE), body)
+    return body
 
 
 @router.put("/me/onboarding")

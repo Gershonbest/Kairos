@@ -9,6 +9,8 @@ import { useEffect, useState } from "react";
 import { api, setAuthTokens } from "../../../lib/api/client";
 import { resolvePostAuthPath } from "../../../lib/auth/redirect";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
+import { PasswordInput } from "../../components/forms/PasswordInput";
+import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 import kairosLogo from "../../../assets/branding/logo.png";
 
 export function Login() {
@@ -27,12 +29,24 @@ export function Login() {
   useEffect(() => {
     if (searchParams.get("payment") === "success") {
       setSessionNotice(
-        "Payment successful. Your account is active and a receipt has been sent to your email. Please sign in again."
+        "Welcome to your account! Your payment went through, your plan is active, and a receipt is on its way to your email. Sign in to get started."
       );
     } else if (searchParams.get("redirect")) {
       setSessionNotice("Your session expired. Please sign in again to continue.");
     }
   }, [searchParams]);
+
+  const finishSignIn = async () => {
+    if (searchParams.get("payment") === "success") {
+      markWelcomeAfterPayment();
+    }
+    const redirect = searchParams.get("redirect");
+    if (redirect && redirect.startsWith("/")) {
+      navigate(redirect);
+    } else {
+      navigate(await resolvePostAuthPath());
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,12 +57,7 @@ export function Login() {
     try {
       const tokens = await api.login({ email, password });
       setAuthTokens(tokens);
-      const redirect = searchParams.get("redirect");
-      if (redirect && redirect.startsWith("/")) {
-        navigate(redirect);
-      } else {
-        navigate(await resolvePostAuthPath());
-      }
+      await finishSignIn();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to sign in. Please check your credentials.";
       if (message.toLowerCase().includes("email not verified")) {
@@ -96,19 +105,34 @@ export function Login() {
         <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-sm shadow-xl shadow-primary/10 p-6 sm:p-8">
           <div className="flex flex-col items-center text-center mb-8">
             <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
-            <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Welcome back</h1>
-            <p className="text-muted-foreground mt-2">Sign in to your account to continue</p>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">
+              {searchParams.get("payment") === "success" ? "Welcome to your account" : "Welcome back"}
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              {searchParams.get("payment") === "success"
+                ? "Your plan is active — sign in to open your dashboard"
+                : "Sign in to your account to continue"}
+            </p>
           </div>
 
           {sessionNotice && (
-            <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p
+              className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+                searchParams.get("payment") === "success"
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                  : "border-amber-200 bg-amber-50 text-amber-800"
+              }`}
+            >
               {sessionNotice}
             </p>
           )}
 
           {isGoogleSignInEnabled() && (
             <div className="mb-6">
-              <GoogleSignInButton label="login" />
+              <GoogleSignInButton
+                label="login"
+                onSignedIn={searchParams.get("payment") === "success" ? markWelcomeAfterPayment : undefined}
+              />
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t border-border" />
@@ -137,15 +161,15 @@ export function Login() {
 
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1"
                 required
                 disabled={isLoading}
+                autoComplete="current-password"
               />
             </div>
 
@@ -154,9 +178,9 @@ export function Login() {
                 <input type="checkbox" className="rounded border-gray-300" disabled={isLoading} />
                 <span className="text-muted-foreground">Remember me</span>
               </label>
-              <a href="#" className="text-primary hover:text-primary/80 font-medium">
+              <Link to="/auth/forgot-password" className="text-primary hover:text-primary/80 font-medium">
                 Forgot password?
-              </a>
+              </Link>
             </div>
 
             <Button

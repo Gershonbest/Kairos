@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     google_gmail_app_password: str | None = None
     email_verification_required: bool = True
     email_verification_token_expire_hours: int = 24
+    password_reset_token_expire_hours: int = 1
     google_client_id: str | None = None
     aws_access_key_id: str | None = None
     aws_secret_access_key: str | None = None

@@ -1,11 +1,12 @@
-"""Signup, login, email verification, and Google auth endpoints."""
+"""Signup, login, email verification, password reset, and Google auth endpoints."""
 
 import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+import structlog
 
 from app.core.crypto import sha256_text
 from app.core.config import get_settings
@@ -17,17 +18,23 @@ from app.core.security import (
     verify_password,
 )
 from app.infra.db import get_db_session
-from app.infra.models import EmailVerificationToken, RefreshToken, Tenant, User, UserRole
+from app.infra.models import EmailVerificationToken, PasswordResetToken, RefreshToken, Tenant, User, UserRole
 from app.modules.auth.google import verify_google_id_token
-from app.modules.notifications.service import send_tenant_verification_email
+from app.modules.notifications.service import (
+    send_password_reset_email,
+    send_password_reset_google_hint_email,
+    send_tenant_verification_email,
+)
 from app.modules.subscriptions.service import start_tenant_trial, subscription_status_payload
 from app.schemas.auth import (
     AdminLoginRequest,
+    ForgotPasswordRequest,
     GoogleAuthRequest,
     GoogleAuthResponse,
     LoginRequest,
     RefreshRequest,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     SignUpRequest,
     SignUpResponse,
     TokenPair,
@@ -38,6 +45,7 @@ from app.schemas.auth import (
 
 router = APIRouter()
 settings = get_settings()
+logger = structlog.get_logger()
 
 
 async def _issue_tokens(session: AsyncSession, user: User) -> TokenPair:
@@ -75,6 +83,39 @@ def _queue_verification_email(background_tasks: BackgroundTasks, *, email: str, 
         to=email,
         full_name=full_name,
         verify_url=verify_url,
+    )
+
+
+async def _create_password_reset_token(session: AsyncSession, user_id: str) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    session.add(
+        PasswordResetToken(
+            user_id=user_id,
+            token_hash=sha256_text(raw_token),
+            expires_at=datetime.now(UTC) + timedelta(hours=settings.password_reset_token_expire_hours),
+        )
+    )
+    return raw_token
+
+
+def _queue_password_reset_email(
+    background_tasks: BackgroundTasks, *, email: str, full_name: str, raw_token: str
+) -> None:
+    frontend_base_url = get_settings().frontend_base_url.rstrip("/")
+    reset_url = f"{frontend_base_url}/auth/reset-password?token={raw_token}"
+    # Send in the request worker via BackgroundTasks after the response is prepared.
+    # Log the target URL host so misconfigured FRONTEND_BASE_URL is obvious.
+    logger.info(
+        "auth.forgot_password_email_queued",
+        to=email,
+        frontend_base_url=frontend_base_url,
+    )
+    background_tasks.add_task(
+        send_password_reset_email,
+        to=email,
+        full_name=full_name,
+        reset_url=reset_url,
+        expire_hours=settings.password_reset_token_expire_hours,
     )
 
 
@@ -241,6 +282,99 @@ async def resend_verification(
         raw_token = await _create_verification_token(session, user.id)
         await session.commit()
         _queue_verification_email(background_tasks, email=user.email, full_name=user.full_name, raw_token=raw_token)
+    return {"ok": True}
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, bool]:
+    """Always returns ok so callers cannot probe which emails exist."""
+    email = str(payload.email).strip().lower()
+    user = (
+        await session.execute(select(User).where(func.lower(User.email) == email))
+    ).scalar_one_or_none()
+
+    if not user:
+        logger.info("auth.forgot_password_skipped", reason="unknown_email")
+        return {"ok": True}
+    if not user.is_active:
+        logger.info("auth.forgot_password_skipped", reason="inactive", user_id=user.id)
+        return {"ok": True}
+
+    if not user.password_hash:
+        logger.info("auth.forgot_password_google_hint", user_id=user.id)
+        try:
+            send_password_reset_google_hint_email(to=user.email, full_name=user.full_name)
+        except Exception:
+            logger.exception("auth.forgot_password_google_hint_failed", user_id=user.id)
+        return {"ok": True}
+
+    raw_token = await _create_password_reset_token(session, user.id)
+    await session.commit()
+    logger.info("auth.forgot_password_token_created", user_id=user.id)
+    # Send immediately (not only via BackgroundTasks) so delivery failures
+    # appear in this request's logs and the email is not dropped on reload.
+    frontend_base_url = settings.frontend_base_url.rstrip("/")
+    reset_url = f"{frontend_base_url}/auth/reset-password?token={raw_token}"
+    try:
+        send_password_reset_email(
+            to=user.email,
+            full_name=user.full_name,
+            reset_url=reset_url,
+            expire_hours=settings.password_reset_token_expire_hours,
+        )
+    except Exception:
+        logger.exception("auth.forgot_password_email_failed", user_id=user.id, to=user.email)
+    return {"ok": True}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    payload: ResetPasswordRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, bool]:
+    token_hash = sha256_text(payload.token)
+    record = (
+        await session.execute(
+            select(PasswordResetToken).where(
+                PasswordResetToken.token_hash == token_hash,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at > datetime.now(UTC),
+            )
+        )
+    ).scalar_one_or_none()
+    if not record:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+
+    user = (await session.execute(select(User).where(User.id == record.user_id))).scalar_one_or_none()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset link")
+    if not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This account uses Google sign-in and cannot reset a password",
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    user.email_verified = True
+    record.used_at = datetime.now(UTC)
+    # Invalidate other unused reset tokens and force re-login on other devices.
+    await session.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.id != record.id,
+        )
+        .values(used_at=datetime.now(UTC))
+    )
+    await session.execute(
+        update(RefreshToken).where(RefreshToken.user_id == user.id, RefreshToken.revoked.is_(False)).values(revoked=True)
+    )
+    await session.commit()
     return {"ok": True}
 
 

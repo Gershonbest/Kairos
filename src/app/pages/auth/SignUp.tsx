@@ -8,6 +8,7 @@ import { ArrowLeft, Sparkles, Mail } from "lucide-react";
 import { useState } from "react";
 import { api, setAuthTokens } from "../../../lib/api/client";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
+import { PasswordInput } from "../../components/forms/PasswordInput";
 import kairosLogo from "../../../assets/branding/logo.png";
 
 export function SignUp() {
@@ -178,15 +179,16 @@ export function SignUp() {
 
             <div>
               <Label htmlFor="password">Password</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 className="mt-1"
                 required
+                minLength={8}
                 disabled={isLoading}
+                autoComplete="new-password"
               />
             </div>
 

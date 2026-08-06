@@ -12,7 +12,7 @@ import { ImageUpload } from "../../components/forms/ImageUpload";
 import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
 import { api, clearAuthTokens, type TenantBranchPayload } from "../../../lib/api/client";
-import { COUNTRIES, getDialCodeForCountry } from "../../../lib/data/locations";
+import { COUNTRIES, getDialCodeForCountry, normalizeStateForCountry } from "../../../lib/data/locations";
 import { queryKeys } from "../../../lib/queryClient";
 
 const TIMEZONES = [
@@ -164,9 +164,14 @@ export function AccountSettings() {
       setCountryCode(tenant.country_code || "NG");
       setDialCode(tenant.phone_country_code || getDialCodeForCountry(tenant.country_code || "NG"));
       setPhoneNumber(tenant.phone_number || "");
-      setState(tenant.state || "");
+      setState(normalizeStateForCountry(tenant.country_code || "NG", tenant.state || ""));
       setAddressLine(tenant.address_line || "");
-      setBranches(tenant.branches || []);
+      setBranches(
+        (tenant.branches || []).map((branch) => ({
+          ...branch,
+          state: normalizeStateForCountry(branch.country_code, branch.state || ""),
+        }))
+      );
       setPublicTagline(tenant.public_tagline || "");
       setPublicDescription(tenant.public_description || "");
       setPublicLogoUrl(tenant.public_logo_url || "");
@@ -333,7 +338,8 @@ export function AccountSettings() {
     setError("");
     try {
       const country = COUNTRIES.find((c) => c.code === countryCode);
-      if ((country?.states.length ?? 0) > 0 && !state.trim()) {
+      const primaryState = normalizeStateForCountry(countryCode, state);
+      if ((country?.states.length ?? 0) > 0 && !primaryState) {
         throw new Error("Select a state or region for your primary location.");
       }
       await api.updateTenant({
@@ -343,11 +349,14 @@ export function AccountSettings() {
         timezone,
         logo_url: logoUrl || undefined,
         country_code: countryCode,
-        state: state.trim() || undefined,
+        state: primaryState || undefined,
         address_line: addressLine.trim(),
         phone_country_code: dialCode,
         phone_number: phoneNumber.trim(),
-        branches,
+        branches: branches.map((branch) => ({
+          ...branch,
+          state: normalizeStateForCountry(branch.country_code, branch.state),
+        })),
       });
       flash("Business profile saved.");
       await invalidateRelatedCaches();

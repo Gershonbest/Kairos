@@ -11,7 +11,7 @@ import { api, type TenantBranchPayload } from "../../../lib/api/client";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
-import { COUNTRIES } from "../../../lib/data/locations";
+import { COUNTRIES, normalizeStateForCountry } from "../../../lib/data/locations";
 
 function stateRequiredForCountry(countryCode: string): boolean {
   const country = COUNTRIES.find((item) => item.code === countryCode);
@@ -19,7 +19,7 @@ function stateRequiredForCountry(countryCode: string): boolean {
 }
 
 function validateLocation(countryCode: string, state: string, label: string): string | null {
-  if (stateRequiredForCountry(countryCode) && !state.trim()) {
+  if (stateRequiredForCountry(countryCode) && !normalizeStateForCountry(countryCode, state)) {
     return `Select a state or region for ${label}.`;
   }
   return null;
@@ -77,7 +77,7 @@ export function BusinessSetup() {
         business_name: formData.businessName,
         business_type: formData.businessType,
         country_code: formData.countryCode,
-        state: formData.state.trim() || undefined,
+        state: normalizeStateForCountry(formData.countryCode, formData.state) || undefined,
         address_line: formData.addressLine,
         phone_country_code: formData.dialCode,
         phone_number: formData.phoneNumber,
@@ -85,7 +85,7 @@ export function BusinessSetup() {
         help_email: formData.helpEmail.trim() || undefined,
         branches: branches.map((branch) => ({
           ...branch,
-          state: branch.state.trim() || undefined,
+          state: normalizeStateForCountry(branch.country_code, branch.state) || undefined,
         })),
       });
       navigate("/onboarding/services");

@@ -254,6 +254,17 @@ async def verify_payment_reference(
         raise HTTPException(status_code=404, detail="Payment transaction not found")
 
     await session.commit()
+    await redis_cache.invalidate_admin_payments()
+    if tx.purpose == "subscription":
+        await redis_cache.invalidate_admin_overview()
+    elif tx.purpose == "booking" and tx.tenant_id:
+        await redis_cache.invalidate_tenant(
+            tx.tenant_id,
+            "bookings:list",
+            "clients:list",
+            TRANSACTIONS_CACHE,
+            DASHBOARD_CACHE,
+        )
     receipt_args = await _subscription_receipt_args(session, tx)
     if receipt_args:
         background_tasks.add_task(send_subscription_payment_receipt_once, **receipt_args)
@@ -337,10 +348,13 @@ async def receive_webhook(
                             TRANSACTIONS_CACHE,
                             DASHBOARD_CACHE,
                         )
+                    await redis_cache.invalidate_admin_payments()
                 elif tx and tx.purpose == "subscription":
                     receipt_args = await _subscription_receipt_args(session, tx)
                     if receipt_args:
                         await send_subscription_payment_receipt_once(**receipt_args)
+                    await redis_cache.invalidate_admin_payments()
+                    await redis_cache.invalidate_admin_overview()
         elif event_type == "payment.succeeded":
             ref = payload.get("data", {}).get("provider_reference")
             if ref:
@@ -353,10 +367,13 @@ async def receive_webhook(
                         TRANSACTIONS_CACHE,
                         DASHBOARD_CACHE,
                     )
+                    await redis_cache.invalidate_admin_payments()
                 elif tx and tx.purpose == "subscription":
                     receipt_args = await _subscription_receipt_args(session, tx)
                     if receipt_args:
                         await send_subscription_payment_receipt_once(**receipt_args)
+                    await redis_cache.invalidate_admin_payments()
+                    await redis_cache.invalidate_admin_overview()
         event.processed = True
     except Exception:
         event.attempts += 1

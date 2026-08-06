@@ -1,6 +1,7 @@
 """Platform admin metrics, subscribers, plans, and payment logs."""
 
 from datetime import datetime
+from hashlib import sha1
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import String, and_, case, cast, delete, func, or_, select
@@ -15,6 +16,7 @@ from app.infra.models import (
     Booking,
     Client,
     EmailVerificationToken,
+    PasswordResetToken,
     PaymentStatus,
     PaymentTransaction,
     RefreshToken,
@@ -26,10 +28,15 @@ from app.infra.models import (
     WebhookEvent,
 )
 from app.modules.audit.service import record_audit_event
-from app.modules.subscriptions.service import list_admin_plans, serialize_plan
+from app.modules.subscriptions.service import grant_plan_to_tenant, list_admin_plans, serialize_plan
 from app.schemas.subscriptions import CreatePlanRequest, UpdatePlanRequest
 
 router = APIRouter()
+
+
+def _cache_token(*parts: object) -> str:
+    raw = "|".join("" if part is None else str(part) for part in parts)
+    return sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def _serialize_payment_row(
@@ -68,6 +75,11 @@ async def get_platform_metrics(
     _: CurrentUser = Depends(require_roles("platform_admin")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
+    cache_key = redis_cache.admin_key("metrics")
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     tenant_count = (await session.execute(select(func.count(Tenant.id)))).scalar_one()
     booking_count = (await session.execute(select(func.count(Booking.id)))).scalar_one()
     booking_gmv = (
@@ -103,16 +115,18 @@ async def get_platform_metrics(
     suspended_count = (
         await session.execute(select(func.count(Tenant.id)).where(Tenant.status == "suspended"))
     ).scalar_one()
-    return {
+    payload = {
         "tenants": tenant_count,
         "bookings": booking_count,
-        "mrr": float(subscription_revenue),
-        "booking_gmv": float(booking_gmv),
-        "platform_fee_earned": float(platform_fee_earned),
+        "mrr": float(subscription_revenue or 0),
+        "booking_gmv": float(booking_gmv or 0),
+        "platform_fee_earned": float(platform_fee_earned or 0),
         "active_tenants": active_count,
         "trial_tenants": trial_count,
         "suspended_tenants": suspended_count,
     }
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.get("/subscribers")
@@ -120,8 +134,51 @@ async def list_subscribers(
     _: CurrentUser = Depends(require_roles("platform_admin")),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
-    tenants = (await session.execute(select(Tenant).order_by(Tenant.created_at.desc()))).scalars()
-    return [
+    cache_key = redis_cache.admin_key("subscribers")
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
+    owner_rank = (
+        func.row_number()
+        .over(
+            partition_by=User.tenant_id,
+            order_by=(
+                case((User.role == UserRole.tenant_admin, 0), else_=1),
+                User.created_at.asc(),
+            ),
+        )
+        .label("owner_rank")
+    )
+    owners_subq = (
+        select(
+            User.tenant_id.label("tenant_id"),
+            User.full_name.label("owner"),
+            User.email.label("owner_email"),
+            owner_rank,
+        )
+        .where(User.role.in_([UserRole.tenant_admin, UserRole.tenant_user]))
+        .subquery()
+    )
+    owners = (
+        select(
+            owners_subq.c.tenant_id,
+            owners_subq.c.owner,
+            owners_subq.c.owner_email,
+        )
+        .where(owners_subq.c.owner_rank == 1)
+        .subquery()
+    )
+
+    rows = (
+        await session.execute(
+            select(Tenant, owners.c.owner, owners.c.owner_email)
+            .outerjoin(owners, owners.c.tenant_id == Tenant.id)
+            .order_by(Tenant.created_at.desc())
+        )
+    ).all()
+
+    payload = [
         {
             "id": tenant.id,
             "name": tenant.name,
@@ -130,25 +187,15 @@ async def list_subscribers(
             "status": tenant.status,
             "plan_code": tenant.plan_code,
             "public_slug": tenant.public_slug,
-            "created_at": tenant.created_at,
+            "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
             "onboarding_completed": tenant.onboarding_completed,
-            "owner": (
-                await session.execute(
-                    select(User.full_name).where(
-                        User.tenant_id == tenant.id, User.role.in_([UserRole.tenant_admin, UserRole.tenant_user])
-                    )
-                )
-            ).scalar_one_or_none(),
-            "owner_email": (
-                await session.execute(
-                    select(User.email).where(
-                        User.tenant_id == tenant.id, User.role.in_([UserRole.tenant_admin, UserRole.tenant_user])
-                    )
-                )
-            ).scalar_one_or_none(),
+            "owner": owner,
+            "owner_email": owner_email,
         }
-        for tenant in tenants
+        for tenant, owner, owner_email in rows
     ]
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.patch("/subscribers/{tenant_id}")
@@ -168,15 +215,35 @@ async def update_subscriber(
         "plan_code": tenant.plan_code,
         "name": tenant.name,
         "location": tenant.location,
+        "subscription_paid_until": (
+            tenant.subscription_paid_until.isoformat() if tenant.subscription_paid_until else None
+        ),
     }
     changes: dict = {}
+    grant_meta: dict | None = None
 
     if "status" in payload and payload["status"] != tenant.status:
         tenant.status = payload["status"]
         changes["status"] = {"from": before["status"], "to": tenant.status}
     if "plan_code" in payload and payload["plan_code"] != tenant.plan_code:
-        tenant.plan_code = payload["plan_code"]
+        # Complimentary admin grant: assign plan + activate paid access (no charge).
+        grant_days = int(payload.get("grant_days") or 30)
+        try:
+            grant_meta = await grant_plan_to_tenant(
+                session,
+                tenant,
+                payload["plan_code"],
+                days=grant_days,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         changes["plan_code"] = {"from": before["plan_code"], "to": tenant.plan_code}
+        changes["status"] = {"from": before["status"], "to": tenant.status}
+        changes["subscription_paid_until"] = {
+            "from": before["subscription_paid_until"],
+            "to": tenant.subscription_paid_until.isoformat() if tenant.subscription_paid_until else None,
+        }
+        changes["grant_days"] = grant_days
     if "name" in payload and payload["name"] != tenant.name:
         tenant.name = payload["name"]
         changes["name"] = {"from": before["name"], "to": tenant.name}
@@ -186,14 +253,14 @@ async def update_subscriber(
 
     if changes:
         action = "tenant.updated"
-        if "status" in changes and len(changes) == 1:
+        if grant_meta is not None:
+            action = "tenant.plan_grant"
+        elif "status" in changes and set(changes.keys()) == {"status"}:
             new_status = changes["status"]["to"]
             if new_status == "suspended":
                 action = "tenant.suspend"
             elif before["status"] == "suspended":
                 action = "tenant.reactivate"
-        elif "plan_code" in changes and len(changes) == 1:
-            action = "tenant.plan_change"
 
         await record_audit_event(
             session,
@@ -202,7 +269,7 @@ async def update_subscriber(
             entity_id=tenant.id,
             tenant_id=tenant.id,
             actor=actor,
-            metadata={"before": before, "changes": changes},
+            metadata={"before": before, "changes": changes, "grant": grant_meta},
             request=request,
         )
 
@@ -214,7 +281,15 @@ async def update_subscriber(
         "payment-provider",
         "dashboard:summary",
     )
-    return {"ok": True}
+    await redis_cache.invalidate_admin_overview()
+    return {
+        "ok": True,
+        "plan_code": tenant.plan_code,
+        "status": tenant.status,
+        "subscription_paid_until": (
+            tenant.subscription_paid_until.isoformat() if tenant.subscription_paid_until else None
+        ),
+    }
 
 
 @router.delete("/subscribers/{tenant_id}")
@@ -249,6 +324,7 @@ async def delete_subscriber(
     ).scalars().all()
     if user_ids:
         await session.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(user_ids)))
+        await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(user_ids)))
         await session.execute(delete(RefreshToken).where(RefreshToken.user_id.in_(user_ids)))
     await session.execute(delete(PaymentTransaction).where(PaymentTransaction.tenant_id == tenant_id))
     await session.execute(delete(Booking).where(Booking.tenant_id == tenant_id))
@@ -258,6 +334,8 @@ async def delete_subscriber(
     await session.execute(delete(User).where(User.tenant_id == tenant_id))
     await session.execute(delete(Tenant).where(Tenant.id == tenant_id))
     await session.commit()
+    await redis_cache.invalidate_admin_overview()
+    await redis_cache.invalidate_admin_payments()
     return {"ok": True}
 
 
@@ -266,7 +344,13 @@ async def list_subscription_plans(
     _: CurrentUser = Depends(require_roles("platform_admin")),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
-    return await list_admin_plans(session)
+    cache_key = redis_cache.admin_key("plans")
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+    payload = await list_admin_plans(session)
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.post("/plans")
@@ -307,6 +391,7 @@ async def create_subscription_plan(
     )
     await session.commit()
     await session.refresh(plan)
+    await redis_cache.invalidate_admin("plans")
     return serialize_plan(plan, include_admin_fields=True)
 
 
@@ -349,6 +434,7 @@ async def update_subscription_plan(
     )
     await session.commit()
     await session.refresh(plan)
+    await redis_cache.invalidate_admin("plans")
     return serialize_plan(plan, include_admin_fields=True)
 
 
@@ -385,6 +471,7 @@ async def delete_subscription_plan(
     )
     await session.delete(plan)
     await session.commit()
+    await redis_cache.invalidate_admin("plans")
     return {"ok": True}
 
 
@@ -412,6 +499,13 @@ async def get_payment_summary(
     date_to: datetime | None = Query(default=None, alias="to"),
 ) -> dict:
     """Split platform money into client booking payments vs subscription fees."""
+    cache_key = redis_cache.admin_key(
+        f"payments:summary:{_cache_token(tenant_id, date_from, date_to)}"
+    )
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     base_filters = _date_filters(date_from, date_to)
     if tenant_id:
         base_filters.append(PaymentTransaction.tenant_id == tenant_id)
@@ -475,7 +569,9 @@ async def get_payment_summary(
 
     booking["paying_clients"] = int(paying_clients or 0)
     booking["businesses_collecting"] = int(businesses_collecting or 0)
-    return {"booking": booking, "subscription": subscription}
+    payload = {"booking": booking, "subscription": subscription}
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.get("/payments/by-tenant")
@@ -486,6 +582,11 @@ async def list_payments_by_tenant(
     date_to: datetime | None = Query(default=None, alias="to"),
 ) -> list[dict]:
     """Per-business rollup of what that business's clients have paid."""
+    cache_key = redis_cache.admin_key(f"payments:by-tenant:{_cache_token(date_from, date_to)}")
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     stmt = (
         select(
             Tenant.id.label("tenant_id"),
@@ -512,7 +613,7 @@ async def list_payments_by_tenant(
         .order_by(_succeeded_sum(PaymentTransaction.amount).desc())
     )
     rows = (await session.execute(stmt)).all()
-    return [
+    payload = [
         {
             "tenant_id": row.tenant_id,
             "tenant_name": row.tenant_name,
@@ -529,6 +630,8 @@ async def list_payments_by_tenant(
         }
         for row in rows
     ]
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.get("/payments/tenant/{tenant_id}/clients")
@@ -540,6 +643,13 @@ async def list_tenant_client_payments(
     date_to: datetime | None = Query(default=None, alias="to"),
 ) -> list[dict]:
     """Client-level payment rollup for one business."""
+    cache_key = redis_cache.admin_key(
+        f"payments:tenant-clients:{_cache_token(tenant_id, date_from, date_to)}"
+    )
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     stmt = (
         select(
             Client.id.label("client_id"),
@@ -568,7 +678,7 @@ async def list_tenant_client_payments(
         .order_by(_succeeded_sum(PaymentTransaction.amount).desc())
     )
     rows = (await session.execute(stmt)).all()
-    return [
+    payload = [
         {
             "client_id": row.client_id,
             "client_name": row.client_name,
@@ -582,6 +692,8 @@ async def list_tenant_client_payments(
         }
         for row in rows
     ]
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.get("/payments")
@@ -597,6 +709,13 @@ async def list_payment_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ) -> dict:
+    cache_key = redis_cache.admin_key(
+        f"payments:list:{_cache_token(q, tenant_id, purpose, status, date_from, date_to, page, page_size)}"
+    )
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     filters = []
     if tenant_id:
         filters.append(PaymentTransaction.tenant_id == tenant_id)
@@ -662,12 +781,14 @@ async def list_payment_logs(
         )
         for tx, tenant_name, client_name, client_email, client_phone in rows
     ]
-    return {
+    payload = {
         "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,
     }
+    await redis_cache.set_json(cache_key, payload)
+    return payload
 
 
 @router.get("/payments/{transaction_id}")
@@ -676,6 +797,11 @@ async def get_payment_log_detail(
     _: CurrentUser = Depends(require_roles("platform_admin")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
+    cache_key = redis_cache.admin_key(f"payments:detail:{transaction_id}")
+    cached = await redis_cache.get_json(cache_key)
+    if cached is not None:
+        return cached
+
     tx = (
         await session.execute(select(PaymentTransaction).where(PaymentTransaction.id == transaction_id))
     ).scalar_one_or_none()
@@ -752,7 +878,7 @@ async def get_payment_log_detail(
         )
     ).scalars().all()
 
-    return {
+    payload = {
         **_serialize_payment_row(
             tx,
             tenant_name=tenant.name if tenant else None,
@@ -809,3 +935,5 @@ async def get_payment_log_detail(
             ],
         ],
     }
+    await redis_cache.set_json(cache_key, payload)
+    return payload

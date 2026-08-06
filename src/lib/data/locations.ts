@@ -18,7 +18,7 @@ export const COUNTRIES: CountryOption[] = [
     code: "NG",
     name: "Nigeria",
     dialCode: "+234",
-    states: ["Lagos", "Abuja FCT", "Rivers", "Kano", "Oyo", "Kaduna", "Edo", "Delta", "Enugu", "Anambra"],
+    states: ["Lagos", "Abuja", "Rivers", "Kano", "Oyo", "Kaduna", "Edo", "Delta", "Enugu", "Anambra"],
   },
   {
     code: "KE",
@@ -88,6 +88,37 @@ export function getCountryByCode(code: string): CountryOption | undefined {
 
 export function getDialCodeForCountry(code: string): string {
   return getCountryByCode(code)?.dialCode ?? "+1";
+}
+
+/** Common free-text / legacy labels mapped onto the canonical option values. */
+const STATE_ALIASES: Record<string, Record<string, string>> = {
+  NG: {
+    abuja: "Abuja",
+    "abuja fct": "Abuja",
+    fct: "Abuja",
+    "federal capital territory": "Abuja",
+  },
+};
+
+/**
+ * Resolve a stored region to a valid option for the country.
+ * Returns "" when the value is missing or not in the dropdown so the UI
+ * shows the empty placeholder instead of a stale mismatched label.
+ */
+export function normalizeStateForCountry(countryCode: string, state: string | null | undefined): string {
+  const trimmed = (state ?? "").trim();
+  if (!trimmed) return "";
+  const country = getCountryByCode(countryCode);
+  if (!country) return trimmed;
+  if (country.states.length === 0) return trimmed;
+
+  const exact = country.states.find((item) => item.toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact;
+
+  const alias = STATE_ALIASES[country.code]?.[trimmed.toLowerCase()];
+  if (alias && country.states.includes(alias)) return alias;
+
+  return "";
 }
 
 export function formatAddressQuery(parts: {

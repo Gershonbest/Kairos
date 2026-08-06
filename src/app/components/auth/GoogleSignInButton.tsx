@@ -11,9 +11,10 @@ const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefin
 interface GoogleSignInButtonProps {
   businessName?: string;
   label?: "signup" | "login";
+  onSignedIn?: () => void;
 }
 
-export function GoogleSignInButton({ businessName, label = "login" }: GoogleSignInButtonProps) {
+export function GoogleSignInButton({ businessName, label = "login", onSignedIn }: GoogleSignInButtonProps) {
   const navigate = useNavigate();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -39,6 +40,7 @@ export function GoogleSignInButton({ businessName, label = "login" }: GoogleSign
         access_token: result.access_token,
         refresh_token: result.refresh_token,
       });
+      onSignedIn?.();
       navigate(result.is_new_user ? "/onboarding" : await resolvePostAuthPath());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to sign in with Google.";

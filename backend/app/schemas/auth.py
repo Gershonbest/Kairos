@@ -62,6 +62,15 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class GoogleAuthRequest(BaseModel):
     id_token: str = Field(min_length=20, max_length=4096)
     business_name: str | None = Field(default=None, min_length=2, max_length=160)
