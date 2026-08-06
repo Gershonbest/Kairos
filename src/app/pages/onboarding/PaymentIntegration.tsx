@@ -80,7 +80,7 @@ export function PaymentIntegration() {
     <OnboardingShell
       step={4}
       title="Connect Paystack"
-      description="Create a settlement subaccount so client booking payments split between you and Kairos"
+      description="Create a settlement subaccount so client booking payments split between you and Orheo"
     >
       <form onSubmit={handleComplete} className="space-y-6">
         <div className="p-4 border-2 border-primary rounded-lg bg-primary/5">
@@ -94,7 +94,7 @@ export function PaymentIntegration() {
                 <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent-foreground">Required</span>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                Clients pay Kairos via Paystack. Your share settles to this bank account; Kairos keeps the platform fee.
+                Clients pay Orheo via Paystack. Your share settles to this bank account; Orheo keeps the platform fee.
               </p>
             </div>
             <Check className="w-5 h-5 text-primary ml-auto" />

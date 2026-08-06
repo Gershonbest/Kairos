@@ -9,7 +9,7 @@ import { useState } from "react";
 import { api, setAuthTokens } from "../../../lib/api/client";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
 import { PasswordInput } from "../../components/forms/PasswordInput";
-import kairosLogo from "../../../assets/branding/logo.png";
+import orheoLogo from "../../../assets/branding/logo.png";
 
 export function SignUp() {
   const navigate = useNavigate();
@@ -96,7 +96,7 @@ export function SignUp() {
 
         <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-sm shadow-xl shadow-primary/10 p-6 sm:p-8">
           <div className="flex flex-col items-center text-center mb-6">
-            <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
+            <img src={orheoLogo} alt="Orheo logo" className="h-12 w-auto mb-4 rounded-xl bg-black p-1.5" />
             <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Create your account</h1>
             <p className="text-muted-foreground mt-2">Start managing your bookings with AI</p>
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-accent/20 text-accent-foreground rounded-full text-xs font-medium mt-4">

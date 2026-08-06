@@ -52,7 +52,7 @@ export function AdminLogin() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">System Admin</h1>
-              <p className="text-sm text-muted-foreground">Kairos Bookings</p>
+              <p className="text-sm text-muted-foreground">Orheo</p>
             </div>
           </div>
 

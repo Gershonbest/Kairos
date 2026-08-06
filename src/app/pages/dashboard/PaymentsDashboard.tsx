@@ -63,7 +63,7 @@ export function PaymentsDashboard() {
   const settlementSplit = useMemo(
     () => [
       { name: "Your settlement", value: Math.max(0, 100 - platformFeePercent), color: "var(--color-primary)" },
-      { name: "Kairos fee", value: platformFeePercent, color: "var(--color-accent)" },
+      { name: "Orheo fee", value: platformFeePercent, color: "var(--color-accent)" },
     ],
     [platformFeePercent]
   );
@@ -249,7 +249,7 @@ export function PaymentsDashboard() {
             <CardTitle>Paystack settlement split</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {paymentsEnabled
-                ? `Subaccount percentage_charge: ${platformFeePercent}% to Kairos`
+                ? `Subaccount percentage_charge: ${platformFeePercent}% to Orheo`
                 : "Connect Paystack to enable live settlement splits"}
             </p>
           </CardHeader>
@@ -287,7 +287,7 @@ export function PaymentsDashboard() {
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              Provider: Paystack only. Booking payments settle to your subaccount; Kairos keeps the platform fee.
+              Provider: Paystack only. Booking payments settle to your subaccount; Orheo keeps the platform fee.
             </p>
           </CardContent>
         </Card>

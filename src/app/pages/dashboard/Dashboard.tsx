@@ -19,7 +19,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, R
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
-import kairosLogo from "../../../assets/kairos-logo.png";
+import orheoLogo from "../../../assets/kairos-logo.png";
 
 const PUBLIC_UI_BASE_URL =
   ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PUBLIC_UI_BASE_URL ?? "").trim();
@@ -139,7 +139,7 @@ export function Dashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
-          <img src={kairosLogo} alt="Kairos logo" className="h-10 w-auto" />
+          <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
           <div>
           <h1 className="text-3xl font-semibold">Dashboard</h1>
           <p className="text-muted-foreground mt-1">Live business metrics from your account data.</p>

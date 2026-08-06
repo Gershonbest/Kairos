@@ -232,7 +232,7 @@ export function ChoosePlan() {
           {isSuspended
             ? "Reactivate your account"
             : trialExpired
-              ? "Continue with Kairos Bookings"
+              ? "Continue with Orheo"
               : "Upgrade before your trial ends"}
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">

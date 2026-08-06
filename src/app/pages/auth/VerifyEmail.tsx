@@ -63,7 +63,7 @@ export function VerifyEmail() {
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
             <Calendar className="w-6 h-6 text-white" />
           </div>
-          <span className="font-semibold text-xl">Kairos Bookings</span>
+          <span className="font-semibold text-xl">Orheo</span>
         </div>
 
         {status === "loading" && (

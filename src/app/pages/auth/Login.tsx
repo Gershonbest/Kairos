@@ -11,7 +11,7 @@ import { resolvePostAuthPath } from "../../../lib/auth/redirect";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
 import { PasswordInput } from "../../components/forms/PasswordInput";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
-import kairosLogo from "../../../assets/branding/logo.png";
+import orheoLogo from "../../../assets/branding/logo.png";
 
 export function Login() {
   const navigate = useNavigate();
@@ -104,7 +104,7 @@ export function Login() {
 
         <div className="rounded-2xl border border-border bg-card/95 backdrop-blur-sm shadow-xl shadow-primary/10 p-6 sm:p-8">
           <div className="flex flex-col items-center text-center mb-8">
-            <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
+            <img src={orheoLogo} alt="Orheo logo" className="h-12 w-auto mb-4 rounded-xl bg-black p-1.5" />
             <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">
               {searchParams.get("payment") === "success" ? "Welcome to your account" : "Welcome back"}
             </h1>
