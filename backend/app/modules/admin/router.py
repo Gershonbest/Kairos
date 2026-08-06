@@ -118,9 +118,9 @@ async def get_platform_metrics(
     payload = {
         "tenants": tenant_count,
         "bookings": booking_count,
-        "mrr": float(subscription_revenue),
-        "booking_gmv": float(booking_gmv),
-        "platform_fee_earned": float(platform_fee_earned),
+        "mrr": float(subscription_revenue or 0),
+        "booking_gmv": float(booking_gmv or 0),
+        "platform_fee_earned": float(platform_fee_earned or 0),
         "active_tenants": active_count,
         "trial_tenants": trial_count,
         "suspended_tenants": suspended_count,

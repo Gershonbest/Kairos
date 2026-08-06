@@ -54,12 +54,12 @@ class RedisCache:
 
     async def delete_by_pattern(self, pattern: str) -> None:
         """Delete all keys matching a Redis glob pattern (e.g. admin:payments:*)."""
-        cursor: int | str = 0
+        cursor = 0
         while True:
             cursor, keys = await self.client.scan(cursor=cursor, match=pattern, count=200)
             if keys:
-                await self.delete(*keys)
-            if cursor == 0 or cursor == "0":
+                await self.delete(*[str(key) for key in keys])
+            if cursor == 0:
                 break
 
     async def invalidate_tenant(self, tenant_id: str, *resources: str) -> None:
