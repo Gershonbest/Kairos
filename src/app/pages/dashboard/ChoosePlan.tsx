@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { api, clearAuthTokens } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
+import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 
 function formatPrice(amount: number): string {
   return new Intl.NumberFormat("en-NG", {
@@ -101,6 +102,7 @@ export function ChoosePlan() {
         // Verification activates the plan and queues the receipt email. Require
         // a fresh login so the restored account starts with a clean session.
         clearAuthTokens();
+        markWelcomeAfterPayment();
         navigate("/auth/login?payment=success", { replace: true });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to verify payment."))
@@ -128,7 +130,8 @@ export function ChoosePlan() {
       const latest = await api.getSubscriptionStatus();
       queryClient.setQueryData(queryKeys.subscriptionStatus, latest);
       setPaymentVerified(true);
-      setSuccess(`You're now on the ${plan.name} plan. Welcome back!`);
+      markWelcomeAfterPayment();
+      setSuccess(`Welcome to your account! You're now on the ${plan.name} plan.`);
       if (!latest.requires_plan_selection) {
         setTimeout(() => {
           goToDashboard();
@@ -143,7 +146,8 @@ export function ChoosePlan() {
           const latest = await api.getSubscriptionStatus();
           queryClient.setQueryData(queryKeys.subscriptionStatus, latest);
           setPaymentVerified(true);
-          setSuccess(`You're now on the ${plan.name} plan (simulated billing).`);
+          markWelcomeAfterPayment();
+          setSuccess(`Welcome to your account! You're now on the ${plan.name} plan.`);
           if (!latest.requires_plan_selection) {
             setTimeout(() => {
               goToDashboard();

@@ -4,6 +4,8 @@ import { createBrowserRouter } from "react-router";
 import { SignUp } from "./pages/auth/SignUp";
 import { Login } from "./pages/auth/Login";
 import { VerifyEmail } from "./pages/auth/VerifyEmail";
+import { ForgotPassword } from "./pages/auth/ForgotPassword";
+import { ResetPassword } from "./pages/auth/ResetPassword";
 import { BusinessSetup } from "./pages/onboarding/BusinessSetup";
 import { ServiceCreation } from "./pages/onboarding/ServiceCreation";
 import { AvailabilityScheduling } from "./pages/onboarding/AvailabilityScheduling";
@@ -45,12 +47,16 @@ export const router = createBrowserRouter([
       { path: "login", Component: Login },
       { path: "signup", Component: SignUp },
       { path: "verify-email", Component: VerifyEmail },
+      { path: "forgot-password", Component: ForgotPassword },
+      { path: "reset-password", Component: ResetPassword },
     ],
   },
   // Legacy routes for backwards compatibility
   { path: "/login", Component: Login },
   { path: "/signup", Component: SignUp },
   { path: "/verify-email", Component: VerifyEmail },
+  { path: "/forgot-password", Component: ForgotPassword },
+  { path: "/reset-password", Component: ResetPassword },
   // System Admin Routes
   { path: "/admin/login", Component: AdminLogin },
   {

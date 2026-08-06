@@ -311,6 +311,56 @@ async def activate_plan(
     return subscription_status_payload(tenant, now=now)
 
 
+async def grant_plan_to_tenant(
+    session: AsyncSession,
+    tenant: Tenant,
+    plan_code: str,
+    *,
+    days: int = 30,
+    now: datetime | None = None,
+) -> dict:
+    """Admin complimentary plan grant (no payment). Does not commit."""
+    if tenant.status == "inactive":
+        raise ValueError("Cannot grant a plan to a deactivated business")
+    if days < 1:
+        raise ValueError("Grant period must be at least 1 day")
+
+    plan = (
+        await session.execute(
+            select(SubscriptionPlan).where(
+                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not plan:
+        raise ValueError("Unknown or inactive subscription plan")
+
+    now = now or datetime.now(UTC)
+    # If they already have paid time remaining, extend from that date so a
+    # complimentary grant never shortens an existing paid period.
+    paid_until = _as_utc(tenant.subscription_paid_until)
+    start = paid_until if paid_until and paid_until > now else now
+
+    before = {
+        "plan_code": tenant.plan_code,
+        "status": tenant.status,
+        "subscription_paid_until": paid_until.isoformat() if paid_until else None,
+    }
+    tenant.plan_code = plan_code
+    tenant.status = "active"
+    tenant.subscription_paid_until = start + timedelta(days=days)
+    tenant.trial_warning_sent_at = None
+    return {
+        "before": before,
+        "plan_code": tenant.plan_code,
+        "status": tenant.status,
+        "subscription_paid_until": tenant.subscription_paid_until.isoformat(),
+        "grant_days": days,
+        "subscription": subscription_status_payload(tenant, now=now),
+    }
+
+
 async def activate_plan_from_payment(session: AsyncSession, tx) -> None:
     """Activate a tenant plan after a successful Paystack subscription payment (no commit)."""
     plan_code = tenant_plan_from_reference(tx)

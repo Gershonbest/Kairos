@@ -12,12 +12,13 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
+import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
 import kairosLogo from "../../../assets/kairos-logo.png";
 
 const PUBLIC_UI_BASE_URL =
@@ -77,6 +78,7 @@ function buildUpcomingAppointments(
 }
 
 export function Dashboard() {
+  const [showWelcome, setShowWelcome] = useState(() => consumeWelcomeAfterPayment());
   const {
     data: summary,
     isError: summaryFailed,
@@ -113,6 +115,27 @@ export function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
+      {showWelcome && (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-emerald-800 dark:text-emerald-300">
+              Welcome to your account
+            </h2>
+            <p className="text-sm text-emerald-800/80 dark:text-emerald-300/90 mt-1">
+              Your plan is active and you&apos;re all set. Explore your dashboard, share your booking link, and start
+              taking appointments.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowWelcome(false)}
+            className="text-sm text-emerald-800 dark:text-emerald-300 hover:underline shrink-0"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">

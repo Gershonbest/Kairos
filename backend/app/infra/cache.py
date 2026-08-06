@@ -31,6 +31,10 @@ class RedisCache:
     def tenant_key(tenant_id: str, resource: str) -> str:
         return f"tenant:{tenant_id}:{resource}"
 
+    @staticmethod
+    def admin_key(resource: str) -> str:
+        return f"admin:{resource}"
+
     async def get_json(self, key: str) -> Any | None:
         raw = await self.client.get(key)
         if raw is None:
@@ -48,11 +52,35 @@ class RedisCache:
         if keys:
             await self.client.delete(*keys)
 
+    async def delete_by_pattern(self, pattern: str) -> None:
+        """Delete all keys matching a Redis glob pattern (e.g. admin:payments:*)."""
+        cursor: int | str = 0
+        while True:
+            cursor, keys = await self.client.scan(cursor=cursor, match=pattern, count=200)
+            if keys:
+                await self.delete(*keys)
+            if cursor == 0 or cursor == "0":
+                break
+
     async def invalidate_tenant(self, tenant_id: str, *resources: str) -> None:
         if not resources:
             return
         keys = [self.tenant_key(tenant_id, resource) for resource in resources]
         await self.delete(*keys)
+
+    async def invalidate_admin(self, *resources: str) -> None:
+        if not resources:
+            return
+        await self.delete(*[self.admin_key(resource) for resource in resources])
+
+    async def invalidate_admin_overview(self) -> None:
+        """Drop platform metrics + subscriber directory caches."""
+        await self.invalidate_admin("metrics", "subscribers", "plans")
+
+    async def invalidate_admin_payments(self) -> None:
+        """Drop all filtered payment hub caches (summary, rollups, logs)."""
+        await self.delete_by_pattern("admin:payments:*")
+        await self.invalidate_admin("metrics")
 
 
 redis_cache = RedisCache()

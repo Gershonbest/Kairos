@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import kairosLogo from "../../../assets/branding/logo.png";
+import heroBookingImage from "../../../assets/marketing/landing-hero-booking.jpg";
+import testimonialNigeria from "../../../assets/marketing/testimonial-nigeria.jpg";
+import testimonialGhana from "../../../assets/marketing/testimonial-ghana.jpg";
+import testimonialKenya from "../../../assets/marketing/testimonial-kenya.jpg";
 
 interface PricingTier {
   code: string;
@@ -88,24 +92,24 @@ const features = [
 const testimonials = [
   {
     name: "Amara Okafor",
-    role: "Owner, Blissful Spa Lagos",
-    image: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=100&h=100&fit=crop",
+    role: "Owner, Blissful Spa · Lagos, Nigeria",
+    image: testimonialNigeria,
     quote:
       "Kairos cut our no-shows by 60% and doubled our online bookings in the first month. The AI assistant answers questions even when we're closed!",
     rating: 5,
   },
   {
-    name: "Dr. Chidi Nwosu",
-    role: "Wellness Clinic, Abuja",
-    image: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=100&h=100&fit=crop",
+    name: "Dr. Kwame Mensah",
+    role: "Wellness Clinic · Accra, Ghana",
+    image: testimonialGhana,
     quote:
-      "Finally, a booking system built for African businesses. The Naira pricing and mobile money support made it perfect for our patients.",
+      "Finally, a booking system built for African businesses. The local currency pricing and mobile money support made it perfect for our patients.",
     rating: 5,
   },
   {
-    name: "Fatima Hassan",
-    role: "Founder, GlowUp Beauty Bar",
-    image: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop",
+    name: "Wanjiku Kamau",
+    role: "Founder, GlowUp Beauty Bar · Nairobi, Kenya",
+    image: testimonialKenya,
     quote:
       "The analytics showed me which services to promote and when to staff up. Revenue is up 40% since we started using Kairos.",
     rating: 5,
@@ -278,11 +282,11 @@ export function LandingPage() {
               whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
               transition={{ type: "spring", stiffness: 180, damping: 20 }}
             >
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-transparent z-10" />
+              <div className="absolute inset-0 bg-gradient-to-tr from-primary/25 to-transparent z-10" />
               <img
-                src="https://images.unsplash.com/photo-1551434678-e076c223a692?w=1200&h=700&fit=crop"
-                alt="Kairos Dashboard"
-                className="w-full"
+                src={heroBookingImage}
+                alt="Clients booking appointments at an African beauty and wellness business"
+                className="w-full h-[280px] sm:h-[420px] md:h-[520px] object-cover"
               />
             </motion.div>
             <motion.div

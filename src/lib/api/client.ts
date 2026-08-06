@@ -17,6 +17,8 @@ const AUTH_PATHS_WITHOUT_SESSION = new Set([
   "/auth/google",
   "/auth/verify-email",
   "/auth/resend-verification",
+  "/auth/forgot-password",
+  "/auth/reset-password",
   "/auth/refresh",
 ]);
 
@@ -408,6 +410,10 @@ export const api = {
     }>("/auth/verify-email", { method: "POST", body: JSON.stringify(payload) }),
   resendVerification: (payload: { email: string }) =>
     request<{ ok: boolean }>("/auth/resend-verification", { method: "POST", body: JSON.stringify(payload) }),
+  forgotPassword: (payload: { email: string }) =>
+    request<{ ok: boolean }>("/auth/forgot-password", { method: "POST", body: JSON.stringify(payload) }),
+  resetPassword: (payload: { token: string; new_password: string }) =>
+    request<{ ok: boolean }>("/auth/reset-password", { method: "POST", body: JSON.stringify(payload) }),
   googleAuth: (payload: { id_token: string; business_name?: string }) =>
     request<{ access_token: string; refresh_token: string; is_new_user: boolean }>("/auth/google", {
       method: "POST",
@@ -807,8 +813,19 @@ export const api = {
     request<Array<{ id: string; name: string; business_type?: string; location?: string; status: string; plan_code: string; public_slug?: string; created_at?: string; onboarding_completed: boolean; owner?: string; owner_email?: string }>>(
       "/admin/subscribers"
     ),
-  updateSubscriber: (tenantId: string, payload: { status?: string; plan_code?: string; name?: string; location?: string }) =>
-    request<{ ok: boolean }>(`/admin/subscribers/${tenantId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateSubscriber: (tenantId: string, payload: {
+    status?: string;
+    plan_code?: string;
+    grant_days?: number;
+    name?: string;
+    location?: string;
+  }) =>
+    request<{
+      ok: boolean;
+      plan_code?: string;
+      status?: string;
+      subscription_paid_until?: string | null;
+    }>(`/admin/subscribers/${tenantId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSubscriber: (tenantId: string) =>
     request<{ ok: boolean }>(`/admin/subscribers/${tenantId}`, { method: "DELETE" }),
   adminPayments: (params?: {
