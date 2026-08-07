@@ -34,6 +34,13 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Never rewrite built assets to index.html. If an asset is missing, return
+    # 404 so browsers don't try to execute HTML as JavaScript modules.
+    location /assets/ {
+        try_files $uri =404;
+        access_log off;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
