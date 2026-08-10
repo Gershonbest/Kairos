@@ -3,7 +3,7 @@ name: Docker Hub Push (Dev)
 on:
   push:
     branches:
-      - develop
+      - gersh-dev
     paths:
       - "backend/**"
       - ".github/workflows/dockerhub-dev.yml"
@@ -21,6 +21,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -35,7 +47,7 @@ jobs:
         run: |
           IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}"
           SHORT_SHA="${GITHUB_SHA::7}"
-          TAGS="${IMAGE}:dev,${IMAGE}:dev-${SHORT_SHA},${IMAGE}:sha-${SHORT_SHA}"
+          TAGS="${IMAGE}:${SHORT_SHA}"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push dev image
@@ -45,3 +57,5 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
