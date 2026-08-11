@@ -6,9 +6,10 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
-import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound } from "lucide-react";
+import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound, ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { ServiceAppointmentFields } from "../../components/services/ServiceAppointmentFields";
@@ -20,8 +21,10 @@ import {
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import {
   appointmentTypeLabels,
+  bookingTypeLabels,
   defaultServiceAppointmentDetails,
   formatHostLabel,
+  type BookingType,
   type ServiceAppointmentDetails,
 } from "../../../lib/types/service";
 
@@ -34,11 +37,14 @@ interface Service {
   price: number;
   deposit: number;
   active: boolean;
+  bookingType: BookingType;
+  listingIds: string[];
   appointment: ServiceAppointmentDetails;
   imageUrl: string;
 }
 
 export function ServicesManagement() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
@@ -55,6 +61,8 @@ export function ServicesManagement() {
     price: "",
     deposit: "",
     imageUrl: "",
+    bookingType: "general" as BookingType,
+    listingIds: [] as string[],
     appointment: defaultServiceAppointmentDetails(),
   });
 
@@ -69,6 +77,10 @@ export function ServicesManagement() {
     queryFn: () => api.myTenant(),
   });
   const businessLocation = tenant?.location ?? "";
+  const { data: listings = [] } = useQuery({
+    queryKey: queryKeys.listings,
+    queryFn: () => api.listListings(),
+  });
 
   const services = useMemo(
     () =>
@@ -81,6 +93,8 @@ export function ServicesManagement() {
         price: row.price_amount,
         deposit: row.deposit_amount ?? 0,
         active: row.active,
+        bookingType: row.booking_type ?? "general",
+        listingIds: row.listing_ids ?? [],
         appointment: {
           appointment_type: row.appointment_type ?? "onsite",
           location: row.location ?? "",
@@ -118,6 +132,8 @@ export function ServicesManagement() {
     client_instructions: formData.appointment.client_instructions || undefined,
     buffer_minutes: Number(formData.appointment.buffer_minutes || 0),
     image_url: formData.imageUrl || undefined,
+    booking_type: formData.bookingType,
+    listing_ids: formData.bookingType === "listing" ? formData.listingIds : [],
   });
 
   const handleCreateOrUpdate = async (e: React.FormEvent) => {
@@ -125,6 +141,9 @@ export function ServicesManagement() {
     setIsSubmitting(true);
 
     try {
+      if (formData.bookingType === "listing" && formData.listingIds.length === 0) {
+        throw new Error("Product-Based services must be linked to at least one product.");
+      }
       if (editingService) {
         await api.updateService(editingService.id, {
           ...buildPayload(),
@@ -157,6 +176,8 @@ export function ServicesManagement() {
       price: service.price.toString(),
       deposit: service.deposit.toString(),
       imageUrl: service.imageUrl,
+      bookingType: service.bookingType,
+      listingIds: service.listingIds,
       appointment: service.appointment,
     });
     setIsDialogOpen(true);
@@ -179,6 +200,9 @@ export function ServicesManagement() {
   const toggleActive = async (service: Service) => {
     setTogglingId(service.id);
     try {
+      if (service.bookingType === "listing" && service.listingIds.length === 0) {
+        throw new Error("Product-Based services must be linked to at least one product.");
+      }
       await api.updateService(service.id, {
         name: service.name,
         description: service.description,
@@ -195,6 +219,8 @@ export function ServicesManagement() {
         client_instructions: service.appointment.client_instructions || undefined,
         buffer_minutes: Number(service.appointment.buffer_minutes || 0),
         image_url: service.imageUrl || undefined,
+        booking_type: service.bookingType,
+        listing_ids: service.listingIds,
         active: !service.active,
       });
       await refreshServices();
@@ -259,6 +285,72 @@ export function ServicesManagement() {
                   rows={3}
                   disabled={isSubmitting}
                 />
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-border p-4">
+                <Label htmlFor="booking_type">Booking Type</Label>
+                <select
+                  id="booking_type"
+                  value={formData.bookingType}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      bookingType: e.target.value as BookingType,
+                      listingIds: e.target.value === "listing" ? prev.listingIds : [],
+                    }))
+                  }
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  disabled={isSubmitting}
+                >
+                  <option value="general">{bookingTypeLabels.general}</option>
+                  <option value="listing">{bookingTypeLabels.listing}</option>
+                </select>
+                {formData.bookingType === "listing" && (
+                  <div className="space-y-2 pt-1">
+                    <p className="text-xs text-muted-foreground">
+                      Link one or more products that customers can pick before choosing date/time.
+                    </p>
+                    {listings.length === 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-amber-600">
+                          No products yet. Create at least one product in the Products tab first.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate("/dashboard/products")}
+                        >
+                          Go to Products
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-border p-2">
+                        {listings.map((listing) => {
+                          const checked = formData.listingIds.includes(listing.id);
+                          return (
+                            <label key={listing.id} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    listingIds: e.target.checked
+                                      ? [...prev.listingIds, listing.id]
+                                      : prev.listingIds.filter((id) => id !== listing.id),
+                                  }))
+                                }
+                                disabled={isSubmitting}
+                              />
+                              <span>{listing.name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <ServiceSchedulingFields
@@ -342,6 +434,24 @@ export function ServicesManagement() {
         </Dialog>
       </div>
 
+      <Card className="border-dashed">
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Service vs Product distinction</p>
+              <p className="text-sm text-muted-foreground">
+                Services are what people book. Products are the specific property, vehicle, or item they select for
+                product-based bookings.
+              </p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => navigate("/dashboard/products")}>
+              Open Products tab
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Services Grid */}
       {displayError && <p className="text-sm text-red-600">{displayError}</p>}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -361,9 +471,17 @@ export function ServicesManagement() {
                   <CardTitle className="text-lg">{service.name}</CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">{service.description}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-accent text-accent-foreground">
+                      {bookingTypeLabels[service.bookingType]}
+                    </span>
                     <span className="px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
                       {appointmentTypeLabels[service.appointment.appointment_type]}
                     </span>
+                    {service.bookingType === "listing" && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">
+                        {service.listingIds.length} product{service.listingIds.length === 1 ? "" : "s"}
+                      </span>
+                    )}
                     {formatHostLabel(service.appointment.host_name, service.appointment.host_title) && (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground inline-flex items-center gap-1">
                         <UserRound className="w-3 h-3" />

@@ -8,6 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { BrandLoader } from "../../components/brand/BrandLoader";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
@@ -461,7 +462,7 @@ export function AccountSettings() {
   };
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading settings…</div>;
+    return <BrandLoader label="Opening settings" fullscreen />;
   }
 
   return (

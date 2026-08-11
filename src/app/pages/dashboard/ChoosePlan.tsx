@@ -6,6 +6,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { AlertTriangle, ArrowLeft, Check, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { BrandLoader } from "../../components/brand/BrandLoader";
 import { api, clearAuthTokens } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
@@ -166,7 +167,7 @@ export function ChoosePlan() {
   }
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading plans...</div>;
+    return <BrandLoader label="Preparing plans" fullscreen />;
   }
 
   if (isDeactivated) {

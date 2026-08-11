@@ -258,6 +258,20 @@ export interface TenantBranchPayload {
 }
 
 export type SchedulingMode = "fixed" | "flexible" | "all_day";
+export type BookingType = "general" | "listing";
+export type ListingStatus = "available" | "reserved" | "sold" | "hidden";
+
+export interface ListingRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: ListingStatus;
+  image_urls: string[];
+  active: boolean;
+  service_ids: string[];
+  created_at?: string | null;
+  updated_at?: string | null;
+}
 
 export interface PublicBookingResponse {
   id: string;
@@ -266,6 +280,9 @@ export interface PublicBookingResponse {
   end_at: string;
   client_id: string;
   service_id: string;
+  listing_id?: string | null;
+  listing_name?: string | null;
+  listing_image_url?: string | null;
   payment_required?: boolean;
   payment_amount?: number | null;
   payment_status?: string | null;
@@ -302,6 +319,9 @@ export interface BookingListItem {
   end_at: string;
   client_id: string;
   service_id: string;
+  listing_id?: string | null;
+  listing_name?: string | null;
+  listing_image_url?: string | null;
   client_name: string;
   client_email?: string | null;
   client_phone?: string | null;
@@ -348,6 +368,8 @@ export interface ServicePayload {
   name: string;
   description?: string;
   duration_minutes: number;
+  booking_type?: BookingType;
+  listing_ids?: string[];
   scheduling_mode?: SchedulingMode;
   price_amount: number;
   deposit_amount?: number;
@@ -470,6 +492,7 @@ export const api = {
     request<{ ok: boolean }>("/tenants/me/onboarding", { method: "PUT", body: JSON.stringify(payload) }),
   uploadLogo: (file: File) => uploadMultipart("/uploads/logo", file),
   uploadServiceImage: (file: File) => uploadMultipart("/uploads/service-image", file),
+  uploadListingImage: (file: File) => uploadMultipart("/uploads/listing-image", file),
   myTenant: () =>
     request<{
       id: string;
@@ -493,6 +516,13 @@ export const api = {
       help_email?: string | null;
       timezone?: string;
       onboarding_completed?: boolean;
+      setup_progress?: {
+        has_services: boolean;
+        has_listing_based_service: boolean;
+        has_products: boolean;
+        has_availability_rules: boolean;
+        has_payment_provider: boolean;
+      };
     }>("/tenants/me"),
   updateTenant: (payload: {
     business_name?: string;
@@ -535,6 +565,31 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteService: (serviceId: string) => request<{ ok: boolean }>(`/services/${serviceId}`, { method: "DELETE" }),
+  createListing: (payload: {
+    name: string;
+    description?: string;
+    status?: ListingStatus;
+    image_urls?: string[];
+    active?: boolean;
+    service_ids?: string[];
+  }) => request<ListingRecord>("/listings", { method: "POST", body: JSON.stringify(payload) }),
+  listListings: () => request<Array<ListingRecord>>("/listings"),
+  updateListing: (
+    listingId: string,
+    payload: {
+      name: string;
+      description?: string;
+      status?: ListingStatus;
+      image_urls?: string[];
+      active?: boolean;
+      service_ids?: string[];
+    }
+  ) =>
+    request<ListingRecord>(`/listings/${listingId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteListing: (listingId: string) => request<{ ok: boolean }>(`/listings/${listingId}`, { method: "DELETE" }),
   replaceAvailability: (payload: { rules: AvailabilityRulePayload[] }) =>
     request<{ ok: boolean }>("/availability", { method: "PUT", body: JSON.stringify(payload) }),
   listAvailability: () =>
@@ -672,6 +727,16 @@ export const api = {
         date: string;
       }>;
     }>("/dashboard/summary"),
+  dashboardHomeStats: () =>
+    request<{
+      todays_bookings: number;
+      revenue_month: number;
+      revenue_week: number;
+      pending_confirmations: number;
+      new_clients: number;
+      new_clients_period: "week" | "month";
+      currency: string;
+    }>("/dashboard/home/stats"),
   connectPaymentProvider: (payload: {
     provider: string;
     business_name?: string;
@@ -713,6 +778,8 @@ export const api = {
         name: string;
         description?: string;
         duration_minutes: number;
+        booking_type: BookingType;
+        listing_ids: string[];
         scheduling_mode?: SchedulingMode;
         price_amount: number;
         deposit_amount?: number;
@@ -726,6 +793,10 @@ export const api = {
         image_url?: string;
       }>
     >(`/public/businesses/${businessId}/services`),
+  listPublicServiceListings: (businessId: string, serviceId: string) =>
+    request<Array<{ id: string; name: string; description?: string; status: ListingStatus; image_urls: string[] }>>(
+      `/public/businesses/${businessId}/services/${serviceId}/listings`
+    ),
   getPublicBusiness: (businessId: string) =>
     request<{
       id: string;
@@ -739,14 +810,23 @@ export const api = {
       contact_email?: string | null;
       help_email?: string | null;
     }>(`/public/businesses/${businessId}`),
-  listPublicAvailability: (businessId: string, serviceId: string, fromIso: string, toIso: string) =>
+  listPublicAvailability: (
+    businessId: string,
+    serviceId: string,
+    fromIso: string,
+    toIso: string,
+    listingId?: string
+  ) =>
     request<{ slots: string[] }>(
-      `/public/businesses/${businessId}/availability?service_id=${encodeURIComponent(serviceId)}&from_iso=${encodeURIComponent(fromIso)}&to_iso=${encodeURIComponent(toIso)}`
+      `/public/businesses/${businessId}/availability?service_id=${encodeURIComponent(serviceId)}&from_iso=${encodeURIComponent(fromIso)}&to_iso=${encodeURIComponent(toIso)}${
+        listingId ? `&listing_id=${encodeURIComponent(listingId)}` : ""
+      }`
     ),
   createPublicBooking: (
     businessId: string,
     payload: {
       service_id: string;
+      listing_id?: string;
       start_at: string;
       client_name: string;
       client_email: string;

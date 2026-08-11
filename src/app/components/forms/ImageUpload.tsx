@@ -10,7 +10,7 @@ interface ImageUploadProps {
   label: string;
   value?: string;
   onChange: (url: string) => void;
-  uploadKind: "logo" | "service-image";
+  uploadKind: "logo" | "service-image" | "listing-image";
   disabled?: boolean;
   hint?: string;
 }
@@ -26,7 +26,11 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
     setIsUploading(true);
     try {
       const result =
-        uploadKind === "logo" ? await api.uploadLogo(file) : await api.uploadServiceImage(file);
+        uploadKind === "logo"
+          ? await api.uploadLogo(file)
+          : uploadKind === "listing-image"
+            ? await api.uploadListingImage(file)
+            : await api.uploadServiceImage(file);
       onChange(result.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed.");

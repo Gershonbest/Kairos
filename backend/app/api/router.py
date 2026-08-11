@@ -9,6 +9,7 @@ from app.modules.availability.router import router as availability_router
 from app.modules.bookings.router import router as bookings_router
 from app.modules.clients.router import router as clients_router
 from app.modules.dashboard.router import router as dashboard_router
+from app.modules.listings.router import router as listings_router
 from app.modules.notifications.router import router as notifications_router
 from app.modules.payments.router import router as payments_router
 from app.modules.public.router import router as public_router
@@ -26,6 +27,7 @@ api_router.include_router(uploads_router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(scheduling_router, prefix="/scheduling", tags=["scheduling"])
 api_router.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
 api_router.include_router(services_router, prefix="/services", tags=["services"])
+api_router.include_router(listings_router, prefix="/listings", tags=["listings"])
 api_router.include_router(availability_router, prefix="/availability", tags=["availability"])
 api_router.include_router(bookings_router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(clients_router, prefix="/clients", tags=["clients"])

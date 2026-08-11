@@ -3,6 +3,9 @@ set -e
 
 # Render injects PORT (often 10000). Local compose / plain Docker default to 8000.
 PORT="${PORT:-8000}"
+# Default to auto-running migrations. Set RUN_MIGRATIONS_ON_STARTUP=false
+# for environments where a separate release job runs migrations once.
+RUN_MIGRATIONS_ON_STARTUP="${RUN_MIGRATIONS_ON_STARTUP:-true}"
 
 # Never silently create a local SQLite database in production. Render must
 # receive the Neon connection string through its DATABASE_URL environment var.
@@ -19,5 +22,13 @@ if [ "${APP_ENV:-dev}" = "production" ]; then
     esac
 fi
 
-alembic upgrade head
+case "$RUN_MIGRATIONS_ON_STARTUP" in
+    true|1|yes|on|TRUE|YES|ON)
+        alembic upgrade head
+        ;;
+    *)
+        echo "Skipping migrations because RUN_MIGRATIONS_ON_STARTUP=${RUN_MIGRATIONS_ON_STARTUP}"
+        ;;
+esac
+
 exec uvicorn app.main:app --host 0.0.0.0 --port "$PORT"
