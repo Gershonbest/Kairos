@@ -41,6 +41,15 @@ server {
         access_log off;
     }
 
+    # Favicons and other root static files must not fall back to the SPA —
+    # otherwise React Router treats /favicon.ico as a route and shows a 404 page.
+    location ~* \.(ico|png|jpg|jpeg|gif|svg|webp|webmanifest|txt|xml)$ {
+        try_files $uri =404;
+        access_log off;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
