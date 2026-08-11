@@ -5,6 +5,7 @@ from datetime import UTC, datetime, time, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.infra.cache import get_redis, redis_cache
 from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
@@ -15,9 +16,12 @@ from app.infra.models import (
     Booking,
     BookingStatus,
     Client,
+    Listing,
+    ListingStatus,
     PaymentTransaction,
     SchedulingMode,
     Service,
+    ServiceBookingType,
     Tenant,
     User,
     UserRole,
@@ -80,6 +84,12 @@ def _normalize_booking_window(service: Service, requested_start: datetime) -> tu
     return start, start + timedelta(minutes=service.duration_minutes), False
 
 
+def _matches_booking_scope(*, service: Service, booking: Booking, selected_listing_id: str | None) -> bool:
+    if service.booking_type == ServiceBookingType.listing:
+        return booking.listing_id == selected_listing_id
+    return booking.listing_id is None and booking.service_id == service.id
+
+
 def _booking_response(
     booking: Booking,
     service: Service,
@@ -87,6 +97,7 @@ def _booking_response(
     payment_tx: PaymentTransaction | None,
     *,
     client: Client | None = None,
+    listing: Listing | None = None,
     business_contact_email: str | None = None,
 ) -> BookingOut:
     amount = booking_payment_amount(service)
@@ -101,6 +112,9 @@ def _booking_response(
         end_at=booking.end_at,
         client_id=booking.client_id,
         service_id=booking.service_id,
+        listing_id=booking.listing_id,
+        listing_name=listing.name if listing else None,
+        listing_image_url=(listing.image_urls[0] if listing and listing.image_urls else None),
         payment_required=payment_required and (payment_tx is None or payment_tx.status.value == "pending"),
         payment_amount=amount if amount > 0 else None,
         payment_status=payment_tx.status.value if payment_tx else None,
@@ -164,18 +178,26 @@ async def _enriched_booking_response(
     payment_tx: PaymentTransaction | None,
     *,
     client: Client | None = None,
+    listing: Listing | None = None,
 ) -> BookingOut:
     if client is None:
         client = (
             await session.execute(select(Client).where(Client.id == booking.client_id))
         ).scalar_one_or_none()
     contact_email = await _owner_contact_email(session, tenant.id)
+    if listing is None and booking.listing_id:
+        listing = (
+            await session.execute(
+                select(Listing).where(Listing.id == booking.listing_id, Listing.tenant_id == tenant.id)
+            )
+        ).scalar_one_or_none()
     return _booking_response(
         booking,
         service,
         tenant,
         payment_tx,
         client=client,
+        listing=listing,
         business_contact_email=contact_email,
     )
 
@@ -219,7 +241,9 @@ async def get_public_services(business_id: str, session: AsyncSession = Depends(
     tenant = await resolve_tenant_key(business_id, session)
     services = (
         await session.execute(
-            select(Service).where(Service.tenant_id == tenant.id, Service.active.is_(True))
+            select(Service)
+            .options(selectinload(Service.listings))
+            .where(Service.tenant_id == tenant.id, Service.active.is_(True))
         )
     ).scalars()
     return [
@@ -228,10 +252,57 @@ async def get_public_services(business_id: str, session: AsyncSession = Depends(
     ]
 
 
+@router.get("/businesses/{business_id}/services/{service_id}/listings")
+async def get_public_service_listings(
+    business_id: str,
+    service_id: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    tenant = await resolve_tenant_key(business_id, session)
+    service = (
+        await session.execute(
+            select(Service).where(
+                Service.id == service_id,
+                Service.tenant_id == tenant.id,
+                Service.active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+    if service.booking_type != ServiceBookingType.listing:
+        return []
+
+    rows = (
+        await session.execute(
+            select(Listing)
+            .join(Listing.services)
+            .where(
+                Service.id == service.id,
+                Listing.tenant_id == tenant.id,
+                Listing.active.is_(True),
+                Listing.status == ListingStatus.available,
+            )
+            .order_by(Listing.created_at.desc())
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": listing.id,
+            "name": listing.name,
+            "description": listing.description,
+            "status": listing.status.value,
+            "image_urls": listing.image_urls or [],
+        }
+        for listing in rows
+    ]
+
+
 @router.get("/businesses/{business_id}/availability")
 async def get_public_availability(
     business_id: str,
     service_id: str = Query(...),
+    listing_id: str | None = Query(default=None),
     from_iso: str = Query(...),
     to_iso: str = Query(...),
     session: AsyncSession = Depends(get_db_session),
@@ -246,6 +317,26 @@ async def get_public_availability(
     ).scalar_one_or_none()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
+
+    listing: Listing | None = None
+    if service.booking_type == ServiceBookingType.listing:
+        if not listing_id:
+            return {"business_id": business_id, "service_id": service_id, "from": from_iso, "to": to_iso, "slots": []}
+        listing = (
+            await session.execute(
+                select(Listing)
+                .join(Listing.services)
+                .where(
+                    Service.id == service.id,
+                    Listing.id == listing_id,
+                    Listing.tenant_id == tenant.id,
+                    Listing.active.is_(True),
+                    Listing.status == ListingStatus.available,
+                )
+            )
+        ).scalar_one_or_none()
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
 
     try:
         from_dt = datetime.fromisoformat(from_iso.replace("Z", "+00:00"))
@@ -272,19 +363,20 @@ async def get_public_availability(
         .all()
     )
 
+    booking_filters = [
+        Booking.tenant_id == tenant.id,
+        Booking.service_id == service.id,
+        Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
+        Booking.start_at >= from_dt,
+        Booking.start_at <= to_dt + timedelta(days=1),
+    ]
+    if listing:
+        booking_filters.append(Booking.listing_id == listing.id)
+    else:
+        booking_filters.append(Booking.listing_id.is_(None))
+
     existing_bookings = list(
-        (
-            await session.execute(
-                select(Booking).where(
-                    Booking.tenant_id == tenant.id,
-                    Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-                    Booking.start_at >= from_dt,
-                    Booking.start_at <= to_dt + timedelta(days=1),
-                )
-            )
-        )
-        .scalars()
-        .all()
+        (await session.execute(select(Booking).where(*booking_filters))).scalars().all()
     )
 
     slots = generate_slots(
@@ -347,11 +439,37 @@ async def create_public_booking(
     tenant = await resolve_tenant_key(business_id, session)
     service = (
         await session.execute(
-            select(Service).where(Service.id == payload.service_id, Service.tenant_id == tenant.id)
+            select(Service).where(
+                Service.id == payload.service_id,
+                Service.tenant_id == tenant.id,
+                Service.active.is_(True),
+            )
         )
     ).scalar_one_or_none()
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
+
+    listing: Listing | None = None
+    if service.booking_type == ServiceBookingType.listing:
+        if not payload.listing_id:
+            raise HTTPException(status_code=400, detail="Listing selection is required for this service")
+        listing = (
+            await session.execute(
+                select(Listing)
+                .join(Listing.services)
+                .where(
+                    Listing.id == payload.listing_id,
+                    Listing.tenant_id == tenant.id,
+                    Listing.active.is_(True),
+                    Listing.status == ListingStatus.available,
+                    Service.id == service.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not listing:
+            raise HTTPException(status_code=400, detail="Selected listing is unavailable")
+    elif payload.listing_id:
+        raise HTTPException(status_code=400, detail="Listing is not supported for this service")
 
     try:
         appointment_format = resolve_appointment_format(
@@ -364,7 +482,8 @@ async def create_public_booking(
     start_at, end_at, is_all_day = _normalize_booking_window(service, payload.start_at)
     buffer_minutes = service.buffer_minutes or 0
 
-    lock_key = f"slot-lock:{tenant.id}:{payload.service_id}:{start_at.isoformat()}"
+    slot_scope = listing.id if listing else "general"
+    lock_key = f"slot-lock:{tenant.id}:{payload.service_id}:{slot_scope}:{start_at.isoformat()}"
     locked = await redis.set(lock_key, payload.idempotency_key, ex=30, nx=True)
     if not locked:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slot is currently being booked")
@@ -398,21 +517,34 @@ async def create_public_booking(
                 business_key=business_id,
             )
         await session.commit()
-        return await _enriched_booking_response(session, existing, service, tenant, payment_tx)
-
-    nearby = (
-        await session.execute(
-            select(Booking).where(
-                and_(
-                    Booking.tenant_id == tenant.id,
-                    Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-                    Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
-                    Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
+        existing_listing = listing
+        if existing_listing is None and existing.listing_id:
+            existing_listing = (
+                await session.execute(
+                    select(Listing).where(Listing.id == existing.listing_id, Listing.tenant_id == tenant.id)
                 )
-            )
+            ).scalar_one_or_none()
+        return await _enriched_booking_response(
+            session, existing, service, tenant, payment_tx, listing=existing_listing
         )
-    ).scalars().all()
-    if any(booking_blocks_slot(row, start_at, end_at, buffer_minutes) for row in nearby):
+
+    slot_filters = [
+        Booking.tenant_id == tenant.id,
+        Booking.service_id == service.id,
+        Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
+        Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
+        Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
+    ]
+    nearby = (await session.execute(select(Booking).where(and_(*slot_filters)))).scalars().all()
+    if any(
+        _matches_booking_scope(
+            service=service,
+            booking=row,
+            selected_listing_id=listing.id if listing else None,
+        )
+        and booking_blocks_slot(row, start_at, end_at, buffer_minutes)
+        for row in nearby
+    ):
         raise HTTPException(status_code=409, detail="Slot already booked")
 
     client_email = payload.client_email.strip().lower()
@@ -445,6 +577,7 @@ async def create_public_booking(
         tenant_id=tenant.id,
         client_id=client.id,
         service_id=service.id,
+        listing_id=listing.id if listing else None,
         start_at=start_at,
         end_at=end_at,
         is_all_day=is_all_day,
@@ -509,7 +642,9 @@ async def create_public_booking(
                 appointment_format=appointment_format.value,
                 booking_id=booking.id,
             )
-        return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
+        return await _enriched_booking_response(
+            session, booking, service, tenant, payment_tx, client=client, listing=listing
+        )
 
     if payment_tx:
         try:
@@ -530,7 +665,9 @@ async def create_public_booking(
         await session.refresh(payment_tx)
     await redis.delete(lock_key)
     await redis_cache.invalidate_tenant(tenant.id, "bookings:list", "clients:list", "transactions:list", "dashboard:summary")
-    return await _enriched_booking_response(session, booking, service, tenant, payment_tx, client=client)
+    return await _enriched_booking_response(
+        session, booking, service, tenant, payment_tx, client=client, listing=listing
+    )
 
 
 @router.post("/businesses/{business_id}/bookings/{booking_id}/confirm-payment", response_model=BookingOut)

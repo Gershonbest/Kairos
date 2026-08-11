@@ -1,19 +1,26 @@
-name: Docker Hub Push (Dev)
+name: Docker Hub Frontend Push (Dev)
 
 on:
   push:
     branches:
       - gersh-dev
     paths:
-      - "backend/**"
-      - ".github/workflows/dockerhub-dev.yml"
+      - "src/**"
+      - "public/**"
+      - "nginx/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "Dockerfile"
+      - ".github/workflows/dockerhub-frontend-dev.yml"
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: orheo-backend-dev
+  IMAGE_NAME: orheo-frontend-dev
 
 jobs:
-  docker-dev:
+  docker-frontend-dev:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,17 +28,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: "20"
+          cache: "npm"
 
-      - name: Run backend tests
-        working-directory: backend
+      - name: Run frontend build
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-          pytest
+          npm ci
+          npm run build
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -50,12 +56,12 @@ jobs:
           TAGS="${IMAGE}:${SHORT_SHA}"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push dev image
+      - name: Build and push frontend dev image
         uses: docker/build-push-action@v6
         with:
-          context: ./backend
-          file: ./backend/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend-dev
+          cache-to: type=gha,mode=max,scope=frontend-dev

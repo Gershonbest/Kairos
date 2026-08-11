@@ -3,12 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import {
-  Calendar,
   DollarSign,
-  Users,
   TrendingUp,
-  Plus,
-  ArrowUpRight,
   Clock,
   Sparkles,
 } from "lucide-react";
@@ -16,10 +12,13 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BrandLoader } from "../../components/brand/BrandLoader";
+import { DashboardHomeHeader } from "../../components/dashboard-home/DashboardHomeHeader";
+import { DashboardMiniCalendar } from "../../components/dashboard-home/DashboardMiniCalendar";
+import { DashboardStatsRow } from "../../components/dashboard-home/DashboardStatsRow";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
-import orheoLogo from "../../../assets/kairos-logo.png";
 
 const PUBLIC_UI_BASE_URL =
   ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PUBLIC_UI_BASE_URL ?? "").trim();
@@ -55,6 +54,7 @@ function buildUpcomingAppointments(
     start_at: string;
     client_name: string;
     service_name: string;
+    listing_name?: string | null;
   }>
 ) {
   const now = Date.now();
@@ -70,6 +70,7 @@ function buildUpcomingAppointments(
       id: booking.id,
       client: booking.client_name,
       service: booking.service_name,
+      product: booking.listing_name ?? null,
       status: booking.status,
       start_at: booking.start_at,
       time: formatAppointmentTime(booking.start_at),
@@ -98,12 +99,19 @@ export function Dashboard() {
     queryKey: queryKeys.bookingLinks,
     queryFn: () => api.getBookingLinks(),
   });
+  const { data: homeStats = null, isPending: homeStatsLoading } = useQuery({
+    queryKey: queryKeys.dashboardHomeStats,
+    queryFn: () => api.dashboardHomeStats(),
+  });
+  const { data: me = null } = useQuery({
+    queryKey: queryKeys.me,
+    queryFn: () => api.me(),
+  });
 
   const summaryError = summaryFailed ? "Unable to load dashboard metrics." : "";
   const appointmentsError = appointmentsFailed ? "Unable to load upcoming appointments." : "";
   const upcomingAppointments = useMemo(() => buildUpcomingAppointments(bookings), [bookings]);
 
-  const stats = summary?.stats;
   const revenueData = summary?.revenue_series ?? [];
   const bookingsData = summary?.bookings_series ?? [];
   const displayedAppointments = useMemo(() => {
@@ -137,142 +145,76 @@ export function Dashboard() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
-          <div>
-          <h1 className="text-3xl font-semibold">Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Live business metrics from your account data.</p>
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" asChild>
-            <Link to="/dashboard/calendar">
-              <Calendar className="w-4 h-4 mr-2" />
-              View Calendar
-            </Link>
-          </Button>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90" asChild>
-            <Link to="/dashboard/booking-links">
-              <Plus className="w-4 h-4 mr-2" />
-              Share Booking Link
-            </Link>
-          </Button>
-        </div>
-      </div>
+      <DashboardHomeHeader firstName={me?.full_name?.trim().split(/\s+/)[0] ?? null} />
       {summaryError && <p className="text-sm text-amber-700">{summaryError}</p>}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <DashboardStatsRow stats={homeStats} loading={homeStatsLoading} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Upcoming Appointments */}
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Bookings</CardTitle>
-            <Calendar className="w-4 h-4 text-muted-foreground" />
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Upcoming Appointments</CardTitle>
+            <Button variant="link" className="text-primary" asChild>
+              <Link to="/dashboard/calendar">View all</Link>
+            </Button>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{stats?.total_bookings ?? 0}</div>
-            <p className="text-xs text-primary flex items-center gap-1 mt-2">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>{stats?.bookings_change_pct ?? 0}% from last month</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Monthly Revenue</CardTitle>
-            <DollarSign className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{(stats?.monthly_revenue ?? 0).toFixed(2)}</div>
-            <p className="text-xs text-primary flex items-center gap-1 mt-2">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>{stats?.revenue_change_pct ?? 0}% from last month</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active Clients</CardTitle>
-            <Users className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">{stats?.active_clients ?? 0}</div>
-            <p className="text-xs text-muted-foreground mt-2">Unique clients in your tenant account</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Booking Value</CardTitle>
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{(stats?.avg_booking_value ?? 0).toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground mt-2">Current month revenue / bookings</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Upcoming Appointments */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Upcoming Appointments</CardTitle>
-          <Button variant="link" className="text-primary" asChild>
-            <Link to="/dashboard/calendar">View all</Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {loadingAppointments ? (
-              <p className="text-sm text-muted-foreground">Loading appointments...</p>
-            ) : (
-              displayedAppointments.map((appointment) => (
-                <div
-                  key={appointment.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-medium">
-                      {appointment.client
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="font-medium">{appointment.client}</h4>
-                        <span
-                          className={`px-2 py-0.5 text-xs rounded-full capitalize ${
-                            appointment.status === "confirmed"
-                              ? "bg-primary/10 text-primary"
-                              : "bg-accent/20 text-accent-foreground"
-                          }`}
-                        >
-                          {appointment.status}
-                        </span>
+            <div className="space-y-3">
+              {loadingAppointments ? (
+                <BrandLoader label="Loading appointments" />
+              ) : (
+                displayedAppointments.map((appointment) => (
+                  <div
+                    key={appointment.id}
+                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-medium">
+                        {appointment.client
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .slice(0, 2)}
                       </div>
-                      <p className="text-sm text-muted-foreground">{appointment.service}</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium">{appointment.client}</h4>
+                          <span
+                            className={`px-2 py-0.5 text-xs rounded-full capitalize ${
+                              appointment.status === "confirmed"
+                                ? "bg-primary/10 text-primary"
+                                : "bg-accent/20 text-accent-foreground"
+                            }`}
+                          >
+                            {appointment.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{appointment.service}</p>
+                        {appointment.product && (
+                          <p className="text-xs text-muted-foreground">Product: {appointment.product}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{appointment.time}</p>
+                      <p className="text-sm text-muted-foreground">{appointment.date}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium">{appointment.time}</p>
-                    <p className="text-sm text-muted-foreground">{appointment.date}</p>
-                  </div>
-                </div>
-              ))
-            )}
-            {!loadingAppointments && appointmentsError && (
-              <p className="text-sm text-red-600">{appointmentsError}</p>
-            )}
-            {!loadingAppointments && !appointmentsError && displayedAppointments.length === 0 && (
-              <p className="text-sm text-muted-foreground">No upcoming appointments yet.</p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                ))
+              )}
+              {!loadingAppointments && appointmentsError && (
+                <p className="text-sm text-red-600">{appointmentsError}</p>
+              )}
+              {!loadingAppointments && !appointmentsError && displayedAppointments.length === 0 && (
+                <p className="text-sm text-muted-foreground">No upcoming appointments yet.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <DashboardMiniCalendar bookings={bookings} />
+      </div>
 
       {/* AI Insights */}
       <Card className="bg-gradient-to-br from-primary/5 via-background to-accent/10 border-primary/20">

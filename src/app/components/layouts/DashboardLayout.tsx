@@ -13,6 +13,7 @@ import {
   Menu,
   Settings,
   Clock,
+  Package,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { TrialBanner } from "../billing/TrialBanner";
@@ -111,6 +112,7 @@ export function DashboardLayout() {
     { path: "/dashboard/calendar", icon: Calendar, label: "Calendar" },
     { path: "/dashboard/availability", icon: Clock, label: "Availability" },
     { path: "/dashboard/services", icon: Briefcase, label: "Services" },
+    { path: "/dashboard/products", icon: Package, label: "Products" },
     { path: "/dashboard/clients", icon: Users, label: "Clients" },
     { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
     { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },

@@ -1,6 +1,6 @@
 // Public multi-step booking flow for clients.
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -35,6 +35,7 @@ import {
   type AppointmentType,
 } from "../../../lib/types/service";
 import { PhoneInput } from "../../components/forms/PhoneInput";
+import { BrandLoader } from "../../components/brand/BrandLoader";
 import { getDialCodeForCountry } from "../../../lib/data/locations";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -51,12 +52,22 @@ interface Service {
   image: string;
   popular?: boolean;
   appointment_type: AppointmentType;
+  booking_type: "general" | "listing";
+  listing_ids: string[];
   location?: string;
   use_business_location: boolean;
   host_name?: string;
   host_title?: string;
   client_instructions?: string;
   buffer_minutes: number;
+}
+
+interface ListingOption {
+  id: string;
+  name: string;
+  description?: string;
+  status: "available" | "reserved" | "sold" | "hidden";
+  image_urls: string[];
 }
 
 interface TimeSlot {
@@ -70,19 +81,26 @@ interface ChatMessage {
   content: string;
 }
 
-type StepId = "service" | "datetime" | "details" | "payment" | "confirmation";
+type StepId = "service" | "listing" | "datetime" | "details" | "payment" | "confirmation";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
-function getUpcomingDates() {
+function localDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getUpcomingDates(totalDays = 56) {
   const dates: Array<{ key: string; day: string; num: number; month: string; available: boolean }> = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  for (let i = 1; i <= 14; i++) {
+  for (let i = 1; i <= totalDays; i++) {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
     dates.push({
-      key: d.toISOString().split("T")[0],
+      key: localDateKey(d),
       day: d.toLocaleDateString("en-US", { weekday: "short" }),
       num: d.getDate(),
       month: d.toLocaleDateString("en-US", { month: "short" }),
@@ -92,9 +110,9 @@ function getUpcomingDates() {
   return dates;
 }
 
-const ALL_DATES = getUpcomingDates();
-
-const STEP_LABELS = ["Service", "Date & Time", "Your Details", "Payment"];
+const BASE_STEP_LABELS = ["Service", "Date & Time", "Your Details", "Payment"];
+const LISTING_STEP_LABELS = ["Service", "Product", "Date & Time", "Your Details", "Payment"];
+const PENDING_PAYMENT_KEY = "orheo_pending_public_payment";
 
 function serviceDurationLabel(service: { scheduling_mode: string; duration: number }): string {
   if (service.scheduling_mode === "all_day") return "All day";
@@ -163,6 +181,9 @@ export function PublicBooking() {
   const [servicesError, setServicesError] = useState("");
   const [step, setStep] = useState<StepId>("service");
   const [service, setService] = useState<Service | null>(null);
+  const [serviceListings, setServiceListings] = useState<ListingOption[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<ListingOption | null>(null);
   const [dateOffset, setDateOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlotIso, setSelectedSlotIso] = useState("");
@@ -205,9 +226,42 @@ export function PublicBooking() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const paymentHandledRef = useRef(false);
 
-  const stepIndex = (["service", "datetime", "details", "payment", "confirmation"] as StepId[]).indexOf(step);
-  const visibleDates = ALL_DATES.slice(dateOffset, dateOffset + 7);
-  const selectedDateObj = ALL_DATES.find((d) => d.key === selectedDate);
+  function readPendingPayment() {
+    try {
+      const raw = localStorage.getItem(PENDING_PAYMENT_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { businessId: string; bookingId: string; reference?: string };
+      if (!parsed?.businessId || !parsed?.bookingId) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearPendingPayment() {
+    localStorage.removeItem(PENDING_PAYMENT_KEY);
+  }
+
+  function savePendingPayment(data: { businessId: string; bookingId: string; reference?: string | null }) {
+    localStorage.setItem(
+      PENDING_PAYMENT_KEY,
+      JSON.stringify({
+        businessId: data.businessId,
+        bookingId: data.bookingId,
+        reference: data.reference || undefined,
+      })
+    );
+  }
+
+  const usesListingFlow = service?.booking_type === "listing";
+  const stepOrder: StepId[] = usesListingFlow
+    ? ["service", "listing", "datetime", "details", "payment", "confirmation"]
+    : ["service", "datetime", "details", "payment", "confirmation"];
+  const stepLabels = usesListingFlow ? LISTING_STEP_LABELS : BASE_STEP_LABELS;
+  const stepIndex = stepOrder.indexOf(step);
+  const allDates = useMemo(() => getUpcomingDates(56), []);
+  const visibleDates = allDates.slice(dateOffset, dateOffset + 7);
+  const selectedDateObj = allDates.find((d) => d.key === selectedDate);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -217,9 +271,13 @@ export function PublicBooking() {
   useEffect(() => {
     if (!businessId || paymentHandledRef.current) return;
     const paymentFlag = searchParams.get("payment");
-    const reference = searchParams.get("reference") || searchParams.get("trxref");
-    const bookingId = searchParams.get("booking_id");
-    if (paymentFlag !== "1" || !reference || !bookingId) return;
+    const urlReference = searchParams.get("reference") || searchParams.get("trxref");
+    const pending = readPendingPayment();
+    const fromPending = pending?.businessId === businessId ? pending : null;
+    const reference = urlReference || fromPending?.reference || null;
+    const bookingId = searchParams.get("booking_id") || fromPending?.bookingId || null;
+    if (paymentFlag !== "1" && !urlReference && !fromPending) return;
+    if (!reference || !bookingId) return;
 
     paymentHandledRef.current = true;
     setIsBooking(true);
@@ -229,6 +287,7 @@ export function PublicBooking() {
       .confirmPublicPayment(businessId, bookingId, reference)
       .then((confirmed) => {
         applyConfirmedBooking(confirmed);
+        clearPendingPayment();
         // Drop Paystack query params so refresh doesn't re-verify awkwardly.
         const path = window.location.pathname;
         window.history.replaceState({}, "", path);
@@ -243,12 +302,50 @@ export function PublicBooking() {
   }, [businessId, searchParams]);
 
   useEffect(() => {
+    if (!businessId || !service || service.booking_type !== "listing") {
+      setServiceListings([]);
+      setSelectedListing(null);
+      setListingsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setListingsLoading(true);
+    setServiceListings([]);
+    api
+      .listPublicServiceListings(businessId, service.id)
+      .then((rows) => {
+        if (cancelled) return;
+        setServiceListings(rows);
+        setSelectedListing((prev) => {
+          if (!prev) return null;
+          return rows.find((listing) => listing.id === prev.id) ?? null;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setServiceListings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setListingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId, service]);
+
+  useEffect(() => {
     // Don't kick users off payment/confirmation after Paystack redirect (local slot state is empty).
     if (paymentHandledRef.current || confirmedBooking) return;
     if (step === "payment" && (!service || !selectedSlotIso)) {
-      setStep(service ? "datetime" : "service");
+      if (!service) {
+        setStep("service");
+      } else if (service.booking_type === "listing" && !selectedListing) {
+        setStep("listing");
+      } else {
+        setStep("datetime");
+      }
     }
-  }, [step, service, selectedSlotIso, confirmedBooking]);
+  }, [step, service, selectedListing, selectedSlotIso, confirmedBooking]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -288,6 +385,8 @@ export function PublicBooking() {
             deposit: row.deposit_amount ?? 0,
             category: appointmentTypeLabels[row.appointment_type],
             appointment_type: row.appointment_type,
+            booking_type: row.booking_type ?? "general",
+            listing_ids: row.listing_ids ?? [],
             location: row.location,
             use_business_location: row.use_business_location,
             host_name: row.host_name,
@@ -303,7 +402,8 @@ export function PublicBooking() {
             const selected = mapped.find((s) => s.id === preselectedServiceId);
             if (selected) {
               setService(selected);
-              setStep("datetime");
+              setSelectedListing(null);
+              setStep(selected.booking_type === "listing" ? "listing" : "datetime");
             }
           }
         }
@@ -316,7 +416,12 @@ export function PublicBooking() {
   }, [businessId, searchParams]);
 
   useEffect(() => {
-    if (!businessId || !service || !selectedDate) {
+    if (
+      !businessId ||
+      !service ||
+      !selectedDate ||
+      (service.booking_type === "listing" && !selectedListing)
+    ) {
       setAvailableSlotIsos([]);
       setSlotsLoading(false);
       return;
@@ -328,7 +433,13 @@ export function PublicBooking() {
     setSlotsLoading(true);
     setAvailableSlotIsos([]);
     api
-      .listPublicAvailability(businessId, service.id, from.toISOString(), to.toISOString())
+      .listPublicAvailability(
+        businessId,
+        service.id,
+        from.toISOString(),
+        to.toISOString(),
+        service.booking_type === "listing" ? selectedListing?.id : undefined
+      )
       .then((res) => {
         if (cancelled) return;
         setAvailableSlotIsos(res.slots);
@@ -348,7 +459,7 @@ export function PublicBooking() {
     return () => {
       cancelled = true;
     };
-  }, [businessId, service, selectedDate]);
+  }, [businessId, service, selectedDate, selectedListing]);
 
   const groupedSlots = availableSlotIsos.reduce<Record<string, string[]>>((acc, slotIso) => {
     const hour = new Date(slotIso).getHours();
@@ -401,12 +512,23 @@ export function PublicBooking() {
           category: "",
           image: confirmed.service_image_url || "",
           appointment_type: "onsite",
+          booking_type: confirmed.listing_id ? "listing" : "general",
+          listing_ids: confirmed.listing_id ? [confirmed.listing_id] : [],
           location: confirmed.location || undefined,
           use_business_location: true,
           host_name: confirmed.host_name || undefined,
           host_title: confirmed.host_title || undefined,
           buffer_minutes: 0,
         };
+      });
+    }
+    if (confirmed.listing_id) {
+      setSelectedListing({
+        id: confirmed.listing_id,
+        name: confirmed.listing_name || "Selected listing",
+        description: "",
+        status: "available",
+        image_urls: confirmed.listing_image_url ? [confirmed.listing_image_url] : [],
       });
     }
     if (confirmed.business_name) {
@@ -429,6 +551,8 @@ export function PublicBooking() {
   function resetBooking() {
     setStep("service");
     setService(null);
+    setServiceListings([]);
+    setSelectedListing(null);
     setSelectedDate("");
     setSelectedSlotIso("");
     setAppointmentFormat("");
@@ -438,6 +562,7 @@ export function PublicBooking() {
     setReceiptBusy(null);
     setReceiptMessage("");
     paymentHandledRef.current = false;
+    clearPendingPayment();
   }
 
   async function handleDownloadReceipt() {
@@ -496,6 +621,11 @@ export function PublicBooking() {
       setStep("datetime");
       return;
     }
+    if (service.booking_type === "listing" && !selectedListing) {
+      setBookingError("Please select a product before confirming your booking.");
+      setStep("listing");
+      return;
+    }
 
     const clientName = form.name.trim();
     const clientEmail = form.email.trim();
@@ -518,6 +648,7 @@ export function PublicBooking() {
       const idempotencyKey = `web-${Date.now()}`;
       const booking = await api.createPublicBooking(businessId, {
         service_id: service.id,
+        ...(selectedListing ? { listing_id: selectedListing.id } : {}),
         start_at: selectedSlotIso,
         client_name: clientName,
         client_email: clientEmail,
@@ -534,6 +665,11 @@ export function PublicBooking() {
 
       if (booking.payment_required && booking.payment_status === "pending") {
         if (booking.payment_authorization_url) {
+          savePendingPayment({
+            businessId,
+            bookingId: booking.id,
+            reference: booking.payment_reference,
+          });
           window.location.href = booking.payment_authorization_url;
           return;
         }
@@ -647,7 +783,7 @@ export function PublicBooking() {
         {step !== "confirmation" && (
           <div style={{ marginBottom: 40 }}>
             <div style={{ display: "flex", alignItems: "flex-start" }}>
-              {STEP_LABELS.map((label, i) => {
+              {stepLabels.map((label, i) => {
                 const done = i < stepIndex;
                 const active = i === stepIndex;
                 return (
@@ -683,7 +819,7 @@ export function PublicBooking() {
                         {label}
                       </span>
                     </div>
-                    {i < 3 && (
+                    {i < stepLabels.length - 1 && (
                       <div
                         style={{
                           flex: 1,
@@ -738,9 +874,7 @@ export function PublicBooking() {
                   gap: 16,
                 }}
               >
-                {servicesLoading && (
-                  <p style={{ fontSize: 14, color: stone500 }}>Loading services...</p>
-                )}
+                {servicesLoading && <BrandLoader label="Loading services" className="col-span-full" />}
                 {!servicesLoading && servicesError && (
                   <p style={{ fontSize: 14, color: "#E74C3C" }}>{servicesError}</p>
                 )}
@@ -755,7 +889,10 @@ export function PublicBooking() {
                     onClick={() => {
                       setService(svc);
                       setAppointmentFormat("");
-                      setStep("datetime");
+                      setSelectedListing(null);
+                      setSelectedDate("");
+                      setSelectedSlotIso("");
+                      setStep(svc.booking_type === "listing" ? "listing" : "datetime");
                     }}
                     whileHover={{ y: -3 }}
                     transition={{ duration: 0.15 }}
@@ -893,7 +1030,110 @@ export function PublicBooking() {
             </motion.div>
           )}
 
-          {/* ── Step 2: Date & Time ── */}
+          {/* ── Step 2: Listing (conditional) ── */}
+          {step === "listing" && service && service.booking_type === "listing" && (
+            <motion.div
+              key="listing"
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.22 }}
+            >
+              <button
+                onClick={() => setStep(service.booking_type === "listing" ? "listing" : "service")}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: stone500, marginBottom: 24, background: "none", border: "none", cursor: "pointer" }}
+              >
+                <ArrowLeft size={15} /> {service.booking_type === "listing" ? "Back to products" : "Back to services"}
+              </button>
+
+              <h2
+                style={{
+                  fontFamily: "'Playfair Display', serif",
+                  fontSize: "1.6rem",
+                  fontWeight: 600,
+                  color: dark,
+                  marginBottom: 8,
+                }}
+              >
+                Select a product
+              </h2>
+              <p style={{ fontSize: 14, color: stone500, marginBottom: 24 }}>
+                Choose the exact property, vehicle, or item you want to book for {service.name}.
+              </p>
+
+              {listingsLoading && <BrandLoader label="Loading products" />}
+              {!listingsLoading && serviceListings.length === 0 && (
+                <p style={{ fontSize: 13, color: stone500 }}>
+                  No available products for this service right now. Please try another service.
+                </p>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                {serviceListings.map((listing) => {
+                  const isSelected = selectedListing?.id === listing.id;
+                  return (
+                    <button
+                      key={listing.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedListing(listing);
+                        setSelectedDate("");
+                        setSelectedSlotIso("");
+                      }}
+                      style={{
+                        textAlign: "left",
+                        backgroundColor: "var(--color-card)",
+                        border: isSelected ? `2px solid ${brandPrimary}` : "1px solid var(--color-border)",
+                        borderRadius: 14,
+                        padding: 0,
+                        overflow: "hidden",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {listing.image_urls[0] && (
+                        <div style={{ height: 140, overflow: "hidden" }}>
+                          <img src={listing.image_urls[0]} alt={listing.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      )}
+                      <div style={{ padding: 14 }}>
+                        <p style={{ fontSize: 14, fontWeight: 600, color: dark }}>{listing.name}</p>
+                        {listing.description && (
+                          <p style={{ marginTop: 6, fontSize: 12, color: stone500, lineHeight: 1.5 }}>{listing.description}</p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedListing && (
+                <motion.button
+                  key="continue-listing"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  onClick={() => setStep("datetime")}
+                  style={{
+                    width: "100%",
+                    marginTop: 20,
+                    padding: "14px 0",
+                    borderRadius: 14,
+                    border: "none",
+                    backgroundColor: brandPrimary,
+                    color: "#fff",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
+                  Continue to date & time
+                </motion.button>
+              )}
+            </motion.div>
+          )}
+
+          {/* ── Step 3: Date & Time ── */}
           {step === "datetime" && service && (
             <motion.div
               key="datetime"
@@ -960,12 +1200,24 @@ export function PublicBooking() {
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                   <span style={{ fontSize: 13, fontWeight: 600, color: dark }}>
-                    {new Date(2026, 5, 25 + dateOffset).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                    {(visibleDates[0]
+                      ? new Date(`${visibleDates[0].key}T00:00:00`)
+                      : new Date()
+                    ).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
                   </span>
                   <div style={{ display: "flex", gap: 4 }}>
                     {[
-                      { Icon: ChevronLeft, disabled: dateOffset === 0, onClick: () => setDateOffset(Math.max(0, dateOffset - 7)) },
-                      { Icon: ChevronRight, disabled: dateOffset >= 7, onClick: () => setDateOffset(Math.min(7, dateOffset + 7)) },
+                      {
+                        Icon: ChevronLeft,
+                        disabled: dateOffset === 0,
+                        onClick: () => setDateOffset(Math.max(0, dateOffset - 7)),
+                      },
+                      {
+                        Icon: ChevronRight,
+                        disabled: dateOffset >= Math.max(0, allDates.length - 7),
+                        onClick: () =>
+                          setDateOffset((prev) => Math.min(Math.max(0, allDates.length - 7), prev + 7)),
+                      },
                     ].map(({ Icon, disabled, onClick }, i) => (
                       <button
                         key={i}
@@ -1054,9 +1306,7 @@ export function PublicBooking() {
                       {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
                     </p>
                     {slotsLoading ? (
-                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
-                        Checking availability…
-                      </p>
+                      <BrandLoader label="Checking availability" size="sm" />
                     ) : selectedSlotIso ? (
                       <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
                         This books the entire calendar day — no start time needed.
@@ -1149,9 +1399,7 @@ export function PublicBooking() {
                         </div>
                       </div>
                     ))}
-                    {slotsLoading && (
-                      <p style={{ fontSize: 13, color: stone500 }}>Loading available times…</p>
-                    )}
+                    {slotsLoading && <BrandLoader label="Loading times" size="sm" />}
                     {!slotsLoading && Object.keys(groupedSlots).length === 0 && (
                       <p style={{ fontSize: 13, color: stone500 }}>
                         No available slots for this date. Please pick another day.
@@ -1511,6 +1759,9 @@ export function PublicBooking() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {[
                       { label: "Service", value: service.name },
+                      ...(service.booking_type === "listing" && selectedListing
+                        ? [{ label: "Listing", value: selectedListing.name }]
+                        : []),
                       { label: "Format", value: resolvedAppointmentFormat === "online" ? "Online" : "In person" },
                       ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
                       ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
@@ -1793,6 +2044,9 @@ export function PublicBooking() {
                       confirmedBooking?.service_deposit ?? service?.deposit ?? 0;
                     const price = confirmedBooking?.service_price ?? service?.price ?? 0;
                     const rows = [
+                      ...(confirmedBooking?.listing_name || selectedListing?.name
+                        ? [{ label: "Listing", value: confirmedBooking?.listing_name || selectedListing?.name || "—" }]
+                        : []),
                       { label: "Format", value: confFormat === "online" ? "Online" : "In person" },
                       ...(confHost ? [{ label: "You'll meet", value: confHost }] : []),
                       ...(confLocation ? [{ label: "Location", value: confLocation }] : []),

@@ -6,12 +6,14 @@ from pydantic import BaseModel, Field, model_validator
 
 AppointmentTypeLiteral = Literal["online", "onsite", "hybrid"]
 SchedulingModeLiteral = Literal["fixed", "flexible", "all_day"]
+BookingTypeLiteral = Literal["general", "listing"]
 
 
 class ServiceBase(BaseModel):
     name: str = Field(min_length=2, max_length=140)
     description: str | None = None
     duration_minutes: int = Field(default=60, ge=5, le=1440)
+    booking_type: BookingTypeLiteral = "general"
     scheduling_mode: SchedulingModeLiteral = "fixed"
     price_amount: float = Field(gt=0)
     deposit_amount: float | None = Field(default=None, ge=0)
@@ -37,10 +39,28 @@ class ServiceBase(BaseModel):
 
 class ServiceCreate(ServiceBase):
     active: bool = True
+    listing_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_product_links(self) -> "ServiceCreate":
+        if self.booking_type == "listing" and not self.listing_ids:
+            raise ValueError("Product-Based services must be linked to at least one product")
+        if self.booking_type == "general" and self.listing_ids:
+            raise ValueError("General services cannot include linked products")
+        return self
 
 
 class ServiceUpdate(ServiceBase):
     active: bool = True
+    listing_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_product_links(self) -> "ServiceUpdate":
+        if self.booking_type == "listing" and not self.listing_ids:
+            raise ValueError("Product-Based services must be linked to at least one product")
+        if self.booking_type == "general" and self.listing_ids:
+            raise ValueError("General services cannot include linked products")
+        return self
 
 
 class ServiceOut(BaseModel):
@@ -48,6 +68,7 @@ class ServiceOut(BaseModel):
     name: str
     description: str | None
     duration_minutes: int
+    booking_type: BookingTypeLiteral
     scheduling_mode: SchedulingModeLiteral
     price_amount: float
     deposit_amount: float | None
@@ -61,3 +82,4 @@ class ServiceOut(BaseModel):
     buffer_minutes: int
     image_url: str | None
     active: bool
+    listing_ids: list[str] = Field(default_factory=list)

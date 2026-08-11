@@ -9,7 +9,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
-from app.infra.models import Service, Tenant, User
+from app.infra.models import AvailabilityRule, Listing, Service, ServiceBookingType, Tenant, User
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.tenants.helpers import branches_to_dict, tenant_display_location
 from app.modules.subscriptions.service import start_tenant_trial, tenant_allows_payment_processing
@@ -59,6 +59,38 @@ def _tenant_payload(tenant: Tenant) -> dict:
     }
 
 
+async def _tenant_setup_progress(session: AsyncSession, tenant_id: str, tenant: Tenant) -> dict:
+    services = (
+        await session.execute(select(Service).where(Service.tenant_id == tenant_id))
+    ).scalars().all()
+    has_services = len(services) > 0
+    has_listing_based_service = any(service.booking_type == ServiceBookingType.listing for service in services)
+
+    product_count = (
+        await session.execute(select(Listing).where(Listing.tenant_id == tenant_id))
+    ).scalars().all()
+    has_products = len(product_count) > 0
+
+    has_availability_rules = (
+        await session.execute(
+            select(AvailabilityRule.id)
+            .where(
+                AvailabilityRule.tenant_id == tenant_id,
+                AvailabilityRule.is_enabled.is_(True),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none() is not None
+
+    return {
+        "has_services": has_services,
+        "has_listing_based_service": has_listing_based_service,
+        "has_products": has_products,
+        "has_availability_rules": has_availability_rules,
+        "has_payment_provider": bool(tenant.payment_provider and tenant.payments_enabled),
+    }
+
+
 async def _ensure_unique_slug(session: AsyncSession, slug: str, tenant_id: str) -> None:
     existing = (
         await session.execute(
@@ -84,6 +116,7 @@ async def get_my_tenant(
 
     tenant = (await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))).scalar_one()
     payload = _tenant_payload(tenant)
+    payload["setup_progress"] = await _tenant_setup_progress(session, tenant.id, tenant)
     await redis_cache.set_json(cache_key, payload)
     return payload
 
@@ -149,6 +182,7 @@ async def update_my_tenant(
     await session.commit()
     await session.refresh(tenant)
     body = _tenant_payload(tenant)
+    body["setup_progress"] = await _tenant_setup_progress(session, tenant.id, tenant)
     await redis_cache.invalidate_tenant(
         current_user.tenant_id, TENANT_CACHE, BOOKING_LINKS_CACHE, PAYMENT_PROVIDER_CACHE
     )
@@ -198,6 +232,7 @@ async def complete_onboarding(
     if not tenant.public_slug:
         tenant.public_slug = f"{tenant.name.strip().lower().replace(' ', '-')}-{tenant.id[:8]}"
     await session.commit()
+    await redis_cache.invalidate_tenant(tenant.id, TENANT_CACHE, BOOKING_LINKS_CACHE)
     return {"ok": True}
 
 

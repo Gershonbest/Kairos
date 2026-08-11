@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Clock, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { BrandLoader } from "../../components/brand/BrandLoader";
 import { WeeklyAvailabilityEditor } from "../../components/forms/WeeklyAvailabilityEditor";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
@@ -110,7 +111,7 @@ export function AvailabilitySettings() {
         </CardHeader>
         <CardContent>
           {isPending && !hydrated ? (
-            <p className="text-sm text-muted-foreground">Loading availability...</p>
+            <BrandLoader label="Syncing availability" />
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
               <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isSaving} />

@@ -2,6 +2,7 @@
 
 export type AppointmentType = "online" | "onsite" | "hybrid";
 export type AppointmentFormat = "online" | "onsite";
+export type BookingType = "general" | "listing";
 
 export interface ServiceAppointmentDetails {
   appointment_type: AppointmentType;
@@ -29,6 +30,11 @@ export const appointmentTypeLabels: Record<AppointmentType, string> = {
   online: "Online",
   onsite: "In person",
   hybrid: "Online or in person",
+};
+
+export const bookingTypeLabels: Record<BookingType, string> = {
+  general: "General Service Booking",
+  listing: "Product-Based Booking",
 };
 
 export function formatHostLabel(hostName?: string | null, hostTitle?: string | null): string | null {
