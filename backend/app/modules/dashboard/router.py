@@ -205,7 +205,7 @@ async def get_dashboard_summary(
     ]
 
     # Business dashboard revenue is client booking payments only — never include
-    # subscription fees the tenant paid to Kairos.
+    # subscription fees the tenant paid to Orheo.
     completed_transactions = [
         t
         for t in transactions

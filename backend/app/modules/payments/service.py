@@ -73,7 +73,7 @@ async def ensure_booking_payment(
         return existing
 
     payments_enabled = bool(tenant and tenant.payments_enabled and tenant.payment_account_id)
-    provider = "paystack" if payments_enabled else "kairos"
+    provider = "paystack" if payments_enabled else "orheo"
     status = PaymentStatus.pending if payments_enabled else PaymentStatus.succeeded
     fee_percent = platform_fee_percent_for_tenant(tenant) if tenant else float(settings.paystack_platform_fee_percent)
     fee_amount, settlement_amount = split_amounts(amount, fee_percent) if payments_enabled else (None, None)

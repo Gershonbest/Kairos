@@ -228,7 +228,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
         "trial_ends_at": trial_ends.isoformat() if trial_ends else None,
         "subscription_paid_until": None,
         "warning_level": "expired",
-        "warning_message": "Your free trial has ended. Choose a plan to continue using Kairos Bookings.",
+        "warning_message": "Your free trial has ended. Choose a plan to continue using Orheo Bookings.",
     }
 
 
@@ -402,7 +402,7 @@ async def create_subscription_checkout(
     owner: User,
     plan_code: str,
 ) -> dict:
-    """Create a Paystack checkout for monthly plan payment (100% to Kairos)."""
+    """Create a Paystack checkout for monthly plan payment (100% to Orheo)."""
     import uuid
 
     from app.infra.paystack import paystack_client
