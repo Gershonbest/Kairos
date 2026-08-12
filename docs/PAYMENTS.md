@@ -1,13 +1,13 @@
-# Kairos Payments (Paystack)
+# Orheo Payments (Paystack)
 
-Guide for configuring and operating Paystack in Kairos Bookings.
+Guide for configuring and operating Paystack in Orheo Bookings.
 
-Kairos collects money in **two ways**:
+Orheo collects money in **two ways**:
 
 | Stream | Who pays | Who receives | Mechanism |
 |--------|----------|--------------|-----------|
-| **Booking payments** | Client | Tenant (most) + Kairos (platform fee %) | Paystack **subaccount** split |
-| **Tenant subscription** | Tenant (business) | Kairos (100%) | Paystack checkout (no subaccount) |
+| **Booking payments** | Client | Tenant (most) + Orheo (platform fee %) | Paystack **subaccount** split |
+| **Tenant subscription** | Tenant (business) | Orheo (100%) | Paystack checkout (no subaccount) |
 
 ---
 
@@ -22,13 +22,13 @@ Kairos collects money in **two ways**:
 
 ## Environment variables
 
-Add these to `backend/.env` (local) and **kairos-backend** on Render (production):
+Add these to `backend/.env` (local) and **orheo-backend** on Render (production):
 
 ```bash
 PAYSTACK_SECRET_KEY=sk_test_xxxxxxxx        # or sk_live_...
 PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxx        # or pk_live_...
 PAYSTACK_WEBHOOK_SECRET=sk_test_xxxxxxxx    # usually same as secret key
-PAYSTACK_PLATFORM_FEE_PERCENT=5.0           # Kairos share of each booking payment
+PAYSTACK_PLATFORM_FEE_PERCENT=5.0           # Orheo share of each booking payment
 PAYSTACK_CHANNELS=card,bank,ussd,bank_transfer,qr
 PAYSTACK_CALLBACK_BASE_URL=http://localhost:5173   # frontend origin for return URLs
 ```
@@ -50,7 +50,7 @@ VITE_PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxx
 
 Restart the API after changing env vars.
 
-**If `PAYSTACK_SECRET_KEY` is empty:** booking payments stay in demo mode (`provider=kairos`, auto-succeed). Subscription “Pay with Paystack” falls back to simulated activation.
+**If `PAYSTACK_SECRET_KEY` is empty:** booking payments stay in demo mode (`provider=orheo`, auto-succeed). Subscription “Pay with Paystack” falls back to simulated activation.
 
 ---
 
@@ -65,7 +65,7 @@ Restart the API after changing env vars.
 ### 2. Configure local or production env
 
 - Local: edit `backend/.env`, restart `python main.py`
-- Render: set the same keys on **kairos-backend**, then restart/redeploy
+- Render: set the same keys on **orheo-backend**, then restart/redeploy
 
 ### 3. Register webhook
 
@@ -92,7 +92,7 @@ In Paystack → **Settings → Preferences**, turn on the channels you want cust
 | USSD | Dial bank USSD codes |
 | QR | Scan to pay |
 
-Kairos also sends `PAYSTACK_CHANNELS` on every initialize (default: `card,bank,ussd,bank_transfer,qr`).  
+Orheo also sends `PAYSTACK_CHANNELS` on every initialize (default: `card,bank,ussd,bank_transfer,qr`).  
 **Both** dashboard Preferences and this env list must allow a method for it to appear.
 
 Bank transfer / USSD can take longer than card — keep the **webhook** configured so bookings confirm even if the browser never returns.
@@ -106,7 +106,7 @@ Bank transfer / USSD can take longer than card — keep the **webhook** configur
    - Bank
    - Account number  
 
-Kairos calls Paystack **Create Subaccount** and stores:
+Orheo calls Paystack **Create Subaccount** and stores:
 
 - `tenant.payment_provider = paystack`
 - `tenant.payment_account_id = subaccount_code`
@@ -149,14 +149,14 @@ Client → POST /public/.../bookings
 ```
 
 - Amount: service `deposit_amount` if set, else full `price_amount` (NGN → kobo)
-- Split: Paystack settles tenant via subaccount; Kairos keeps `percentage_charge`
-- Demo: if payments not enabled / no subaccount → auto-confirm with provider `kairos`
+- Split: Paystack settles tenant via subaccount; Orheo keeps `percentage_charge`
+- Demo: if payments not enabled / no subaccount → auto-confirm with provider `orheo`
 
 ### Subscription flow
 
 ```
 Tenant → POST /subscriptions/checkout { plan_code }
-       → Paystack initialize (no subaccount, full amount to Kairos)
+       → Paystack initialize (no subaccount, full amount to Orheo)
        → Redirect → pay → webhook / verify
        → plan_code set, status=active, paid_until = now + 30 days
 ```
@@ -202,7 +202,7 @@ One-month checkout for MVP (not auto-renewing Paystack Plans yet).
 - **Admin metrics**
   - `mrr` → succeeded **subscription** payments  
   - `booking_gmv` → gross booking payment volume  
-  - `platform_fee_earned` → Kairos fee from booking splits  
+  - `platform_fee_earned` → Orheo fee from booking splits  
 
 ---
 
@@ -235,7 +235,7 @@ One-month checkout for MVP (not auto-renewing Paystack Plans yet).
 
 ## Security notes
 
-- Never store tenant Paystack secret keys — only Kairos platform keys  
+- Never store tenant Paystack secret keys — only Orheo platform keys  
 - Never commit `.env` with live keys  
 - Prefer live keys only on Render/production secrets  
 - Webhook signature verification is required before applying payment success  

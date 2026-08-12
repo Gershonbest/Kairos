@@ -13,10 +13,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "Kairos Bookings API"
+    app_name: str = "Orheo Bookings API"
     app_env: str = "dev"
     app_debug: bool = False
-    database_url: str = "sqlite+aiosqlite:///./kairos.db"
+    database_url: str = "sqlite+aiosqlite:///./orheo.db"
     redis_url: str = "redis://localhost:6379/0"
     cache_ttl_seconds: int = 300
     jwt_secret: str = "change-me"
@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_username: str | None = None
     smtp_password: str | None = None
-    smtp_from_email: str = "noreply@kairosbookings.com"
-    smtp_from_name: str = "Kairos Bookings"
+    smtp_from_email: str = "noreply@orheobookings.com"
+    smtp_from_name: str = "Orheo Bookings"
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
     smtp_timeout: int = 60
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     s3_object_acl: str | None = None
     local_upload_dir: str = "uploads"
     media_base_url: str = "http://localhost:8000/media"
-    super_admin_email: str = "admin@kairosbookings.com"
+    super_admin_email: str = "admin@orheobookings.com"
     super_admin_password: str = "Admin123!"
     super_admin_name: str = "System Admin"
     trial_days: int = 7

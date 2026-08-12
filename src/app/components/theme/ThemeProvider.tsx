@@ -3,7 +3,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 export type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
 
-const THEME_STORAGE_KEY = "kairos_theme";
+const THEME_STORAGE_KEY = "orheo_theme";
+const LEGACY_THEME_STORAGE_KEY = "kairos_theme";
 
 type ThemeContextValue = {
   theme: Theme;
@@ -16,8 +17,16 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function detectInitialTheme(): Theme {
   if (typeof window === "undefined") return "light";
-  const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  const stored =
+    window.localStorage.getItem(THEME_STORAGE_KEY) ??
+    window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+  if (stored === "light" || stored === "dark" || stored === "system") {
+    if (!window.localStorage.getItem(THEME_STORAGE_KEY)) {
+      window.localStorage.setItem(THEME_STORAGE_KEY, stored);
+      window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
+    }
+    return stored;
+  }
   return "system";
 }
 
@@ -45,6 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setResolvedTheme(nextResolvedTheme);
     applyTheme(nextResolvedTheme);
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    window.localStorage.removeItem(LEGACY_THEME_STORAGE_KEY);
   }, [theme]);
 
   useEffect(() => {

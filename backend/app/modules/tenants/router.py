@@ -333,7 +333,7 @@ async def connect_payment_provider(
         raise HTTPException(status_code=503, detail="Paystack is not configured on the server")
 
     owner = (await session.execute(select(User).where(User.id == current_user.id))).scalar_one_or_none()
-    business_name = (payload.business_name or tenant.name or "Kairos Business").strip()
+    business_name = (payload.business_name or tenant.name or "Orheo Business").strip()
     fee_percent = float(settings.paystack_platform_fee_percent)
 
     try:

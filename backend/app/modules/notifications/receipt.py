@@ -114,7 +114,7 @@ def build_receipt_plain_text(data: BookingReceiptData) -> str:
         lines.append(f"Questions? Contact {data.business_name} at {data.business_contact_email}.")
     else:
         lines.append(f"Questions? Contact {data.business_name} directly.")
-    lines.extend(["", "— Powered by Kairos Bookings"])
+    lines.extend(["", "— Powered by Orheo Bookings"])
     return "\n".join(lines)
 
 
@@ -190,7 +190,7 @@ def build_receipt_html(data: BookingReceiptData, *, for_email: bool = False) -> 
       Paystack confirmation email you may also receive.
     </p>
     {contact_html}
-    <p style="font-size:12px;color:#a8a29e;margin-top:16px;">— Powered by Kairos Bookings</p>
+    <p style="font-size:12px;color:#a8a29e;margin-top:16px;">— Powered by Orheo Bookings</p>
     """
 
     if for_email:

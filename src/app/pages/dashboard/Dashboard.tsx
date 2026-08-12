@@ -212,7 +212,6 @@ export function Dashboard() {
             </div>
           </CardContent>
         </Card>
-
         <DashboardMiniCalendar bookings={bookings} />
       </div>
 

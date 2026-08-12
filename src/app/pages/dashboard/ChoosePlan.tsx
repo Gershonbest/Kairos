@@ -116,7 +116,7 @@ export function ChoosePlan() {
     const plan = plans.find((item) => item.code === selectedPlan);
     if (!plan) return;
     if (!plan.self_serve) {
-      setError("This plan requires a sales conversation. Email support@kairosbookings.com");
+      setError("This plan requires a sales conversation. Email support@orheobookings.com");
       return;
     }
 
@@ -180,8 +180,8 @@ export function ChoosePlan() {
           </p>
           <p className="text-sm">
             Contact{" "}
-            <a className="underline" href="mailto:support@kairosbookings.com">
-              support@kairosbookings.com
+            <a className="underline" href="mailto:support@orheobookings.com">
+              support@orheobookings.com
             </a>{" "}
             to restore it.
           </p>
@@ -215,8 +215,8 @@ export function ChoosePlan() {
                 "Your account is suspended. Please contact support."}{" "}
               Dashboard, bookings, and your public booking page stay locked until a plan payment
               clears. If you have already paid, contact{" "}
-              <a className="underline" href="mailto:support@kairosbookings.com">
-                support@kairosbookings.com
+              <a className="underline" href="mailto:support@orheobookings.com">
+                support@orheobookings.com
               </a>
               .
             </p>

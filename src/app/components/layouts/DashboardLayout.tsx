@@ -20,7 +20,7 @@ import { TrialBanner } from "../billing/TrialBanner";
 import { NotificationBell } from "../notifications/NotificationBell";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useEffect, useState } from "react";
-import orheoLogo from "../../../assets/kairos-logo.png";
+import orheoLogo from "../../../assets/orheo-logo.png";
 import {
   api,
   hasAccessToken,

@@ -193,7 +193,7 @@ export function LandingPage() {
             features: plan.features,
             highlighted: plan.is_featured,
             cta: plan.self_serve ? "Start Free Trial" : "Contact Sales",
-            ctaHref: plan.self_serve ? "/signup" : "mailto:support@kairosbookings.com",
+            ctaHref: plan.self_serve ? "/signup" : "mailto:support@orheobookings.com",
           }))
         );
       })

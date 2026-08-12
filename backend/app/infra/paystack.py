@@ -248,7 +248,7 @@ class PaystackClient:
             body["channels"] = resolved_channels
         if subaccount_code:
             body["subaccount"] = subaccount_code
-            # Main account (Kairos) bears Paystack fees; split uses subaccount percentage_charge.
+            # Main account (Orheo) bears Paystack fees; split uses subaccount percentage_charge.
             body["bearer"] = "account"
         data = await self._request("POST", "/transaction/initialize", json=body)
         if not isinstance(data, dict):

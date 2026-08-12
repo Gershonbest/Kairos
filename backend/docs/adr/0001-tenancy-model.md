@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Kairos Bookings serves many businesses in a single platform while handling sensitive client and payment data.
+Orheo Bookings serves many businesses in a single platform while handling sensitive client and payment data.
 
 ## Decision
 - Use a shared PostgreSQL database with tenant-scoped tables.
