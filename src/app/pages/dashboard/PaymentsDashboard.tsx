@@ -12,6 +12,7 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  Info,
 } from "lucide-react";
 import {
   BarChart,
@@ -19,7 +20,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -29,17 +30,41 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 
 type Transaction = {
   id: string;
   client: string;
   service: string;
-  amount: number;
-  deposit: number;
+  serviceTotal: number;
+  collectedAmount: number;
+  configuredDeposit: number;
   status: string;
   date: string;
   method: string;
 };
+
+function MetricTitleWithTooltip({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span>{title}</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={`${title} explanation`}
+            className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" sideOffset={6} className="max-w-[260px]">
+          {hint}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
 
 export function PaymentsDashboard() {
   const {
@@ -63,7 +88,7 @@ export function PaymentsDashboard() {
   const settlementSplit = useMemo(
     () => [
       { name: "Your settlement", value: Math.max(0, 100 - platformFeePercent), color: "var(--color-primary)" },
-      { name: "Kairos fee", value: platformFeePercent, color: "var(--color-accent)" },
+      { name: "Orheo fee", value: platformFeePercent, color: "var(--color-accent)" },
     ],
     [platformFeePercent]
   );
@@ -74,49 +99,66 @@ export function PaymentsDashboard() {
         id: row.id,
         client: row.client_name ?? "Unknown",
         service: row.service_name ?? "Service",
-        amount: row.service_price ?? 0,
-        deposit: row.amount,
+        serviceTotal: row.service_price ?? row.amount ?? 0,
+        collectedAmount: row.amount ?? 0,
+        configuredDeposit: row.deposit_amount ?? 0,
         status: row.status === "succeeded" ? "completed" : row.status,
-        date: row.created_at,
-        method: row.provider === "kairos" ? "Demo" : "Paystack",
+        date: row.paid_at ?? row.created_at,
+        method: row.provider === "orheo" || row.provider === "kairos" ? "Demo" : "Paystack",
       })),
     [transactionRows]
   );
 
+  const completedTransactions = recentTransactions.filter((tx) => tx.status === "completed");
+  const pendingTransactions = recentTransactions.filter((tx) => tx.status === "pending");
+
+  const isLikelyDepositCollection = (tx: Transaction) =>
+    tx.configuredDeposit > 0 &&
+    tx.collectedAmount > 0 &&
+    tx.collectedAmount <= tx.configuredDeposit + 0.01 &&
+    tx.serviceTotal > tx.collectedAmount + 0.01;
+
   const revenueData = useMemo(() => {
-    const monthly: Record<string, { month: string; revenue: number; deposits: number }> = {};
-    for (const tx of recentTransactions) {
-      const month = new Date(tx.date).toLocaleDateString("en-US", { month: "short" });
-      if (!monthly[month]) {
-        monthly[month] = { month, revenue: 0, deposits: 0 };
+    const monthly: Record<string, { month: string; collected: number; deposits: number }> = {};
+    for (const tx of completedTransactions) {
+      const stamp = new Date(tx.date);
+      const key = `${stamp.getFullYear()}-${stamp.getMonth() + 1}`;
+      if (!monthly[key]) {
+        monthly[key] = {
+          month: stamp.toLocaleDateString("en-US", { month: "short" }),
+          collected: 0,
+          deposits: 0,
+        };
       }
-      monthly[month].revenue += tx.amount;
-      monthly[month].deposits += tx.deposit;
+      monthly[key].collected += tx.collectedAmount;
+      if (isLikelyDepositCollection(tx)) {
+        monthly[key].deposits += tx.collectedAmount;
+      }
     }
     return Object.values(monthly);
-  }, [recentTransactions]);
+  }, [completedTransactions]);
 
   const error =
     transactionsFailed || providerFailed ? "Unable to load payment data." : "";
 
-  const totalRevenue = recentTransactions
-    .filter((tx) => tx.status === "completed")
-    .reduce((sum, tx) => sum + tx.deposit, 0);
-  const totalDeposits = recentTransactions.reduce((sum, tx) => sum + tx.deposit, 0);
-  const pendingPayments = recentTransactions.filter((tx) => tx.status === "pending");
-  const pendingTotal = pendingPayments.reduce((sum, tx) => sum + tx.amount, 0);
-  const averageTransaction = recentTransactions.length > 0 ? totalRevenue / recentTransactions.length : 0;
-  const depositTracking = recentTransactions
-    .filter((tx) => tx.status === "pending" || tx.status === "failed")
+  const totalCollected = completedTransactions.reduce((sum, tx) => sum + tx.collectedAmount, 0);
+  const totalDepositsCollected = completedTransactions
+    .filter((tx) => isLikelyDepositCollection(tx))
+    .reduce((sum, tx) => sum + tx.collectedAmount, 0);
+  const pendingCheckoutTotal = pendingTransactions.reduce((sum, tx) => sum + tx.collectedAmount, 0);
+  const averageCollected =
+    completedTransactions.length > 0 ? totalCollected / completedTransactions.length : 0;
+  const depositTracking = completedTransactions
+    .filter((tx) => isLikelyDepositCollection(tx))
     .map((tx) => ({
       id: tx.id,
       client: tx.client,
       service: tx.service,
-      depositPaid: tx.status === "pending" ? tx.deposit : 0,
-      depositRequired: tx.deposit,
-      remainingBalance: Math.max(tx.amount - tx.deposit, 0),
+      depositPaid: tx.collectedAmount,
+      depositRequired: tx.configuredDeposit,
+      remainingBalance: Math.max(tx.serviceTotal - tx.collectedAmount, 0),
       dueDate: tx.date,
-      status: tx.status === "pending" ? "partial" : "pending",
+      status: "partial",
     }));
 
   const getStatusIcon = (status: string) => {
@@ -166,52 +208,72 @@ export function PaymentsDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="bg-gradient-to-br from-accent/5 to-card border-accent/20">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              <MetricTitleWithTooltip
+                title="Revenue Collected"
+                hint="Total amount successfully collected from booking transactions."
+              />
+            </CardTitle>
             <DollarSign className="w-4 h-4 text-accent" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">₦{totalRevenue.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalCollected.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
-              <span>Live from transactions</span>
+              <span>Succeeded payment transactions only</span>
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Deposits Collected</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              <MetricTitleWithTooltip
+                title="Deposits Collected"
+                hint="Successful upfront payments collected for services that require deposits."
+              />
+            </CardTitle>
             <CreditCard className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">₦{totalDeposits.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{totalDepositsCollected.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">
-              {totalRevenue > 0 ? Math.round((totalDeposits / totalRevenue) * 100) : 0}% of total revenue
+              {totalCollected > 0 ? Math.round((totalDepositsCollected / totalCollected) * 100) : 0}% of collected revenue
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Payments</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              <MetricTitleWithTooltip
+                title="Pending Checkouts"
+                hint="Checkout attempts that started but are not yet completed."
+              />
+            </CardTitle>
             <Clock className="w-4 h-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">₦{pendingTotal.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground mt-2">{pendingPayments.length} outstanding payments</p>
+            <div className="text-3xl font-semibold">₦{pendingCheckoutTotal.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground mt-2">{pendingTransactions.length} awaiting payment completion</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Transaction</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              <MetricTitleWithTooltip
+                title="Avg. Collected"
+                hint="Average collected amount per completed payment transaction."
+              />
+            </CardTitle>
             <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">₦{averageTransaction.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{averageCollected.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
-              <span>Live average</span>
+              <span>Completed transactions only</span>
             </p>
           </CardContent>
         </Card>
@@ -221,7 +283,7 @@ export function PaymentsDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Revenue & Deposits Overview</CardTitle>
+            <CardTitle>Collected Revenue vs Deposits</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -229,7 +291,7 @@ export function PaymentsDashboard() {
                 <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis key="x" dataKey="month" stroke="#888888" />
                 <YAxis key="y" stroke="#888888" />
-                <Tooltip
+                <RechartsTooltip
                   key="tooltip"
                   contentStyle={{
                     backgroundColor: "white",
@@ -237,7 +299,7 @@ export function PaymentsDashboard() {
                     borderRadius: "8px",
                   }}
                 />
-                <Bar key="revenue" dataKey="revenue" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
+                <Bar key="collected" dataKey="collected" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
                 <Bar key="deposits" dataKey="deposits" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -249,7 +311,7 @@ export function PaymentsDashboard() {
             <CardTitle>Paystack settlement split</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {paymentsEnabled
-                ? `Subaccount percentage_charge: ${platformFeePercent}% to Kairos`
+                ? `Subaccount percentage_charge: ${platformFeePercent}% to Orheo`
                 : "Connect Paystack to enable live settlement splits"}
             </p>
           </CardHeader>
@@ -269,7 +331,7 @@ export function PaymentsDashboard() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip />
+                <RechartsTooltip />
               </PieChart>
             </ResponsiveContainer>
             <div className="space-y-2 mt-4">
@@ -287,7 +349,7 @@ export function PaymentsDashboard() {
               ))}
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              Provider: Paystack only. Booking payments settle to your subaccount; Kairos keeps the platform fee.
+              Provider: Paystack only. Booking payments settle to your subaccount; Orheo keeps the platform fee.
             </p>
           </CardContent>
         </Card>
@@ -303,7 +365,7 @@ export function PaymentsDashboard() {
         <TabsContent value="transactions">
           <Card>
             <CardHeader>
-              <CardTitle>Recent Transactions</CardTitle>
+            <CardTitle>Recent Transactions</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -334,8 +396,11 @@ export function PaymentsDashboard() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-lg">₦{transaction.deposit.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">Service total: ₦{transaction.amount.toFixed(2)}</p>
+                      <p className="font-semibold text-lg">₦{transaction.collectedAmount.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">Service total: ₦{transaction.serviceTotal.toFixed(2)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isLikelyDepositCollection(transaction) ? "Deposit payment" : "Full/other payment"}
+                      </p>
                       <span
                         className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${getStatusColor(
                           transaction.status
@@ -357,7 +422,10 @@ export function PaymentsDashboard() {
         <TabsContent value="deposits">
           <Card>
             <CardHeader>
-              <CardTitle>Deposit Tracking</CardTitle>
+            <CardTitle>Deposit Tracking</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Shows completed deposit payments and remaining balance per service.
+            </p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
@@ -383,12 +451,12 @@ export function PaymentsDashboard() {
                       <div>
                         <p className="text-xs text-muted-foreground">Deposit Paid</p>
                         <p className="font-semibold text-accent">
-                          ₦{deposit.depositPaid} / ₦{deposit.depositRequired}
+                          ₦{deposit.depositPaid.toFixed(2)} / ₦{deposit.depositRequired.toFixed(2)}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Remaining Balance</p>
-                        <p className="font-semibold">₦{deposit.remainingBalance}</p>
+                        <p className="font-semibold">₦{deposit.remainingBalance.toFixed(2)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Due Date</p>
@@ -405,7 +473,9 @@ export function PaymentsDashboard() {
                         className="bg-gradient-to-r from-primary to-accent h-2 rounded-full transition-all"
                         style={{
                           width: `${
-                            (deposit.depositPaid / deposit.depositRequired) * 100
+                            deposit.depositRequired > 0
+                              ? Math.min(100, (deposit.depositPaid / deposit.depositRequired) * 100)
+                              : 100
                           }%`,
                         }}
                       />

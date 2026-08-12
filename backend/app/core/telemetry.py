@@ -14,7 +14,7 @@ def configure_telemetry(app) -> None:
     settings = get_settings()
     if not settings.otel_exporter_otlp_endpoint:
         return
-    provider = TracerProvider(resource=Resource.create({"service.name": "kairos-bookings-backend"}))
+    provider = TracerProvider(resource=Resource.create({"service.name": "orheo-bookings-backend"}))
     exporter = OTLPSpanExporter(endpoint=settings.otel_exporter_otlp_endpoint)
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)

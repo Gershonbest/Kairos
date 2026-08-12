@@ -39,7 +39,7 @@ export function SystemAdmin() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AdminHeader title="Kairos Bookings" subtitle="System Admin Dashboard">
+      <AdminHeader title="Orheo" subtitle="System Admin Dashboard">
         <button
           onClick={() => void load()}
           className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-2"

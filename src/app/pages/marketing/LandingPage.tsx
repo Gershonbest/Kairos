@@ -1,4 +1,4 @@
-// Marketing homepage for Kairos Bookings.
+// Marketing homepage for Orheo.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -7,19 +7,26 @@ import {
   Calendar,
   Sparkles,
   Users,
-  TrendingUp,
-  CreditCard,
-  BarChart3,
   CheckCircle2,
   ArrowRight,
   Star,
-  Globe,
   Smartphone,
   Brain,
+  CreditCard,
+  BarChart3,
 } from "lucide-react";
 import { api } from "../../../lib/api/client";
-import kairosLogo from "../../../assets/branding/logo.png";
+import orheoLogo from "../../../assets/branding/logo.png";
 import heroBookingImage from "../../../assets/marketing/landing-hero-booking.jpg";
+import featureCalendar from "../../../assets/marketing/feature-calendar.png";
+import featureAi from "../../../assets/marketing/feature-ai.png";
+import featurePayments from "../../../assets/marketing/feature-payments.png";
+import featureClients from "../../../assets/marketing/feature-clients.png";
+import featureAnalytics from "../../../assets/marketing/feature-analytics.png";
+import featureMobile from "../../../assets/marketing/feature-mobile.png";
+import stepCreateAccount from "../../../assets/marketing/step-create-account.png";
+import stepCustomizeBooking from "../../../assets/marketing/step-customize-booking.png";
+import stepAcceptBookings from "../../../assets/marketing/step-accept-bookings.png";
 import testimonialNigeria from "../../../assets/marketing/testimonial-nigeria.jpg";
 import testimonialGhana from "../../../assets/marketing/testimonial-ghana.jpg";
 import testimonialKenya from "../../../assets/marketing/testimonial-kenya.jpg";
@@ -50,42 +57,48 @@ const features = [
     title: "Smart Booking Calendar",
     description:
       "Drag-and-drop scheduling with real-time availability. Sync with Google, Apple, and Outlook calendars.",
-    color: "#0B7F9B",
+    color: "#00D19A",
+    image: featureCalendar,
   },
   {
     icon: Brain,
     title: "AI Assistant",
     description:
       "Let AI handle customer inquiries, suggest optimal scheduling, and provide business insights automatically.",
-    color: "#0B7F9B",
+    color: "#3D5AFE",
+    image: featureAi,
   },
   {
     icon: CreditCard,
     title: "Integrated Payments",
     description:
       "Accept deposits and full payments online. Support for cards, bank transfers, and mobile money.",
-    color: "#C8953F",
+    color: "#00D19A",
+    image: featurePayments,
   },
   {
     icon: Users,
     title: "Client Management",
     description:
       "Build rich customer profiles with booking history, preferences, and automated follow-ups.",
-    color: "#0B7F9B",
+    color: "#3D5AFE",
+    image: featureClients,
   },
   {
     icon: BarChart3,
     title: "Business Analytics",
     description:
       "Track revenue, peak hours, popular services, and customer trends with beautiful dashboards.",
-    color: "#C8953F",
+    color: "#00D19A",
+    image: featureAnalytics,
   },
   {
     icon: Smartphone,
     title: "Mobile-First Design",
     description:
       "Your clients book from any device. Your team manages from anywhere. Beautiful on every screen.",
-    color: "#0B7F9B",
+    color: "#3D5AFE",
+    image: featureMobile,
   },
 ];
 
@@ -95,7 +108,7 @@ const testimonials = [
     role: "Owner, Blissful Spa · Lagos, Nigeria",
     image: testimonialNigeria,
     quote:
-      "Kairos cut our no-shows by 60% and doubled our online bookings in the first month. The AI assistant answers questions even when we're closed!",
+      "Orheo cut our no-shows by 60% and doubled our online bookings in the first month. The AI assistant answers questions even when we're closed!",
     rating: 5,
   },
   {
@@ -111,7 +124,7 @@ const testimonials = [
     role: "Founder, GlowUp Beauty Bar · Nairobi, Kenya",
     image: testimonialKenya,
     quote:
-      "The analytics showed me which services to promote and when to staff up. Revenue is up 40% since we started using Kairos.",
+      "The analytics showed me which services to promote and when to staff up. Revenue is up 40% since we started using Orheo.",
     rating: 5,
   },
 ];
@@ -121,6 +134,27 @@ const stats = [
   { label: "Bookings Processed", value: "1M+" },
   { label: "Average Revenue Increase", value: "35%" },
   { label: "Customer Satisfaction", value: "4.9/5" },
+];
+
+const onboardingSteps = [
+  {
+    step: "1",
+    title: "Create Your Account",
+    description: "Sign up in 30 seconds. Add your business info and services.",
+    image: stepCreateAccount,
+  },
+  {
+    step: "2",
+    title: "Customize Your Booking Page",
+    description: "Set your availability, prices, and branding. Share your unique link.",
+    image: stepCustomizeBooking,
+  },
+  {
+    step: "3",
+    title: "Start Accepting Bookings",
+    description: "Clients book online 24/7. Get paid automatically. Grow your business.",
+    image: stepAcceptBookings,
+  },
 ];
 
 export function LandingPage() {
@@ -159,7 +193,7 @@ export function LandingPage() {
             features: plan.features,
             highlighted: plan.is_featured,
             cta: plan.self_serve ? "Start Free Trial" : "Contact Sales",
-            ctaHref: plan.self_serve ? "/signup" : "mailto:support@kairosbookings.com",
+            ctaHref: plan.self_serve ? "/signup" : "mailto:support@orheobookings.com",
           }))
         );
       })
@@ -187,9 +221,9 @@ export function LandingPage() {
               whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
               transition={{ type: "spring", stiffness: 300, damping: 22 }}
             >
-              <img src={kairosLogo} alt="Kairos logo" className="h-10 w-auto" />
+              <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
               <span className="text-xl font-bold text-gray-900">
-                Kairos Bookings
+                Orheo
               </span>
             </motion.div>
             <div className="hidden md:flex items-center gap-8">
@@ -219,8 +253,26 @@ export function LandingPage() {
       </motion.nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-6 bg-gradient-to-b from-primary/10 to-white">
-        <div className="max-w-7xl mx-auto">
+      <section className="relative isolate overflow-hidden pt-32 pb-20 px-6 bg-[#050508]">
+        {/* Atmosphere */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,209,154,0.18),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(61,90,254,0.22),_transparent_50%)]" />
+          <div className="absolute -top-24 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-[#00D19A]/20 blur-3xl" />
+          <div className="absolute top-40 -left-24 h-72 w-72 rounded-full bg-[#3D5AFE]/25 blur-3xl" />
+          <div className="absolute bottom-10 right-0 h-80 w-80 rounded-full bg-[#00D19A]/15 blur-3xl" />
+          <div
+            className="absolute inset-0 opacity-[0.12]"
+            style={{
+              backgroundImage:
+                "linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)",
+              backgroundSize: "48px 48px",
+              maskImage: "radial-gradient(ellipse at center, black 30%, transparent 75%)",
+            }}
+          />
+          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white to-transparent" />
+        </div>
+
+        <div className="relative max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -228,30 +280,30 @@ export function LandingPage() {
             className="text-center max-w-4xl mx-auto"
           >
             <motion.div
-              className="inline-flex items-center gap-2 px-4 py-2 bg-accent/20 text-accent-foreground rounded-full text-sm font-medium mb-8"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium mb-8 border border-white/15 bg-white/10 text-white backdrop-blur-sm"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.4, delay: 0.15 }}
               whileHover={shouldReduceMotion ? undefined : { y: -2 }}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 text-[#00D19A]" />
               AI-Powered Booking System for African Businesses
             </motion.div>
-            <h1 className="text-5xl md:text-7xl font-bold text-gray-900 mb-6 leading-tight">
+            <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
               Grow Your Service Business with{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-[#00D19A] to-[#3D5AFE] bg-clip-text text-transparent">
                 Smart Bookings
               </span>
             </h1>
-            <p className="text-xl text-gray-600 mb-10 leading-relaxed max-w-3xl mx-auto">
-              Transform how you manage appointments. Kairos automates scheduling, payments, and customer communication
+            <p className="text-xl text-white/70 mb-10 leading-relaxed max-w-3xl mx-auto">
+              Transform how you manage appointments. Orheo automates scheduling, payments, and customer communication
               so you can focus on delivering exceptional service across Africa.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12">
               <motion.div whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.015 }}>
                 <Link
                 to="/signup"
-                className="px-8 py-4 bg-primary text-white text-lg font-semibold rounded-xl hover:bg-primary/90 transition-all hover:scale-105 flex items-center gap-2 shadow-lg shadow-primary/20"
+                className="px-8 py-4 bg-[#00D19A] text-black text-lg font-semibold rounded-xl hover:bg-[#00D19A]/90 transition-all hover:scale-105 flex items-center gap-2 shadow-lg shadow-[#00D19A]/25"
               >
                 Start Your 7-Day Free Trial
                 <ArrowRight className="w-5 h-5" />
@@ -259,13 +311,13 @@ export function LandingPage() {
               </motion.div>
               <a
                 href="#demo"
-                className="px-8 py-4 bg-white text-gray-700 text-lg font-semibold rounded-xl hover:bg-gray-50 transition-all border-2 border-gray-200"
+                className="px-8 py-4 bg-white/10 text-white text-lg font-semibold rounded-xl hover:bg-white/15 transition-all border border-white/20 backdrop-blur-sm"
               >
                 Watch Demo
               </a>
             </div>
-            <p className="text-sm text-gray-500">
-              ✨ No credit card required · 7-day free trial · Cancel anytime
+            <p className="text-sm text-white/55">
+              No credit card required · 7-day free trial · Cancel anytime
             </p>
           </motion.div>
 
@@ -278,11 +330,11 @@ export function LandingPage() {
             className="mt-16 relative"
           >
             <motion.div
-              className="relative rounded-2xl overflow-hidden shadow-2xl border-8 border-white"
+              className="relative rounded-2xl overflow-hidden shadow-2xl border border-white/15"
               whileHover={shouldReduceMotion ? undefined : { scale: 1.01 }}
               transition={{ type: "spring", stiffness: 180, damping: 20 }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary/25 to-transparent z-10" />
+              >
+              <div className="absolute inset-0 bg-gradient-to-tr from-[#3D5AFE]/30 to-transparent z-10" />
               <img
                 src={heroBookingImage}
                 alt="Clients booking appointments at an African beauty and wellness business"
@@ -290,32 +342,32 @@ export function LandingPage() {
               />
             </motion.div>
             <motion.div
-              className="absolute -top-5 right-6 md:right-10 bg-white/95 backdrop-blur border border-primary/15 rounded-xl px-4 py-3 shadow-lg"
+              className="absolute -top-5 right-6 md:right-10 bg-[#0b0b10]/90 backdrop-blur border border-white/15 rounded-xl px-4 py-3 shadow-lg"
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5, duration: 0.45 }}
               whileHover={shouldReduceMotion ? undefined : { y: -4 }}
             >
-              <p className="text-xs text-gray-500">Weekly bookings</p>
-              <p className="text-lg font-semibold text-primary">+32%</p>
+              <p className="text-xs text-white/55">Weekly bookings</p>
+              <p className="text-lg font-semibold text-[#00D19A]">+32%</p>
             </motion.div>
             <motion.div
-              className="absolute -bottom-5 left-6 md:left-10 bg-white/95 backdrop-blur border border-accent/40 rounded-xl px-4 py-3 shadow-lg"
+              className="absolute -bottom-5 left-6 md:left-10 bg-[#0b0b10]/90 backdrop-blur border border-white/15 rounded-xl px-4 py-3 shadow-lg"
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.65, duration: 0.45 }}
               whileHover={shouldReduceMotion ? undefined : { y: -4 }}
             >
-              <p className="text-xs text-gray-500">Revenue this month</p>
-              <p className="text-lg font-semibold text-accent">₦14,280,000</p>
+              <p className="text-xs text-white/55">Revenue this month</p>
+              <p className="text-lg font-semibold text-[#3D5AFE]">₦14,280,000</p>
             </motion.div>
             {/* Floating elements */}
             <motion.div
-              className="absolute -top-4 -left-4 w-24 h-24 bg-accent rounded-2xl opacity-20 blur-2xl"
+              className="absolute -top-4 -left-4 w-24 h-24 bg-[#00D19A] rounded-2xl opacity-20 blur-2xl"
               style={{ y: glowParallaxY }}
             />
             <motion.div
-              className="absolute -bottom-4 -right-4 w-32 h-32 bg-primary rounded-2xl opacity-20 blur-2xl"
+              className="absolute -bottom-4 -right-4 w-32 h-32 bg-[#3D5AFE] rounded-2xl opacity-20 blur-2xl"
               style={{ y: glowParallaxY }}
             />
           </motion.div>
@@ -323,7 +375,7 @@ export function LandingPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="py-16 bg-white border-y border-gray-100">
+      {/* <section className="py-16 bg-white border-y border-gray-100">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((stat, index) => (
@@ -344,7 +396,7 @@ export function LandingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Features Section */}
       <section id="features" className="py-24 bg-gradient-to-b from-white to-gray-50">
@@ -370,17 +422,29 @@ export function LandingPage() {
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -8, scale: 1.02 }}
-                className="bg-white p-8 rounded-2xl border border-gray-100 hover:shadow-xl transition-all"
+                className="overflow-hidden rounded-2xl border border-gray-100 bg-white hover:shadow-xl transition-all"
               >
-                <motion.div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center mb-6"
-                  style={{ backgroundColor: `${feature.color}15` }}
-                  whileHover={shouldReduceMotion ? undefined : { rotate: 6, scale: 1.06 }}
-                >
-                  <feature.icon className="w-6 h-6" style={{ color: feature.color }} />
-                </motion.div>
-                <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-                <p className="text-gray-600 leading-relaxed">{feature.description}</p>
+                <div className="relative h-44 overflow-hidden bg-black">
+                  <motion.img
+                    src={feature.image}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    whileHover={shouldReduceMotion ? undefined : { scale: 1.05 }}
+                    transition={{ duration: 0.45 }}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+                  <motion.div
+                    className="absolute bottom-4 left-4 w-12 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/10"
+                    style={{ backgroundColor: feature.color }}
+                    whileHover={shouldReduceMotion ? undefined : { rotate: 6, scale: 1.06 }}
+                  >
+                    <feature.icon className="w-6 h-6 text-white" strokeWidth={2.25} aria-hidden />
+                  </motion.div>
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
+                  <p className="text-gray-600 leading-relaxed">{feature.description}</p>
+                </div>
               </motion.div>
             ))}
           </div>
@@ -404,28 +468,9 @@ export function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-8 relative">
             {/* Connection line */}
-            <div className="hidden md:block absolute top-24 left-0 right-0 h-0.5 bg-gradient-to-r from-primary/20 via-accent/60 to-primary/20 -z-10" />
+            <div className="hidden md:block absolute top-[7.5rem] left-[12%] right-[12%] h-0.5 bg-gradient-to-r from-[#00D19A]/30 via-[#3D5AFE]/50 to-[#00D19A]/30 -z-10" />
 
-            {[
-              {
-                step: "1",
-                title: "Create Your Account",
-                description: "Sign up in 30 seconds. Add your business info and services.",
-                icon: Users,
-              },
-              {
-                step: "2",
-                title: "Customize Your Booking Page",
-                description: "Set your availability, prices, and branding. Share your unique link.",
-                icon: Globe,
-              },
-              {
-                step: "3",
-                title: "Start Accepting Bookings",
-                description: "Clients book online 24/7. Get paid automatically. Grow your business.",
-                icon: TrendingUp,
-              },
-            ].map((item, index) => (
+            {onboardingSteps.map((item, index) => (
               <motion.div
                 key={item.step}
                 initial={{ opacity: 0, y: 20 }}
@@ -435,13 +480,23 @@ export function LandingPage() {
                 className="relative"
                 whileHover={shouldReduceMotion ? undefined : { y: -6 }}
               >
-                <div className="bg-white p-8 rounded-2xl border-2 border-primary/15 text-center">
-                  <div className="w-16 h-16 bg-gradient-to-br from-primary to-accent rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20">
-                    <item.icon className="w-8 h-8 text-white" />
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden text-center">
+                  <div className="relative mx-auto mt-6 h-44 w-44 overflow-hidden rounded-full border-4 border-white shadow-md bg-[#F7FAF9]">
+                    <motion.img
+                      src={item.image}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      whileHover={shouldReduceMotion ? undefined : { scale: 1.05 }}
+                      transition={{ duration: 0.45 }}
+                    />
+                    <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-gradient-to-r from-[#00D19A] to-[#3D5AFE] text-white text-xs font-bold tracking-wide shadow-md">
+                      STEP {item.step}
+                    </div>
                   </div>
-                  <div className="text-sm font-bold text-primary mb-2">STEP {item.step}</div>
-                  <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
-                  <p className="text-gray-600">{item.description}</p>
+                  <div className="p-6 pt-8">
+                    <h3 className="text-xl font-bold text-gray-900 mb-3">{item.title}</h3>
+                    <p className="text-gray-600">{item.description}</p>
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -463,6 +518,28 @@ export function LandingPage() {
               Choose the perfect plan for your business. All plans include a 7-day free trial.
             </p>
           </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="max-w-5xl mx-auto mb-10 rounded-2xl overflow-hidden border border-gray-200"
+          >
+            <div className="relative">
+              <img
+                src={featureAnalytics}
+                alt="Analytics dashboard preview for Orheo growth plans"
+                className="w-full h-56 md:h-64 object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
+              <div className="absolute left-6 md:left-8 bottom-6 text-white">
+                <p className="text-xs uppercase tracking-[0.16em] text-white/85">Revenue-ready plans</p>
+                <p className="text-xl md:text-2xl font-semibold mt-1">
+                  Pick the plan that matches your current growth stage.
+                </p>
+              </div>
+            </div>
+          </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {plansLoading && (
@@ -552,7 +629,7 @@ export function LandingPage() {
               </span>
             </h2>
             <p className="text-xl text-gray-600">
-              Join thousands of service businesses across Africa growing with Kairos.
+              Join thousands of service businesses across Africa growing with Orheo.
             </p>
           </div>
 
@@ -602,7 +679,7 @@ export function LandingPage() {
               Ready to transform your booking experience?
             </h2>
             <p className="text-xl text-white/85 mb-10">
-              Join 2,500+ African businesses already growing with Kairos. Start your free trial today.
+              Join 2,500+ African businesses already growing with Orheo. Start your free trial today.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
@@ -632,11 +709,11 @@ export function LandingPage() {
           <div className="grid md:grid-cols-4 gap-8 mb-12">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <img src={kairosLogo} alt="Kairos logo" className="h-10 w-auto" />
-                <span className="text-xl font-bold text-white">Kairos Bookings</span>
+                <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
+                <span className="text-xl font-bold text-white">Orheo</span>
               </div>
               <p className="text-sm text-gray-400">
-                AI-powered booking system built for African service businesses.
+                Create Order. Unlock Flow.
               </p>
             </div>
             <div>
@@ -716,7 +793,7 @@ export function LandingPage() {
             </div>
           </div>
           <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-gray-400">© 2026 Kairos Bookings. All rights reserved.</p>
+            <p className="text-sm text-gray-400">© 2026 Orheo. All rights reserved.</p>
             <div className="flex gap-6">
               <a href="#twitter" className="text-gray-400 hover:text-white transition-colors">
                 Twitter

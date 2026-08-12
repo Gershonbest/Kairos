@@ -13,13 +13,14 @@ import {
   Menu,
   Settings,
   Clock,
+  Package,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { TrialBanner } from "../billing/TrialBanner";
 import { NotificationBell } from "../notifications/NotificationBell";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useEffect, useState } from "react";
-import kairosLogo from "../../../assets/kairos-logo.png";
+import orheoLogo from "../../../assets/orheo-logo.png";
 import {
   api,
   hasAccessToken,
@@ -111,6 +112,7 @@ export function DashboardLayout() {
     { path: "/dashboard/calendar", icon: Calendar, label: "Calendar" },
     { path: "/dashboard/availability", icon: Clock, label: "Availability" },
     { path: "/dashboard/services", icon: Briefcase, label: "Services" },
+    { path: "/dashboard/products", icon: Package, label: "Products" },
     { path: "/dashboard/clients", icon: Users, label: "Clients" },
     { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
     { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },
@@ -134,8 +136,8 @@ export function DashboardLayout() {
           {/* Logo */}
           <div className="h-16 flex items-center px-6 border-b border-border">
             <div className="flex items-center gap-3">
-              <img src={kairosLogo} alt="Kairos logo" className="h-8 w-auto" />
-              <span className="font-semibold text-lg text-primary">Kairos</span>
+              <img src={orheoLogo} alt="Orheo logo" className="h-8 w-auto rounded-md bg-black p-1" />
+              <span className="font-semibold text-lg text-primary">Orheo</span>
             </div>
           </div>
 
@@ -212,7 +214,7 @@ export function DashboardLayout() {
             >
               <Menu className="w-6 h-6" />
             </Button>
-            <span className="font-semibold lg:hidden">Kairos Bookings</span>
+            <span className="font-semibold lg:hidden">Orheo</span>
             <span className="hidden lg:inline text-sm text-muted-foreground">Dashboard</span>
           </div>
           <div className="flex items-center gap-2">

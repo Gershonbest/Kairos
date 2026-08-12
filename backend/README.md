@@ -1,6 +1,6 @@
-# Kairos Bookings Backend
+# Orheo Bookings Backend
 
-FastAPI modular monolith backend for Kairos Bookings.
+FastAPI modular monolith backend for Orheo Bookings.
 
 ## Quickstart
 

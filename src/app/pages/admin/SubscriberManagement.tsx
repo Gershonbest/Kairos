@@ -181,7 +181,7 @@ export function SubscriberManagement() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <AdminHeader title="Tenant Management" subtitle="Manage all Kairos tenants">
+      <AdminHeader title="Tenant Management" subtitle="Manage all Orheo tenants">
         <Link to="/admin" className={adminGhostLinkClass}>
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard

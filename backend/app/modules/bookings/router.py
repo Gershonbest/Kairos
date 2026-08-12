@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
-from app.infra.models import AppointmentFormat, Booking, BookingStatus, Client, Service, Tenant
+from app.infra.models import AppointmentFormat, Booking, BookingStatus, Client, Listing, Service, Tenant
 from app.modules.services.helpers import resolve_service_location
 from app.schemas.bookings import UpdateBookingStatusRequest
 
@@ -24,7 +24,9 @@ BOOKINGS_CACHE = "bookings:list"
 CLIENTS_CACHE = "clients:list"
 
 
-def _serialize_booking(booking: Booking, client: Client, service: Service, tenant: Tenant) -> dict:
+def _serialize_booking(
+    booking: Booking, client: Client, service: Service, tenant: Tenant, listing: Listing | None
+) -> dict:
     return {
         "id": booking.id,
         "status": booking.status.value,
@@ -32,6 +34,9 @@ def _serialize_booking(booking: Booking, client: Client, service: Service, tenan
         "end_at": booking.end_at.isoformat() if booking.end_at else None,
         "client_id": booking.client_id,
         "service_id": booking.service_id,
+        "listing_id": booking.listing_id,
+        "listing_name": listing.name if listing else None,
+        "listing_image_url": (listing.image_urls[0] if listing and listing.image_urls else None),
         "client_name": client.full_name,
         "client_email": client.email,
         "client_phone": client.phone,
@@ -71,14 +76,18 @@ async def list_bookings(
     ).scalar_one()
     rows = (
         await session.execute(
-            select(Booking, Client, Service)
+            select(Booking, Client, Service, Listing)
             .join(Client, Booking.client_id == Client.id)
             .join(Service, Booking.service_id == Service.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
             .where(Booking.tenant_id == current_user.tenant_id)
             .order_by(Booking.start_at.asc())
         )
     ).all()
-    payload = [_serialize_booking(booking, client, service, tenant) for booking, client, service in rows]
+    payload = [
+        _serialize_booking(booking, client, service, tenant, listing)
+        for booking, client, service, listing in rows
+    ]
     await redis_cache.set_json(cache_key, payload)
     return payload
 
@@ -107,22 +116,23 @@ async def update_booking_status(
     ).scalar_one()
     row = (
         await session.execute(
-            select(Booking, Client, Service)
+            select(Booking, Client, Service, Listing)
             .join(Client, Booking.client_id == Client.id)
             .join(Service, Booking.service_id == Service.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
             .where(Booking.id == booking_id, Booking.tenant_id == current_user.tenant_id)
         )
     ).one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Booking not found")
 
-    booking, client, service = row
+    booking, client, service, listing = row
     if booking.status == next_status:
-        return _serialize_booking(booking, client, service, tenant)
+        return _serialize_booking(booking, client, service, tenant, listing)
 
     booking.status = next_status
     booking.version = int(booking.version or 1) + 1
     await session.commit()
     await session.refresh(booking)
     await redis_cache.invalidate_tenant(current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary")
-    return _serialize_booking(booking, client, service, tenant)
+    return _serialize_booking(booking, client, service, tenant, listing)

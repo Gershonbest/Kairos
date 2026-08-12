@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { api } from "../../../lib/api/client";
-import kairosLogo from "../../../assets/branding/logo.png";
+import orheoLogo from "../../../assets/branding/logo.png";
 
 export function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -62,7 +62,7 @@ export function ForgotPassword() {
           ) : (
             <>
               <div className="flex flex-col items-center text-center mb-8">
-                <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
+                <img src={orheoLogo} alt="Orheo logo" className="h-12 w-auto mb-4 rounded-xl bg-black p-1.5" />
                 <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Forgot password?</h1>
                 <p className="text-muted-foreground mt-2">
                   Enter your email and we&apos;ll send you a reset link.

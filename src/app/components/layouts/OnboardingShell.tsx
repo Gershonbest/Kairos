@@ -28,7 +28,7 @@ export function OnboardingShell({
             <Calendar className="w-5 h-5 text-primary-foreground" />
           </div>
           <span className="text-lg font-semibold tracking-tight text-foreground" style={{ fontFamily: "'Playfair Display', serif" }}>
-            Kairos Bookings
+            Orheo
           </span>
         </div>
 

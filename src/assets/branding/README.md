@@ -1,7 +1,8 @@
-Place brand images for the marketing site in this folder.
+Place Orheo brand images for the marketing site in this folder.
 
 Current usage:
-- `logo.png` is used by the landing page header and footer.
+- `logo.png` is used by auth and marketing pages for the mark.
+- `logo-name.png` and `logo-name-slogan.png` are available for lockup usage.
 
 To replace the logo:
 1. Keep the filename as `logo.png`, or

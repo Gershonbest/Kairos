@@ -1,3 +1,3 @@
-"""Kairos Bookings backend application package."""
+"""Orheo Bookings backend application package."""
 
 

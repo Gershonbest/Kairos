@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 import { Label } from "../../components/ui/label";
 import { PasswordInput } from "../../components/forms/PasswordInput";
 import { api } from "../../../lib/api/client";
-import kairosLogo from "../../../assets/branding/logo.png";
+import orheoLogo from "../../../assets/branding/logo.png";
 
 export function ResetPassword() {
   const navigate = useNavigate();
@@ -88,7 +88,7 @@ export function ResetPassword() {
           ) : (
             <>
               <div className="flex flex-col items-center text-center mb-8">
-                <img src={kairosLogo} alt="Kairos logo" className="h-12 w-auto mb-4" />
+                <img src={orheoLogo} alt="Orheo logo" className="h-12 w-auto mb-4 rounded-xl bg-black p-1.5" />
                 <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">Reset password</h1>
                 <p className="text-muted-foreground mt-2">Choose a new password for your account.</p>
               </div>

@@ -7,15 +7,19 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
+    Table,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -59,6 +63,18 @@ class SchedulingMode(str, enum.Enum):
     all_day = "all_day"
 
 
+class ServiceBookingType(str, enum.Enum):
+    general = "general"
+    listing = "listing"
+
+
+class ListingStatus(str, enum.Enum):
+    available = "available"
+    reserved = "reserved"
+    sold = "sold"
+    hidden = "hidden"
+
+
 class PaymentStatus(str, enum.Enum):
     pending = "pending"
     succeeded = "succeeded"
@@ -68,6 +84,14 @@ class PaymentStatus(str, enum.Enum):
 
 class NotificationType(str, enum.Enum):
     booking_created = "booking_created"
+
+
+service_listings = Table(
+    "service_listings",
+    Base.metadata,
+    Column("service_id", String(36), ForeignKey("services.id"), primary_key=True),
+    Column("listing_id", String(36), ForeignKey("listings.id"), primary_key=True, index=True),
+)
 
 
 class Tenant(Base):
@@ -164,6 +188,9 @@ class Service(Base):
     name: Mapped[str] = mapped_column(String(140), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    booking_type: Mapped[ServiceBookingType] = mapped_column(
+        Enum(ServiceBookingType), default=ServiceBookingType.general, nullable=False
+    )
     scheduling_mode: Mapped[SchedulingMode] = mapped_column(
         Enum(SchedulingMode), default=SchedulingMode.fixed, nullable=False
     )
@@ -182,6 +209,27 @@ class Service(Base):
     image_url: Mapped[str | None] = mapped_column(String(500))
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    listings: Mapped[list["Listing"]] = relationship(secondary=service_listings, back_populates="services")
+
+
+class Listing(Base):
+    __tablename__ = "listings"
+    __table_args__ = (Index("ix_listings_tenant_status_active", "tenant_id", "status", "active"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[ListingStatus] = mapped_column(
+        Enum(ListingStatus), default=ListingStatus.available, nullable=False
+    )
+    image_urls: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    services: Mapped[list["Service"]] = relationship(secondary=service_listings, back_populates="listings")
 
 
 class AvailabilityRule(Base):
@@ -211,14 +259,31 @@ class Client(Base):
 class Booking(Base):
     __tablename__ = "bookings"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "service_id", "start_at", name="uq_booking_slot"),
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_booking_idempotency"),
+        Index(
+            "uq_booking_slot_general",
+            "tenant_id",
+            "service_id",
+            "start_at",
+            unique=True,
+            postgresql_where=text("listing_id IS NULL"),
+        ),
+        Index(
+            "uq_booking_slot_listing",
+            "tenant_id",
+            "service_id",
+            "listing_id",
+            "start_at",
+            unique=True,
+            postgresql_where=text("listing_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = uuid_pk()
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
     client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), nullable=False)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), nullable=False)
+    listing_id: Mapped[str | None] = mapped_column(ForeignKey("listings.id"))
     status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), default=BookingStatus.pending)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -231,6 +296,7 @@ class Booking(Base):
 
     client: Mapped["Client"] = relationship()
     service: Mapped["Service"] = relationship()
+    listing: Mapped["Listing | None"] = relationship()
 
 
 class PaymentTransaction(Base):

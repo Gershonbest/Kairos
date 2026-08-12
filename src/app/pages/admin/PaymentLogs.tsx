@@ -269,7 +269,7 @@ export function PaymentLogs() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `kairos-payment-logs-page-${page}.csv`;
+    anchor.download = `orheo-payment-logs-page-${page}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -320,7 +320,7 @@ export function PaymentLogs() {
           <StatCard
             title="Subscription fees"
             value={formatMoney(summary?.subscription.gross ?? 0)}
-            hint={`${summary?.subscription.succeeded ?? 0} businesses paid Kairos`}
+            hint={`${summary?.subscription.succeeded ?? 0} businesses paid Orheo`}
             icon={<CreditCard className="w-5 h-5" />}
           />
           <StatCard

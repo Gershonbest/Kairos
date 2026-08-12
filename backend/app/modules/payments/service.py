@@ -35,8 +35,19 @@ def split_amounts(gross: float, fee_percent: float) -> tuple[float, float]:
     return fee, settlement
 
 
-def callback_base_url() -> str:
-    return (settings.paystack_callback_base_url or settings.frontend_base_url).rstrip("/")
+def callback_booking_base_url() -> str:
+    """Base URL used for public booking callback redirects.
+
+    Priority:
+    1) PUBLIC_BOOKING_BASE_URL (already includes `/book`)
+    2) PAYSTACK_CALLBACK_BASE_URL (origin only) + `/book`
+    3) FRONTEND_BASE_URL (origin only) + `/book`
+    """
+    public_booking_base = (settings.public_booking_base_url or "").strip().rstrip("/")
+    if public_booking_base:
+        return public_booking_base
+    callback_origin = (settings.paystack_callback_base_url or settings.frontend_base_url).rstrip("/")
+    return f"{callback_origin}/book"
 
 
 async def ensure_booking_payment(
@@ -62,7 +73,7 @@ async def ensure_booking_payment(
         return existing
 
     payments_enabled = bool(tenant and tenant.payments_enabled and tenant.payment_account_id)
-    provider = "paystack" if payments_enabled else "kairos"
+    provider = "paystack" if payments_enabled else "orheo"
     status = PaymentStatus.pending if payments_enabled else PaymentStatus.succeeded
     fee_percent = platform_fee_percent_for_tenant(tenant) if tenant else float(settings.paystack_platform_fee_percent)
     fee_amount, settlement_amount = split_amounts(amount, fee_percent) if payments_enabled else (None, None)
@@ -117,7 +128,7 @@ async def initialize_booking_paystack(
     tenant_key = business_key or tenant.public_slug or tenant.id
     reference = f"ps_{booking.id.replace('-', '')[:12]}_{tx.id.replace('-', '')[:8]}"
     query = urlencode({"payment": "1", "booking_id": booking.id, "reference": reference})
-    callback_url = f"{callback_base_url()}/book/{tenant_key}?{query}"
+    callback_url = f"{callback_booking_base_url()}/{tenant_key}?{query}"
 
     intent = await get_provider("paystack").create_intent(
         amount=amount,

@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 class PublicBookingCreateRequest(BaseModel):
     service_id: str
+    listing_id: str | None = None
     start_at: datetime
     client_name: str = Field(min_length=2, max_length=120)
     client_email: EmailStr
@@ -24,6 +25,9 @@ class BookingOut(BaseModel):
     end_at: datetime
     client_id: str
     service_id: str
+    listing_id: str | None = None
+    listing_name: str | None = None
+    listing_image_url: str | None = None
     payment_required: bool = False
     payment_amount: float | None = None
     payment_status: str | None = None

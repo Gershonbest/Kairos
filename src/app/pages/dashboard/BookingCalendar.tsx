@@ -118,6 +118,15 @@ export function BookingCalendar() {
     }
   }, [searchParams, bookings]);
 
+  useEffect(() => {
+    const dateParam = searchParams.get("date");
+    if (!dateParam) return;
+    const parsed = new Date(`${dateParam}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+    setCurrentDate(parsed);
+    setView("day");
+  }, [searchParams]);
+
   const bookingsByDate = useMemo(() => {
     const mapped: Record<string, BookingListItem[]> = {};
     for (const row of bookings) {
@@ -227,6 +236,9 @@ export function BookingCalendar() {
       {!compact && (
         <>
           <div className="text-xs truncate mt-0.5">{booking.service_name}</div>
+          {booking.listing_name && (
+            <div className="text-[11px] truncate text-muted-foreground">Product: {booking.listing_name}</div>
+          )}
           <div className="flex items-center gap-1 mt-1 text-xs">
             <Clock className="w-3 h-3" />
             {bookingWhenLabel(booking)}
@@ -236,6 +248,7 @@ export function BookingCalendar() {
       {compact && (
         <div className="text-[10px] truncate">
           {isAllDayBooking(booking) ? "All day" : formatTime(booking.start_at)} · {booking.service_name}
+          {booking.listing_name ? ` · ${booking.listing_name}` : ""}
         </div>
       )}
     </button>
@@ -512,6 +525,13 @@ export function BookingCalendar() {
                           )} min`}
                   </p>
                 </div>
+
+                {selectedBooking.listing_name && (
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Product</p>
+                    <p className="text-sm font-medium text-foreground">{selectedBooking.listing_name}</p>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Client</p>

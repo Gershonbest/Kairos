@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One-shot deploy for the Kairos Bookings frontend + backend on Render.
+# One-shot deploy for the Orheo Bookings frontend + backend on Render.
 #
 # Render deploys from git, so there are two supported modes:
 #
@@ -59,5 +59,5 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 git push origin "${BRANCH}"
-echo "==> Pushed. Render will auto-deploy kairos-backend and kairos-frontend."
+echo "==> Pushed. Render will auto-deploy orheo-backend and orheo-frontend."
 echo "    Track progress in the Render dashboard."

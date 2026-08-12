@@ -34,6 +34,22 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # Never rewrite built assets to index.html. If an asset is missing, return
+    # 404 so browsers don't try to execute HTML as JavaScript modules.
+    location /assets/ {
+        try_files $uri =404;
+        access_log off;
+    }
+
+    # Favicons and other root static files must not fall back to the SPA —
+    # otherwise React Router treats /favicon.ico as a route and shows a 404 page.
+    location ~* \.(ico|png|jpg|jpeg|gif|svg|webp|webmanifest|txt|xml)$ {
+        try_files $uri =404;
+        access_log off;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

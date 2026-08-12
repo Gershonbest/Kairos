@@ -16,6 +16,6 @@ def test_send_password_reset_email_includes_link():
         email_service.send.assert_called_once()
         kwargs = email_service.send.call_args.kwargs
         assert kwargs["to"] == "owner@example.com"
-        assert "Reset your Kairos Bookings password" in kwargs["subject"]
+        assert "Reset your Orheo Bookings password" in kwargs["subject"]
         assert "https://app.example/auth/reset-password?token=abc" in kwargs["html_body"]
         assert "1 hour" in kwargs["text_body"]

@@ -6,6 +6,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { AlertTriangle, ArrowLeft, Check, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { BrandLoader } from "../../components/brand/BrandLoader";
 import { api, clearAuthTokens } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
@@ -115,7 +116,7 @@ export function ChoosePlan() {
     const plan = plans.find((item) => item.code === selectedPlan);
     if (!plan) return;
     if (!plan.self_serve) {
-      setError("This plan requires a sales conversation. Email support@kairosbookings.com");
+      setError("This plan requires a sales conversation. Email support@orheobookings.com");
       return;
     }
 
@@ -166,7 +167,7 @@ export function ChoosePlan() {
   }
 
   if (isLoading) {
-    return <div className="p-6 text-muted-foreground">Loading plans...</div>;
+    return <BrandLoader label="Preparing plans" fullscreen />;
   }
 
   if (isDeactivated) {
@@ -179,8 +180,8 @@ export function ChoosePlan() {
           </p>
           <p className="text-sm">
             Contact{" "}
-            <a className="underline" href="mailto:support@kairosbookings.com">
-              support@kairosbookings.com
+            <a className="underline" href="mailto:support@orheobookings.com">
+              support@orheobookings.com
             </a>{" "}
             to restore it.
           </p>
@@ -214,8 +215,8 @@ export function ChoosePlan() {
                 "Your account is suspended. Please contact support."}{" "}
               Dashboard, bookings, and your public booking page stay locked until a plan payment
               clears. If you have already paid, contact{" "}
-              <a className="underline" href="mailto:support@kairosbookings.com">
-                support@kairosbookings.com
+              <a className="underline" href="mailto:support@orheobookings.com">
+                support@orheobookings.com
               </a>
               .
             </p>
@@ -232,7 +233,7 @@ export function ChoosePlan() {
           {isSuspended
             ? "Reactivate your account"
             : trialExpired
-              ? "Continue with Kairos Bookings"
+              ? "Continue with Orheo"
               : "Upgrade before your trial ends"}
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">

@@ -32,3 +32,16 @@ async def upload_service_image(
         raise HTTPException(status_code=400, detail="No tenant assigned")
     url = await object_storage.upload_tenant_image(tenant_id=current_user.tenant_id, folder="services", file=file)
     return {"url": url}
+
+
+@router.post("/listing-image")
+async def upload_listing_image(
+    file: UploadFile = File(...),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, str]:
+    if not current_user.tenant_id:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    url = await object_storage.upload_tenant_image(tenant_id=current_user.tenant_id, folder="listings", file=file)
+    return {"url": url}

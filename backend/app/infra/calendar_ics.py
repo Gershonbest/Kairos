@@ -136,11 +136,11 @@ class CalendarInviteService:
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            "PRODID:-//Kairos Bookings//Booking Calendar//EN",
+            "PRODID:-//Orheo Bookings//Booking Calendar//EN",
             "CALSCALE:GREGORIAN",
             "METHOD:REQUEST",
             "BEGIN:VEVENT",
-            f"UID:{self._escape_ics(booking_id)}@kairosbookings.com",
+            f"UID:{self._escape_ics(booking_id)}@orheobookings.com",
             f"DTSTAMP:{self._calendar_timestamp(datetime.now(UTC))}",
             dtstart,
             dtend,

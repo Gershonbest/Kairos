@@ -23,11 +23,13 @@ def upgrade() -> None:
         sa.Column("plan_code", sa.String(length=20), nullable=False, server_default="standard"),
     )
     op.add_column("tenants", sa.Column("public_slug", sa.String(length=180), nullable=True))
-    op.create_unique_constraint("uq_tenants_public_slug", "tenants", ["public_slug"])
+    with op.batch_alter_table("tenants") as batch_op:
+        batch_op.create_unique_constraint("uq_tenants_public_slug", ["public_slug"])
 
 
 def downgrade() -> None:
-    op.drop_constraint("uq_tenants_public_slug", "tenants", type_="unique")
+    with op.batch_alter_table("tenants") as batch_op:
+        batch_op.drop_constraint("uq_tenants_public_slug", type_="unique")
     op.drop_column("tenants", "public_slug")
     op.drop_column("tenants", "plan_code")
     op.drop_column("tenants", "status")

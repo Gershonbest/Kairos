@@ -35,6 +35,7 @@ def service_to_dict(service: Service, *, include_meeting_link: bool = False) -> 
         "name": service.name,
         "description": service.description,
         "duration_minutes": service.duration_minutes,
+        "booking_type": service.booking_type.value,
         "scheduling_mode": service.scheduling_mode.value,
         "price_amount": float(service.price_amount),
         "deposit_amount": float(service.deposit_amount) if service.deposit_amount is not None else None,
@@ -46,6 +47,7 @@ def service_to_dict(service: Service, *, include_meeting_link: bool = False) -> 
         "client_instructions": service.client_instructions,
         "buffer_minutes": service.buffer_minutes,
         "image_url": service.image_url,
+        "listing_ids": [listing.id for listing in getattr(service, "listings", [])],
     }
     if include_meeting_link:
         payload["online_meeting_link"] = service.online_meeting_link

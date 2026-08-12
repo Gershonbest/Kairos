@@ -55,7 +55,7 @@ def send_subscription_payment_receipt_email(
     html = f"""
     <h1 style="font-size:22px;color:#1c1917;">Payment receipt</h1>
     <p>Hi {escape(customer_name)},</p>
-    <p>Your Kairos Bookings subscription payment was successful.</p>
+    <p>Your Orheo Bookings subscription payment was successful.</p>
     <table style="width:100%;max-width:520px;border-collapse:collapse;">
       <tr><td style="padding:8px 0;color:#78716c;">Business</td><td style="text-align:right;font-weight:600;">{escape(business_name)}</td></tr>
       <tr><td style="padding:8px 0;color:#78716c;">Plan</td><td style="text-align:right;font-weight:600;">{escape(plan_name)}</td></tr>
@@ -66,11 +66,11 @@ def send_subscription_payment_receipt_email(
       <tr><td style="padding:8px 0;color:#78716c;">Status</td><td style="text-align:right;font-weight:600;">Succeeded</td></tr>
     </table>
     <p style="color:#78716c;font-size:13px;">Keep this receipt for your records.</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Payment receipt\n\nHi {customer_name},\n\n"
-        "Your Kairos Bookings subscription payment was successful.\n\n"
+        "Your Orheo Bookings subscription payment was successful.\n\n"
         f"Business: {business_name}\n"
         f"Plan: {plan_name}\n"
         f"Amount paid: {amount_label}\n"
@@ -78,7 +78,7 @@ def send_subscription_payment_receipt_email(
         f"Paid at: {paid_at_label}\n"
         f"Access paid until: {paid_until_label}\n"
         "Status: Succeeded\n\n"
-        "Keep this receipt for your records.\n\n— Kairos Bookings"
+        "Keep this receipt for your records.\n\n— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
@@ -128,22 +128,22 @@ async def send_subscription_payment_receipt_once(
 
 
 def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) -> None:
-    subject = "Confirm your Kairos Bookings account"
+    subject = "Confirm your Orheo Bookings account"
     html = f"""
     <p>Hi {full_name},</p>
-    <p>Thanks for signing up for Kairos Bookings. Please confirm your email address to activate your account.</p>
+    <p>Thanks for signing up for Orheo Bookings. Please confirm your email address to activate your account.</p>
     <p><a href="{verify_url}">Confirm email address</a></p>
     <p>If the button does not work, copy and paste this link into your browser:</p>
     <p>{verify_url}</p>
     <p>This link expires in 24 hours.</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Hi {full_name},\n\n"
-        "Thanks for signing up for Kairos Bookings. Confirm your email to activate your account:\n"
+        "Thanks for signing up for Orheo Bookings. Confirm your email to activate your account:\n"
         f"{verify_url}\n\n"
         "This link expires in 24 hours.\n\n"
-        "— Kairos Bookings"
+        "— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
@@ -152,23 +152,23 @@ def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) 
 
 
 def send_password_reset_email(*, to: str, full_name: str, reset_url: str, expire_hours: int = 1) -> None:
-    subject = "Reset your Kairos Bookings password"
+    subject = "Reset your Orheo Bookings password"
     hour_label = "1 hour" if expire_hours == 1 else f"{expire_hours} hours"
     html = f"""
     <p>Hi {full_name},</p>
-    <p>We received a request to reset the password for your Kairos Bookings account.</p>
+    <p>We received a request to reset the password for your Orheo Bookings account.</p>
     <p><a href="{reset_url}">Reset password</a></p>
     <p>If the button does not work, copy and paste this link into your browser:</p>
     <p>{reset_url}</p>
     <p>This link expires in {hour_label}. If you did not request a reset, you can ignore this email.</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Hi {full_name},\n\n"
-        "We received a request to reset the password for your Kairos Bookings account.\n"
+        "We received a request to reset the password for your Orheo Bookings account.\n"
         f"Reset your password: {reset_url}\n\n"
         f"This link expires in {hour_label}. If you did not request a reset, ignore this email.\n\n"
-        "— Kairos Bookings"
+        "— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
@@ -178,23 +178,23 @@ def send_password_reset_email(*, to: str, full_name: str, reset_url: str, expire
 
 
 def send_password_reset_google_hint_email(*, to: str, full_name: str) -> None:
-    subject = "Sign in to Kairos Bookings with Google"
+    subject = "Sign in to Orheo Bookings with Google"
     frontend = get_settings().frontend_base_url.rstrip("/")
     login_url = f"{frontend}/auth/login"
     html = f"""
     <p>Hi {full_name},</p>
-    <p>We received a password reset request for this email, but your Kairos Bookings account uses Google sign-in.</p>
+    <p>We received a password reset request for this email, but your Orheo Bookings account uses Google sign-in.</p>
     <p>There is no password to reset. Please sign in with Google instead:</p>
     <p><a href="{login_url}">Go to sign in</a></p>
     <p>If you did not request this, you can ignore this email.</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Hi {full_name},\n\n"
-        "We received a password reset request for this email, but your Kairos Bookings account uses Google sign-in.\n"
+        "We received a password reset request for this email, but your Orheo Bookings account uses Google sign-in.\n"
         f"Sign in here: {login_url}\n\n"
         "If you did not request this, ignore this email.\n\n"
-        "— Kairos Bookings"
+        "— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
@@ -401,7 +401,7 @@ def send_new_booking_owner_email(
     <p><strong>Format:</strong> {format_label}</p>
     <p><strong>When:</strong> {when} – {until}</p>
     <p><strong>Reference:</strong> {booking_id}</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Hi {owner_name},\n\n"
@@ -411,7 +411,7 @@ def send_new_booking_owner_email(
         f"Format: {format_label}\n"
         f"When: {when} – {until}\n"
         f"Reference: {booking_id}\n\n"
-        "— Kairos Bookings"
+        "— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)
@@ -469,7 +469,7 @@ def send_trial_ending_email(
     choose_plan_url: str,
 ) -> None:
     day_label = "day" if days_remaining == 1 else "days"
-    subject = f"Your Kairos trial ends in {days_remaining} {day_label}"
+    subject = f"Your Orheo trial ends in {days_remaining} {day_label}"
     html = f"""
     <p>Hi {full_name},</p>
     <p>Your free trial for <strong>{business_name}</strong> ends in <strong>{days_remaining} {day_label}</strong>.</p>
@@ -477,14 +477,14 @@ def send_trial_ending_email(
     <p><a href="{choose_plan_url}">Choose a plan</a></p>
     <p>If the button does not work, copy and paste this link into your browser:</p>
     <p>{choose_plan_url}</p>
-    <p>— Kairos Bookings</p>
+    <p>— Orheo Bookings</p>
     """
     text = (
         f"Hi {full_name},\n\n"
         f"Your free trial for {business_name} ends in {days_remaining} {day_label}.\n"
         "Choose a plan to keep your account active:\n"
         f"{choose_plan_url}\n\n"
-        "— Kairos Bookings"
+        "— Orheo Bookings"
     )
     try:
         email_service.send(to=to, subject=subject, html_body=html, text_body=text)

@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY index.html vite.config.ts ./
+COPY public ./public
 COPY src ./src
 
 # Baked into the SPA at build time. Defaults to a relative path so the local
