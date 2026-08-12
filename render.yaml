@@ -43,11 +43,11 @@ services:
           property: connectionString
       # Public frontend URL (update if you attach a custom domain).
       - key: ALLOWED_ORIGINS
-        value: https://kairos-frontend-sugb.onrender.com
+        value: https://orheo.com
       - key: FRONTEND_BASE_URL
-        value: https://kairos-frontend-sugb.onrender.com
+        value: https://orheo.com
       - key: PUBLIC_BOOKING_BASE_URL
-        value: https://kairos-frontend-sugb.onrender.com/book
+        value: https://orheo.com/book
       # Media uploads go to S3 (required in production). Set values in the dashboard.
       - key: AWS_ACCESS_KEY_ID
         sync: false
@@ -62,12 +62,6 @@ services:
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
-      - key: GOOGLE_GMAIL_SENDER
-        sync: false
-      - key: GOOGLE_GMAIL_APP_PASSWORD
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
       - key: PAYSTACK_SECRET_KEY
@@ -81,11 +75,7 @@ services:
       - key: PAYSTACK_CHANNELS
         value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
-        value: https://kairos-frontend-sugb.onrender.com
-      - key: SUPER_ADMIN_EMAIL
-        sync: false
-      - key: SUPER_ADMIN_PASSWORD
-        sync: false
+        value: https://orheo.com
 
   # ----- Frontend (Vite build served by nginx) -----
   - type: web
@@ -96,9 +86,7 @@ services:
     dockerContext: .
     autoDeployTrigger: commit
     envVars:
-      # Baked into the SPA at build time (see ARG in ./Dockerfile).
-      # Points the browser at the backend's public API.
       - key: VITE_API_BASE_URL
-        value: https://kairos-backend-rrof.onrender.com/api/v1
+        value: https://orheo.com/api/v1
       - key: VITE_PAYSTACK_PUBLIC_KEY
         sync: false
