@@ -69,7 +69,7 @@ export function AdminLogin() {
               <Input
                 id="admin-email"
                 type="email"
-                placeholder="admin@kairosbookings.com"
+                placeholder="admin@orheobookings.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1"
@@ -110,7 +110,7 @@ export function AdminLogin() {
 
         <p className="text-center text-sm text-muted-foreground mt-6">
           Need help?{" "}
-          <a href="mailto:support@kairosbookings.com" className="text-primary hover:text-primary/80">
+          <a href="mailto:support@orheobookings.com" className="text-primary hover:text-primary/80">
             Contact Support
           </a>
         </p>

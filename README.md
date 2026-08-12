@@ -1,4 +1,4 @@
-# Kairos Bookings
+# Orheo Bookings
 
 Multi-tenant booking platform with public booking pages, tenant dashboard, payments, and smart scheduling.
 

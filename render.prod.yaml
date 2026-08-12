@@ -1,24 +1,25 @@
-# Render Blueprint: deploys frontend + backend + Redis in one project.
+# Render Blueprint (Production): frontend + backend + Redis in one project.
 # Database stays on Neon (set DATABASE_URL as a secret in the dashboard).
 #
 # First deploy:
 #   1. Push this repo to GitHub.
 #   2. Render Dashboard -> New -> Blueprint -> pick this repo.
-#   3. Fill in the secret env vars marked `sync: false` (DATABASE_URL, JWT_SECRET, etc.).
+#   3. Choose this file: render.prod.yaml
+#   4. Fill in the secret env vars marked `sync: false` (DATABASE_URL, JWT_SECRET, etc.).
 #
-# Redeploys: `git push` (auto-deploy) or `./scripts/deploy-render.sh`.
+# Redeploys: `git push` (auto-deploy).
 
 services:
   # ----- Managed Redis (Key Value) -----
   - type: keyvalue
-    name: orheo-redis
+    name: orheo-redis-prod
     plan: starter
     maxmemoryPolicy: noeviction
     ipAllowList: []   # only reachable from other Render services
 
   # ----- Backend (FastAPI) -----
   - type: web
-    name: orheo-backend
+    name: orheo-backend-prod
     runtime: docker
     plan: starter
     dockerfilePath: ./backend/Dockerfile
@@ -39,15 +40,15 @@ services:
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: orheo-redis
+          name: orheo-redis-prod
           property: connectionString
-      # Public frontend URL (update if you attach a custom domain).
+      # Production public URLs (recommended: set these in the dashboard).
       - key: ALLOWED_ORIGINS
-        value: https://orheo-frontend-sugb.onrender.com
+        sync: false
       - key: FRONTEND_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com
+        sync: false
       - key: PUBLIC_BOOKING_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com/book
+        sync: false
       # Media uploads go to S3 (required in production). Set values in the dashboard.
       - key: AWS_ACCESS_KEY_ID
         sync: false
@@ -81,7 +82,7 @@ services:
       - key: PAYSTACK_CHANNELS
         value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com
+        sync: false
       - key: SUPER_ADMIN_EMAIL
         sync: false
       - key: SUPER_ADMIN_PASSWORD
@@ -89,7 +90,7 @@ services:
 
   # ----- Frontend (Vite build served by nginx) -----
   - type: web
-    name: orheo-frontend
+    name: orheo-frontend-prod
     runtime: docker
     plan: starter
     dockerfilePath: ./Dockerfile
@@ -99,6 +100,6 @@ services:
       # Baked into the SPA at build time (see ARG in ./Dockerfile).
       # Points the browser at the backend's public API.
       - key: VITE_API_BASE_URL
-        value: https://orheo-backend-rrof.onrender.com/api/v1
+        sync: false
       - key: VITE_PAYSTACK_PUBLIC_KEY
         sync: false

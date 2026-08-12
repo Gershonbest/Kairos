@@ -1,4 +1,4 @@
-# Kairos Bookings — Developer Guide
+# Orheo Bookings — Developer Guide
 
 This document is for engineers joining the project or building new features. It covers architecture, local setup, conventions, and how to extend the system safely.
 
@@ -27,7 +27,7 @@ This document is for engineers joining the project or building new features. It 
 
 ## Product overview
 
-**Kairos Bookings** is a multi-tenant SaaS booking platform. Each tenant (business) gets:
+**Orheo Bookings** is a multi-tenant SaaS booking platform. Each tenant (business) gets:
 
 - A branded public booking page (`/book/:businessId`)
 - A tenant dashboard for services, calendar, clients, payments, and AI scheduling
@@ -74,7 +74,7 @@ This document is for engineers joining the project or building new features. It 
 ## Repository layout
 
 ```
-Design Kairos Bookings/
+Orheo/
 ├── src/                          # Frontend (React + TypeScript)
 │   ├── app/
 │   │   ├── pages/                # Route-level screens
@@ -260,7 +260,7 @@ Availability uses `day_of_week` where **0 = Sunday, 1 = Monday, …, 6 = Saturda
 ### Token flow
 
 1. Login/signup/verify-email returns `{ access_token, refresh_token }`.
-2. Frontend stores tokens in `localStorage` (`kairos_access_token`, `kairos_refresh_token`).
+2. Frontend stores tokens in `localStorage` (`orheo_access_token`, `orheo_refresh_token`).
 3. `src/lib/api/client.ts` attaches `Authorization: Bearer <access_token>` on requests.
 4. On 401, client clears tokens and redirects to `/auth/login`.
 
@@ -326,17 +326,17 @@ When adding new tables or endpoints, always filter by `tenant_id` for authentica
 
 Full setup, activation, and troubleshooting: [`docs/PAYMENTS.md`](./PAYMENTS.md).
 
-Kairos uses **Paystack** for two revenue streams:
+Orheo uses **Paystack** for two revenue streams:
 
-1. **Booking deposits** — Client pays via Paystack; tenant receives settlement through a **subaccount**; Kairos keeps `PAYSTACK_PLATFORM_FEE_PERCENT` (set as subaccount `percentage_charge`).
-2. **Tenant subscriptions** — Tenant pays Kairos via Paystack checkout (`POST /subscriptions/checkout`); no subaccount (100% to platform).
+1. **Booking deposits** — Client pays via Paystack; tenant receives settlement through a **subaccount**; Orheo keeps `PAYSTACK_PLATFORM_FEE_PERCENT` (set as subaccount `percentage_charge`).
+2. **Tenant subscriptions** — Tenant pays Orheo via Paystack checkout (`POST /subscriptions/checkout`); no subaccount (100% to platform).
 
 **Booking flow**
 
 - Services can define `deposit_amount`; otherwise full `price_amount` is charged (NGN / kobo).
 - If `tenant.payments_enabled` and a Paystack subaccount is connected, booking stays `pending` and the API returns `payment_authorization_url`.
 - Client is redirected to Paystack; webhook `charge.success` (or `confirm-payment` verify) marks the tx succeeded and confirms the booking.
-- If payments are not enabled, tx auto-succeeds with provider `kairos` (demo mode).
+- If payments are not enabled, tx auto-succeeds with provider `orheo` (demo mode).
 
 **Onboarding**
 

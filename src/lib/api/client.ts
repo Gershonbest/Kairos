@@ -5,8 +5,28 @@ import { queryClient } from "../queryClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
 
-let accessToken: string | null = localStorage.getItem("kairos_access_token");
-let refreshToken: string | null = localStorage.getItem("kairos_refresh_token");
+const ACCESS_TOKEN_KEY = "orheo_access_token";
+const REFRESH_TOKEN_KEY = "orheo_refresh_token";
+const LEGACY_ACCESS_TOKEN_KEY = "kairos_access_token";
+const LEGACY_REFRESH_TOKEN_KEY = "kairos_refresh_token";
+
+function migrateLegacyAuthTokens() {
+  const access = localStorage.getItem(ACCESS_TOKEN_KEY) ?? localStorage.getItem(LEGACY_ACCESS_TOKEN_KEY);
+  const refresh = localStorage.getItem(REFRESH_TOKEN_KEY) ?? localStorage.getItem(LEGACY_REFRESH_TOKEN_KEY);
+  if (access && !localStorage.getItem(ACCESS_TOKEN_KEY)) {
+    localStorage.setItem(ACCESS_TOKEN_KEY, access);
+  }
+  if (refresh && !localStorage.getItem(REFRESH_TOKEN_KEY)) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+  }
+  localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+}
+
+migrateLegacyAuthTokens();
+
+let accessToken: string | null = localStorage.getItem(ACCESS_TOKEN_KEY);
+let refreshToken: string | null = localStorage.getItem(REFRESH_TOKEN_KEY);
 let isRedirectingToLogin = false;
 let refreshInFlight: Promise<boolean> | null = null;
 
@@ -46,8 +66,10 @@ export function setAuthTokens(tokens: { access_token: string; refresh_token: str
 
   accessToken = tokens.access_token;
   refreshToken = tokens.refresh_token;
-  localStorage.setItem("kairos_access_token", tokens.access_token);
-  localStorage.setItem("kairos_refresh_token", tokens.refresh_token);
+  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+  localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
 
   // A different user in the same tab must never inherit the previous
   // session's cached data. Token refresh keeps the same subject, so it
@@ -60,14 +82,17 @@ export function setAuthTokens(tokens: { access_token: string; refresh_token: str
 export function clearAuthTokens() {
   accessToken = null;
   refreshToken = null;
-  localStorage.removeItem("kairos_access_token");
-  localStorage.removeItem("kairos_refresh_token");
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
   queryClient.clear();
 }
 
 function syncAuthTokensFromStorage() {
-  accessToken = localStorage.getItem("kairos_access_token");
-  refreshToken = localStorage.getItem("kairos_refresh_token");
+  migrateLegacyAuthTokens();
+  accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+  refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 function hadStoredSession(): boolean {

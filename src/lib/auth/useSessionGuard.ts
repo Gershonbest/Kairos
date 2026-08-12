@@ -33,7 +33,12 @@ export function useSessionGuard({
         // A session that can no longer be refreshed is over: drop the cached
         // data and send the user to login instead of leaving the last
         // account's screen on display.
-        if (localStorage.getItem("kairos_access_token") || localStorage.getItem("kairos_refresh_token")) {
+        if (
+          localStorage.getItem("orheo_access_token") ||
+          localStorage.getItem("orheo_refresh_token") ||
+          localStorage.getItem("kairos_access_token") ||
+          localStorage.getItem("kairos_refresh_token")
+        ) {
           endSession();
         } else {
           navigate(redirectWhenSignedOut, { replace: true });

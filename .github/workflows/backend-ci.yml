@@ -19,16 +19,16 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kairos_ci
+          POSTGRES_DB: orheo_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d kairos_ci"
+          --health-cmd "pg_isready -U postgres -d orheo_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/kairos_ci
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/orheo_ci
       APP_ENV: dev
     defaults:
       run:

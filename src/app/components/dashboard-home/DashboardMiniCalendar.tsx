@@ -10,6 +10,12 @@ type DashboardMiniCalendarProps = {
   bookings: BookingListItem[];
 };
 
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function toDateKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -38,7 +44,9 @@ export function DashboardMiniCalendar({ bookings }: DashboardMiniCalendarProps) 
   const bookingMap = useMemo(() => {
     const byDate: Record<string, number> = {};
     for (const booking of bookings) {
-      const key = toDateKey(new Date(booking.start_at));
+      const date = parseDate(booking.start_at);
+      if (!date) continue;
+      const key = toDateKey(date);
       byDate[key] = (byDate[key] ?? 0) + 1;
     }
     return byDate;

@@ -4,4 +4,4 @@ dist/
 .env
 .env.local
 .cursor/
-kairos.db
+orheo.db
