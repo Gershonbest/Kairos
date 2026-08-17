@@ -348,9 +348,6 @@ export function PaymentsDashboard() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              Provider: Paystack only. Booking payments settle to your subaccount; Orheo keeps the platform fee.
-            </p>
           </CardContent>
         </Card>
       </div>

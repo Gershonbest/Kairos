@@ -35,13 +35,14 @@ async def ask_assistant(
 
     from_dt = datetime.now(UTC)
     to_dt = from_dt + timedelta(days=14)
-    rules, bookings, services = await load_scheduling_context(
+    rules, bookings, services, calendar_blocks = await load_scheduling_context(
         session, current_user.tenant_id, from_dt=from_dt, to_dt=to_dt
     )
     insights = build_scheduling_insights(
         rules=rules,
         bookings=bookings,
         services=services,
+        calendar_blocks=calendar_blocks,
         from_dt=from_dt,
         to_dt=to_dt,
     )

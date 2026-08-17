@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from app.modules.clients.names import compose_full_name, split_person_name, visit_display_name
-from app.schemas.bookings import PublicBookingCreateRequest
+from app.schemas.bookings import ManualBookingCreateRequest, PublicBookingCreateRequest
 
 
 def test_split_and_compose_names() -> None:
@@ -41,3 +41,20 @@ def test_public_booking_payload_accepts_legacy_full_name() -> None:
     )
     assert payload.client_first_name == "Alex"
     assert payload.client_last_name == "Chen"
+
+
+def test_manual_booking_accepts_existing_or_new_client() -> None:
+    existing = ManualBookingCreateRequest(
+        client_id="client-1",
+        service_id="svc-1",
+        start_at="2026-08-18T10:00:00+00:00",
+    )
+    new = ManualBookingCreateRequest(
+        new_client_first_name="Ada",
+        new_client_last_name="Lovelace",
+        new_client_email="ada@example.com",
+        service_id="svc-1",
+        start_at="2026-08-18T10:00:00+00:00",
+    )
+    assert existing.client_id == "client-1"
+    assert new.new_client_email == "ada@example.com"

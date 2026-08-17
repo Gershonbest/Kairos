@@ -407,7 +407,7 @@ async def create_subscription_checkout(
 
     from app.infra.paystack import paystack_client
     from app.infra.models import PaymentStatus, PaymentTransaction
-    from app.modules.payments.service import callback_base_url
+    from app.modules.payments.service import platform_payment_callback_url
 
     plan = (
         await session.execute(
@@ -430,7 +430,7 @@ async def create_subscription_checkout(
 
     reference = f"sub_{plan_code}_{tenant.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:8]}"
     idempotency_key = f"sub-{tenant.id}-{plan_code}-{uuid.uuid4().hex[:8]}"
-    callback_url = f"{callback_base_url()}/dashboard/choose-plan?payment=1&reference={reference}"
+    callback_url = platform_payment_callback_url(reference=reference)
 
     intent = await paystack_client.initialize_transaction(
         email=owner.email,

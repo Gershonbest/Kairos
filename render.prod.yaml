@@ -83,6 +83,10 @@ services:
         value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
         sync: false
+      - key: PAYSTACK_CALLBACK_URL_PLATFORM
+        sync: false
+      - key: PAYSTACK_CALLBACK_URL_BOOKING
+        sync: false
       - key: SUPER_ADMIN_EMAIL
         sync: false
       - key: SUPER_ADMIN_PASSWORD

@@ -1,9 +1,11 @@
 // Greeting header with date and compact live clock.
 
 import { LiveAnalogClock } from "./LiveAnalogClock";
+import type { ReactNode } from "react";
 
 type DashboardHomeHeaderProps = {
   firstName?: string | null;
+  action?: ReactNode;
 };
 
 function resolveGreeting(date: Date): string {
@@ -23,13 +25,13 @@ function formatLongDate(date: Date): string {
   });
 }
 
-export function DashboardHomeHeader({ firstName }: DashboardHomeHeaderProps) {
+export function DashboardHomeHeader({ firstName, action }: DashboardHomeHeaderProps) {
   const now = new Date();
   const greeting = resolveGreeting(now);
   const naturalDate = formatLongDate(now);
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5">
+    <section className="w-full rounded-2xl border border-border bg-card p-5 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-semibold">
@@ -39,7 +41,10 @@ export function DashboardHomeHeader({ firstName }: DashboardHomeHeaderProps) {
           <p className="mt-1 text-sm text-muted-foreground">{naturalDate}</p>
         </div>
 
-        <LiveAnalogClock className="self-start sm:self-auto" />
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+          <LiveAnalogClock className="self-start sm:self-auto" />
+          {action}
+        </div>
       </div>
     </section>
   );
