@@ -360,6 +360,7 @@ export function AccountSettings() {
         })),
       });
       flash("Business profile saved.");
+      setOnboardingCompleted(true);
       await invalidateRelatedCaches();
     } catch (err) {
       fail(err, "Unable to save business profile.");
@@ -475,10 +476,19 @@ export function AccountSettings() {
       {!onboardingCompleted && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
           <p className="text-sm">
-            Business setup is incomplete.{" "}
-            <Link to="/onboarding" className="text-primary font-medium hover:underline">
-              Continue onboarding
+            Finish setup from here: business details in this page, then{" "}
+            <Link to="/dashboard/services" className="text-primary font-medium hover:underline">
+              Services
             </Link>
+            {", "}
+            <Link to="/dashboard/availability" className="text-primary font-medium hover:underline">
+              Availability
+            </Link>
+            {", and "}
+            <Link to="/dashboard/payments" className="text-primary font-medium hover:underline">
+              Payments
+            </Link>
+            .
           </p>
         </div>
       )}

@@ -179,6 +179,12 @@ async def update_my_tenant(
             if part
         )
 
+    if not tenant.onboarding_completed:
+        tenant.onboarding_completed = True
+    if not tenant.public_slug:
+        slug_base = (tenant.name or "business").strip().lower().replace(" ", "-")
+        tenant.public_slug = f"{slug_base}-{tenant.id[:8]}"
+
     await session.commit()
     await session.refresh(tenant)
     body = _tenant_payload(tenant)
