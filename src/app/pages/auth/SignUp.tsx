@@ -46,7 +46,7 @@ export function SignUp() {
           access_token: result.access_token,
           refresh_token: result.refresh_token,
         });
-        navigate("/onboarding");
+        navigate("/dashboard");
       }
     } catch {
       setError("Unable to create account right now.");
