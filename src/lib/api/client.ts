@@ -319,6 +319,9 @@ export interface PublicBookingResponse {
   is_all_day?: boolean;
   scheduling_mode?: SchedulingMode | null;
   client_name?: string | null;
+  client_first_name?: string | null;
+  client_last_name?: string | null;
+  client_profile_name?: string | null;
   client_email?: string | null;
   service_name?: string | null;
   service_price?: number | null;
@@ -348,6 +351,7 @@ export interface BookingListItem {
   listing_name?: string | null;
   listing_image_url?: string | null;
   client_name: string;
+  client_profile_name?: string | null;
   client_email?: string | null;
   client_phone?: string | null;
   service_name: string;
@@ -359,6 +363,18 @@ export interface BookingListItem {
   host_name?: string | null;
   host_title?: string | null;
   location?: string | null;
+}
+
+export function bookingClientLabel(booking: {
+  client_name?: string | null;
+  client_profile_name?: string | null;
+}): string {
+  const visit = (booking.client_name || "").trim();
+  const profile = (booking.client_profile_name || "").trim();
+  if (visit && profile && profile !== visit) {
+    return `${visit} · profile: ${profile}`;
+  }
+  return visit || profile;
 }
 
 export interface AppNotification {
@@ -658,10 +674,12 @@ export const api = {
     request<{
       ok: boolean;
       status?: string;
+      gateway_status?: string;
       reference: string;
       purpose?: string;
       booking_id?: string | null;
       transaction_id?: string;
+      message?: string;
     }>(`/payments/verify/${encodeURIComponent(reference)}`, { method: "POST" }),
   listPaystackBanks: () =>
     request<Array<{ name: string; code: string; slug?: string }>>("/tenants/me/paystack/banks"),
@@ -847,13 +865,19 @@ export const api = {
         listingId ? `&listing_id=${encodeURIComponent(listingId)}` : ""
       }`
     ),
+  lookupPublicClient: (businessId: string, email: string) =>
+    request<
+      | { found: false }
+      | { found: true; first_name: string; last_name: string; phone: string | null }
+    >(`/public/businesses/${businessId}/clients/lookup?email=${encodeURIComponent(email)}`),
   createPublicBooking: (
     businessId: string,
     payload: {
       service_id: string;
       listing_id?: string;
       start_at: string;
-      client_name: string;
+      client_first_name: string;
+      client_last_name: string;
       client_email: string;
       client_phone?: string;
       notes?: string;

@@ -14,7 +14,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
-import { api, type BookingListItem } from "../../../lib/api/client";
+import { api, bookingClientLabel, type BookingListItem } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 
 type CalendarView = "month" | "week" | "day";
@@ -230,7 +230,7 @@ export function BookingCalendar() {
       <div className="flex items-center gap-1">
         <User className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
         <span className={`${compact ? "text-[10px]" : "text-xs"} font-medium truncate`}>
-          {booking.client_name}
+          {bookingClientLabel(booking)}
         </span>
       </div>
       {!compact && (
@@ -537,7 +537,7 @@ export function BookingCalendar() {
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Client</p>
                   <div className="flex items-center gap-2 text-sm text-foreground">
                     <User className="w-4 h-4 text-muted-foreground" />
-                    {selectedBooking.client_name}
+                    {bookingClientLabel(selectedBooking)}
                   </div>
                   {selectedBooking.client_email && (
                     <div className="flex items-center gap-2 text-sm text-foreground/80">

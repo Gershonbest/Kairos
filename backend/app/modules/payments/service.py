@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +12,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.infra.models import Booking, BookingStatus, Client, PaymentStatus, PaymentTransaction, Service, Tenant
 from app.infra.paystack import paystack_client
+from app.modules.clients.names import visit_display_name
 from app.modules.payments.providers import get_provider
 
 settings = get_settings()
+
+PAYSTACK_SUCCESS_STATUSES = frozenset({"success"})
+PAYSTACK_FAILED_STATUSES = frozenset({"failed", "abandoned", "reversed", "cancelled"})
+
+
+def classify_paystack_status(status: str | None) -> str:
+    """Return success, failed, or pending for a Paystack transaction status."""
+    normalized = (status or "").strip().lower()
+    if normalized in PAYSTACK_SUCCESS_STATUSES:
+        return "success"
+    if normalized in PAYSTACK_FAILED_STATUSES:
+        return "failed"
+    return "pending"
 
 
 def booking_payment_amount(service: Service) -> float:
@@ -126,7 +141,7 @@ async def initialize_booking_paystack(
     tx.provider = "paystack"
 
     tenant_key = business_key or tenant.public_slug or tenant.id
-    reference = f"ps_{booking.id.replace('-', '')[:12]}_{tx.id.replace('-', '')[:8]}"
+    reference = f"ps_{booking.id.replace('-', '')[:12]}_{tx.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:6]}"
     query = urlencode({"payment": "1", "booking_id": booking.id, "reference": reference})
     callback_url = f"{callback_booking_base_url()}/{tenant_key}?{query}"
 
@@ -143,7 +158,7 @@ async def initialize_booking_paystack(
         },
         subaccount_code=tenant.payment_account_id,
         reference=reference,
-        customer_name=client.full_name,
+        customer_name=visit_display_name(booking, client),
         customer_phone=client.phone,
     )
     tx.provider_reference = intent.reference
@@ -199,6 +214,99 @@ async def confirm_booking_payment(
     return tx
 
 
+async def mark_failed_paystack_payment(
+    session: AsyncSession,
+    *,
+    reference: str,
+    gateway_status: str | None = None,
+    source: str = "mark_failed_paystack_payment",
+) -> PaymentTransaction | None:
+    """Mark a Paystack payment failed and release an unpaid pending booking."""
+    tx = (
+        await session.execute(
+            select(PaymentTransaction).where(PaymentTransaction.provider_reference == reference)
+        )
+    ).scalar_one_or_none()
+    if not tx:
+        return None
+    if tx.status in {PaymentStatus.succeeded, PaymentStatus.refunded}:
+        return tx
+    if tx.status == PaymentStatus.failed:
+        return tx
+
+    previous_status = tx.status.value
+    tx.status = PaymentStatus.failed
+    tx.authorization_url = None
+    tx.access_code = None
+
+    if tx.purpose == "booking" and tx.booking_id:
+        booking = (
+            await session.execute(select(Booking).where(Booking.id == tx.booking_id))
+        ).scalar_one_or_none()
+        if booking and booking.status == BookingStatus.pending:
+            booking.status = BookingStatus.cancelled
+            failed_suffix = f":failed:{tx.id[:8]}"
+            if not booking.idempotency_key.endswith(failed_suffix):
+                booking.idempotency_key = f"{booking.idempotency_key}{failed_suffix}"[:120]
+
+    from app.modules.audit.service import record_audit_event
+
+    await record_audit_event(
+        session,
+        action="payment.status_changed",
+        entity_type="payment_transaction",
+        entity_id=tx.id,
+        tenant_id=tx.tenant_id,
+        actor_role="system",
+        metadata={
+            "from_status": previous_status,
+            "to_status": PaymentStatus.failed.value,
+            "purpose": tx.purpose,
+            "provider_reference": tx.provider_reference,
+            "amount": float(tx.amount),
+            "gateway_status": gateway_status,
+            "source": source,
+        },
+    )
+    return tx
+
+
+STALE_PENDING_PAYMENT_MINUTES = 30
+
+
+async def expire_stale_pending_booking_payments(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+) -> int:
+    """Release slots held by unpaid bookings whose checkout was abandoned."""
+    cutoff = datetime.now(UTC) - timedelta(minutes=STALE_PENDING_PAYMENT_MINUTES)
+    rows = (
+        await session.execute(
+            select(PaymentTransaction, Booking)
+            .join(Booking, Booking.id == PaymentTransaction.booking_id)
+            .where(
+                PaymentTransaction.tenant_id == tenant_id,
+                PaymentTransaction.purpose == "booking",
+                PaymentTransaction.status == PaymentStatus.pending,
+                PaymentTransaction.created_at <= cutoff,
+                Booking.status == BookingStatus.pending,
+            )
+        )
+    ).all()
+    released = 0
+    for tx, _booking in rows:
+        marked = await mark_failed_paystack_payment(
+            session,
+            reference=tx.provider_reference,
+            gateway_status="expired",
+            source="expire_stale_pending_booking_payments",
+        )
+        if marked:
+            released += 1
+    return released
+
+
 async def apply_successful_paystack_payment(
     session: AsyncSession,
     *,
@@ -223,7 +331,7 @@ async def apply_successful_paystack_payment(
         booking = (
             await session.execute(select(Booking).where(Booking.id == tx.booking_id))
         ).scalar_one_or_none()
-        if booking and booking.status == BookingStatus.pending:
+        if booking and booking.status in {BookingStatus.pending, BookingStatus.cancelled}:
             booking.status = BookingStatus.confirmed
     elif tx.purpose == "subscription":
         from app.modules.subscriptions.service import activate_plan_from_payment

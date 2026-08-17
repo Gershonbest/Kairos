@@ -98,7 +98,12 @@ export function ChoosePlan() {
       .verifyPaymentReference(reference)
       .then(async (result) => {
         if (!result.ok) {
-          throw new Error("Payment was not successful yet. Try again in a moment.");
+          if (result.status === "failed") {
+            throw new Error(result.message || "Payment failed or was cancelled. You can try again.");
+          }
+          throw new Error(
+            result.message || "Payment is still processing. Wait a moment, then refresh this page."
+          );
         }
         // Verification activates the plan and queues the receipt email. Require
         // a fresh login so the restored account starts with a clean session.

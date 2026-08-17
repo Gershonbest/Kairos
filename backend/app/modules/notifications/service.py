@@ -25,6 +25,7 @@ from app.infra.models import (
     User,
     UserRole,
 )
+from app.modules.clients.names import visit_display_name
 from app.modules.notifications.receipt import (
     BookingReceiptData,
     build_receipt_html,
@@ -217,7 +218,7 @@ def build_booking_receipt_data(
     amount = float(payment_tx.amount) if payment_tx and payment_tx.amount is not None else None
     return BookingReceiptData(
         booking_id=booking.id,
-        client_name=client.full_name,
+        client_name=visit_display_name(booking, client),
         client_email=client.email,
         business_name=tenant.name,
         business_logo_url=tenant.public_logo_url,
@@ -442,7 +443,7 @@ async def create_booking_notifications(
 
     when = booking.start_at.strftime("%A, %B %d, %Y at %I:%M %p UTC")
     title = f"New booking: {service.name}"
-    body = f"{client.full_name} booked {service.name} for {when}."
+    body = f"{visit_display_name(booking, client)} booked {service.name} for {when}."
 
     for user in users:
         session.add(

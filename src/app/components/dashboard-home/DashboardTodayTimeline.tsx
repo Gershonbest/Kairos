@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import { CalendarClock, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
-import type { BookingListItem } from "../../../lib/api/client";
+import { bookingClientLabel, type BookingListItem } from "../../../lib/api/client";
 
 type DashboardTodayTimelineProps = {
   bookings: BookingListItem[];
@@ -127,7 +127,7 @@ export function DashboardTodayTimeline({ bookings, loading = false }: DashboardT
                 className="flex items-start justify-between gap-3 rounded-lg border border-border p-3"
               >
                 <div>
-                  <p className="font-medium">{row.client_name}</p>
+                  <p className="font-medium">{bookingClientLabel(row)}</p>
                   <p className="text-sm text-muted-foreground">
                     {row.service_name}
                     {row.listing_name ? " · Product-based" : " · General"}

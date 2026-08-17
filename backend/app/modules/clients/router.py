@@ -8,6 +8,7 @@ from app.core.deps import CurrentUser, get_current_user, require_active_subscrip
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Booking, Client, PaymentStatus, PaymentTransaction
+from app.modules.clients.names import apply_canonical_full_name
 from app.schemas.clients import ClientCreate, ClientOut, ClientUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
@@ -112,11 +113,12 @@ async def create_client(
 
     client = Client(
         tenant_id=current_user.tenant_id,
-        full_name=payload.full_name.strip(),
+        full_name="",
         email=payload.email.lower(),
         phone=payload.phone,
         notes=payload.notes,
     )
+    apply_canonical_full_name(client, payload.full_name)
     session.add(client)
     await session.commit()
     await session.refresh(client)
@@ -156,7 +158,7 @@ async def update_client(
             raise HTTPException(status_code=409, detail="A client with this email already exists")
         client.email = payload.email.lower()
     if payload.full_name is not None:
-        client.full_name = payload.full_name.strip()
+        apply_canonical_full_name(client, payload.full_name)
     if payload.phone is not None:
         client.phone = payload.phone
     if payload.notes is not None:

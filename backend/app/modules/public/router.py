@@ -2,7 +2,8 @@
 
 from datetime import UTC, datetime, time, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
+from pydantic import EmailStr
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -27,6 +28,7 @@ from app.infra.models import (
     UserRole,
 )
 from app.infra.paystack import PaystackError, paystack_client
+from app.modules.clients.names import compose_full_name, profile_display_name, split_person_name, visit_display_name
 from app.modules.notifications.service import (
     build_booking_receipt_data,
     create_booking_notifications,
@@ -38,9 +40,12 @@ from app.modules.notifications.receipt import build_receipt_html
 from app.modules.payments.service import (
     apply_successful_paystack_payment,
     booking_payment_amount,
+    classify_paystack_status,
     confirm_booking_payment,
     ensure_booking_payment,
+    expire_stale_pending_booking_payments,
     initialize_booking_paystack,
+    mark_failed_paystack_payment,
 )
 from app.modules.services.helpers import (
     resolve_appointment_format,
@@ -138,7 +143,10 @@ def _booking_response(
         ),
         is_all_day=bool(booking.is_all_day),
         scheduling_mode=service.scheduling_mode.value,
-        client_name=client.full_name if client else None,
+        client_name=visit_display_name(booking, client) if client or booking.guest_first_name else None,
+        client_first_name=booking.guest_first_name or None,
+        client_last_name=booking.guest_last_name or None,
+        client_profile_name=profile_display_name(client) or None,
         client_email=client.email if client else None,
         service_name=service.name,
         service_price=float(service.price_amount or 0),
@@ -236,6 +244,60 @@ async def get_public_business(business_id: str, session: AsyncSession = Depends(
     }
 
 
+LOOKUP_RATE_LIMIT = 10
+LOOKUP_WINDOW_SECONDS = 60
+
+
+def _request_ip(request: Request) -> str:
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+@router.get("/businesses/{business_id}/clients/lookup")
+async def lookup_public_client(
+    business_id: str,
+    request: Request,
+    email: EmailStr = Query(...),
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis),
+) -> dict:
+    tenant = await resolve_tenant_key(business_id, session)
+    rate_key = f"public-lookup:{_request_ip(request)}"
+    try:
+        count = int(await redis.incr(rate_key))
+        if count == 1:
+            await redis.expire(rate_key, LOOKUP_WINDOW_SECONDS)
+        if count > LOOKUP_RATE_LIMIT:
+            raise HTTPException(status_code=429, detail="Too many lookup attempts. Try again shortly.")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    client = (
+        await session.execute(
+            select(Client).where(Client.tenant_id == tenant.id, Client.email == str(email).strip().lower())
+        )
+    ).scalar_one_or_none()
+    if not client:
+        return {"found": False}
+
+    first_name = (client.first_name or "").strip()
+    last_name = (client.last_name or "").strip()
+    if not first_name and not last_name:
+        first_name, last_name = split_person_name(client.full_name)
+    return {
+        "found": True,
+        "first_name": first_name,
+        "last_name": last_name,
+        "phone": client.phone,
+    }
+
+
 @router.get("/businesses/{business_id}/services")
 async def get_public_services(business_id: str, session: AsyncSession = Depends(get_db_session)) -> list[dict]:
     tenant = await resolve_tenant_key(business_id, session)
@@ -308,6 +370,8 @@ async def get_public_availability(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     tenant = await resolve_tenant_key(business_id, session)
+    if await expire_stale_pending_booking_payments(session, tenant_id=tenant.id):
+        await session.commit()
     service = (
         await session.execute(
             select(Service).where(
@@ -437,6 +501,8 @@ async def create_public_booking(
     redis=Depends(get_redis),
 ) -> BookingOut:
     tenant = await resolve_tenant_key(business_id, session)
+    if await expire_stale_pending_booking_payments(session, tenant_id=tenant.id):
+        await session.commit()
     service = (
         await session.execute(
             select(Service).where(
@@ -548,7 +614,9 @@ async def create_public_booking(
         raise HTTPException(status_code=409, detail="Slot already booked")
 
     client_email = payload.client_email.strip().lower()
-    client_name = payload.client_name.strip()
+    guest_first = (payload.client_first_name or "").strip()[:60]
+    guest_last = (payload.client_last_name or "").strip()[:60]
+    visit_name = compose_full_name(guest_first, guest_last)
     client = (
         await session.execute(
             select(Client).where(Client.tenant_id == tenant.id, Client.email == client_email)
@@ -557,20 +625,22 @@ async def create_public_booking(
     if not client:
         client = Client(
             tenant_id=tenant.id,
-            full_name=client_name,
+            first_name=guest_first,
+            last_name=guest_last,
+            full_name=visit_name[:120],
             email=client_email,
             phone=payload.client_phone,
-            notes=payload.notes,
         )
         session.add(client)
         await session.flush()
     else:
-        # Returning email: keep client record but refresh name/phone from this booking.
-        client.full_name = client_name or client.full_name
-        if payload.client_phone:
+        # Returning email: keep the canonical profile; only fill empty phone.
+        if not (client.first_name or "").strip() and not (client.last_name or "").strip():
+            first_name, last_name = split_person_name(client.full_name)
+            client.first_name = first_name
+            client.last_name = last_name
+        if payload.client_phone and not (client.phone or "").strip():
             client.phone = payload.client_phone
-        if payload.notes:
-            client.notes = payload.notes
         await session.flush()
 
     booking = Booking(
@@ -582,6 +652,8 @@ async def create_public_booking(
         end_at=end_at,
         is_all_day=is_all_day,
         notes=payload.notes,
+        guest_first_name=guest_first,
+        guest_last_name=guest_last,
         appointment_format=appointment_format,
         idempotency_key=payload.idempotency_key,
         status=BookingStatus.pending,
@@ -605,7 +677,7 @@ async def create_public_booking(
         background_tasks.add_task(
             send_booking_confirmation_email,
             to=client.email,
-            client_name=client.full_name,
+            client_name=visit_display_name(booking, client),
             business_name=tenant.name,
             service_name=service.name,
             start_at=booking.start_at,
@@ -634,7 +706,7 @@ async def create_public_booking(
                 to=owner.email,
                 owner_name=owner.full_name,
                 business_name=tenant.name,
-                client_name=client.full_name,
+                client_name=visit_display_name(booking, client),
                 client_email=client.email,
                 service_name=service.name,
                 start_at=booking.start_at,
@@ -714,7 +786,23 @@ async def confirm_public_booking_payment(
         except PaystackError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if (data.get("status") or "").lower() != "success":
-            raise HTTPException(status_code=400, detail="Payment not completed yet")
+            outcome = classify_paystack_status(data.get("status"))
+            if outcome == "failed":
+                await mark_failed_paystack_payment(
+                    session,
+                    reference=ref,
+                    gateway_status=str(data.get("status") or ""),
+                    source="confirm_public_payment",
+                )
+                await session.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Payment failed or was cancelled. The time slot has been released — please book again.",
+                )
+            raise HTTPException(
+                status_code=400,
+                detail="Payment not completed yet. If you were charged, wait a moment and refresh this page.",
+            )
         await apply_successful_paystack_payment(session, reference=ref)
         await session.refresh(booking)
         await session.refresh(payment_tx)
@@ -746,7 +834,7 @@ async def confirm_public_booking_payment(
         background_tasks.add_task(
             send_booking_confirmation_email,
             to=client.email,
-            client_name=client.full_name,
+            client_name=visit_display_name(booking, client),
             business_name=tenant.name,
             service_name=service.name,
             start_at=booking.start_at,
@@ -775,7 +863,7 @@ async def confirm_public_booking_payment(
                 to=owner.email,
                 owner_name=owner.full_name,
                 business_name=tenant.name,
-                client_name=client.full_name,
+                client_name=visit_display_name(booking, client),
                 client_email=client.email,
                 service_name=service.name,
                 start_at=booking.start_at,

@@ -21,6 +21,7 @@ from app.infra.models import (
     Service,
     Tenant,
 )
+from app.modules.clients.names import visit_display_name
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
 
@@ -278,7 +279,7 @@ async def get_dashboard_summary(
     upcoming = [
         {
             "id": booking.id,
-            "client": client.full_name,
+            "client": visit_display_name(booking, client),
             "service": service.name,
             "status": booking.status.value,
             "start_at": as_utc(booking.start_at).isoformat(),

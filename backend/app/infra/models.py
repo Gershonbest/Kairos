@@ -250,6 +250,8 @@ class Client(Base):
     id: Mapped[str] = uuid_pk()
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    last_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(30))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -266,7 +268,7 @@ class Booking(Base):
             "service_id",
             "start_at",
             unique=True,
-            postgresql_where=text("listing_id IS NULL"),
+            postgresql_where=text("listing_id IS NULL AND status IN ('pending'::bookingstatus, 'confirmed'::bookingstatus)"),
         ),
         Index(
             "uq_booking_slot_listing",
@@ -275,7 +277,7 @@ class Booking(Base):
             "listing_id",
             "start_at",
             unique=True,
-            postgresql_where=text("listing_id IS NOT NULL"),
+            postgresql_where=text("listing_id IS NOT NULL AND status IN ('pending'::bookingstatus, 'confirmed'::bookingstatus)"),
         ),
     )
 
@@ -289,6 +291,8 @@ class Booking(Base):
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     is_all_day: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    guest_first_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    guest_last_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
     appointment_format: Mapped[AppointmentFormat | None] = mapped_column(Enum(AppointmentFormat))
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

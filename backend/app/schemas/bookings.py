@@ -3,19 +3,39 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class PublicBookingCreateRequest(BaseModel):
     service_id: str
     listing_id: str | None = None
     start_at: datetime
-    client_name: str = Field(min_length=2, max_length=120)
+    client_first_name: str | None = Field(default=None, min_length=1, max_length=60)
+    client_last_name: str | None = Field(default=None, min_length=1, max_length=60)
+    client_name: str | None = Field(default=None, min_length=2, max_length=120)
     client_email: EmailStr
     client_phone: str | None = None
     notes: str | None = None
     appointment_format: Literal["online", "onsite"] | None = None
     idempotency_key: str = Field(min_length=6, max_length=120)
+
+    @model_validator(mode="after")
+    def resolve_visit_names(self) -> "PublicBookingCreateRequest":
+        first = (self.client_first_name or "").strip()
+        last = (self.client_last_name or "").strip()
+        if first and last:
+            self.client_first_name = first
+            self.client_last_name = last
+            self.client_name = f"{first} {last}".strip()[:120]
+            return self
+        leftover = (self.client_name or "").strip()
+        parts = leftover.split()
+        if len(parts) < 2:
+            raise ValueError("First name and surname are required")
+        self.client_first_name = parts[0][:60]
+        self.client_last_name = " ".join(parts[1:])[:60]
+        self.client_name = f"{self.client_first_name} {self.client_last_name}".strip()[:120]
+        return self
 
 
 class BookingOut(BaseModel):
@@ -38,8 +58,10 @@ class BookingOut(BaseModel):
     ics_download_path: str | None = None
     is_all_day: bool = False
     scheduling_mode: str | None = None
-    # Confirmation card fields (especially after Paystack redirect loses UI state)
     client_name: str | None = None
+    client_first_name: str | None = None
+    client_last_name: str | None = None
+    client_profile_name: str | None = None
     client_email: str | None = None
     service_name: str | None = None
     service_price: float | None = None
