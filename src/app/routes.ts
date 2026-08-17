@@ -1,5 +1,6 @@
 // Application route definitions for public, auth, dashboard, and admin areas.
 
+import { createElement } from "react";
 import { Navigate, createBrowserRouter } from "react-router";
 import { SignUp } from "./pages/auth/SignUp";
 import { Login } from "./pages/auth/Login";
@@ -30,7 +31,7 @@ import { PublicLayout } from "./components/layouts/PublicLayout";
 import { AuthLayout } from "./components/layouts/AuthLayout";
 
 function RedirectToDashboard() {
-  return <Navigate to="/dashboard" replace />;
+  return createElement(Navigate, { to: "/dashboard", replace: true });
 }
 
 export const router = createBrowserRouter([

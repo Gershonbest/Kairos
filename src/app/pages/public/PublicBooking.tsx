@@ -171,6 +171,15 @@ const inputStyle: React.CSSProperties = {
   transition: "border-color 0.15s",
 };
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function localPhoneFromStored(stored: string | null | undefined, dialCode: string): string {
+  if (!stored) return "";
+  const digits = stored.replace(/\s+/g, "");
+  if (dialCode && digits.startsWith(dialCode)) return digits.slice(dialCode.length);
+  return stored;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function PublicBooking() {
@@ -202,7 +211,8 @@ export function PublicBooking() {
   const [phoneDialCode, setPhoneDialCode] = useState("+233");
   const [availableSlotIsos, setAvailableSlotIsos] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", notes: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", notes: "" });
+  const [returningClient, setReturningClient] = useState<{ first_name: string; last_name: string } | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<PublicBookingResponse | null>(null);
   const [calendarLinks, setCalendarLinks] = useState<{
     googleCalendarUrl: string;
@@ -288,13 +298,14 @@ export function PublicBooking() {
       .then((confirmed) => {
         applyConfirmedBooking(confirmed);
         clearPendingPayment();
-        // Drop Paystack query params so refresh doesn't re-verify awkwardly.
         const path = window.location.pathname;
         window.history.replaceState({}, "", path);
       })
       .catch((err) => {
         setBookingError(err instanceof Error ? err.message : "Payment verification failed.");
-        // Stay on confirmation with error — payment step needs local service state we no longer have.
+        clearPendingPayment();
+        const path = window.location.pathname;
+        window.history.replaceState({}, "", path);
       })
       .finally(() => {
         setIsBooking(false);
@@ -461,6 +472,41 @@ export function PublicBooking() {
     };
   }, [businessId, service, selectedDate, selectedListing]);
 
+  useEffect(() => {
+    if (!businessId) return;
+    const email = form.email.trim();
+    if (!EMAIL_RE.test(email)) {
+      setReturningClient(null);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void api
+        .lookupPublicClient(businessId, email)
+        .then((result) => {
+          if (cancelled) return;
+          if (result.found) {
+            setReturningClient({ first_name: result.first_name, last_name: result.last_name });
+            setForm((prev) => ({
+              ...prev,
+              firstName: result.first_name || prev.firstName,
+              lastName: result.last_name || prev.lastName,
+              phone: prev.phone.trim() ? prev.phone : localPhoneFromStored(result.phone, phoneDialCode),
+            }));
+          } else {
+            setReturningClient(null);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setReturningClient(null);
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [businessId, form.email]);
+
   const groupedSlots = availableSlotIsos.reduce<Record<string, string[]>>((acc, slotIso) => {
     const hour = new Date(slotIso).getHours();
     const label = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
@@ -484,11 +530,12 @@ export function PublicBooking() {
 
   function applyConfirmedBooking(confirmed: PublicBookingResponse) {
     setConfirmedBooking(confirmed);
-    if (confirmed.client_email || confirmed.client_name) {
+    if (confirmed.client_email || confirmed.client_name || confirmed.client_first_name) {
       setForm((prev) => ({
         ...prev,
         email: confirmed.client_email || prev.email,
-        name: confirmed.client_name || prev.name,
+        firstName: confirmed.client_first_name || prev.firstName,
+        lastName: confirmed.client_last_name || prev.lastName,
       }));
     }
     if (confirmed.start_at) {
@@ -556,7 +603,8 @@ export function PublicBooking() {
     setSelectedDate("");
     setSelectedSlotIso("");
     setAppointmentFormat("");
-    setForm({ name: "", email: "", phone: "", notes: "" });
+    setForm({ firstName: "", lastName: "", email: "", phone: "", notes: "" });
+    setReturningClient(null);
     setConfirmedBooking(null);
     setCalendarLinks(null);
     setReceiptBusy(null);
@@ -627,16 +675,17 @@ export function PublicBooking() {
       return;
     }
 
-    const clientName = form.name.trim();
+    const firstName = form.firstName.trim();
+    const lastName = form.lastName.trim();
     const clientEmail = form.email.trim();
     const clientPhone = form.phone.trim();
 
-    if (clientName.length < 2) {
-      setBookingError("Please enter your full name (at least 2 characters).");
+    if (firstName.length < 1 || lastName.length < 1) {
+      setBookingError("Please enter your first name and surname.");
       setStep("details");
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clientEmail)) {
+    if (!EMAIL_RE.test(clientEmail)) {
       setBookingError("Please enter a valid email address.");
       setStep("details");
       return;
@@ -650,7 +699,8 @@ export function PublicBooking() {
         service_id: service.id,
         ...(selectedListing ? { listing_id: selectedListing.id } : {}),
         start_at: selectedSlotIso,
-        client_name: clientName,
+        client_first_name: firstName,
+        client_last_name: lastName,
         client_email: clientEmail,
         ...(clientPhone ? { client_phone: `${phoneDialCode}${clientPhone.replace(/\s+/g, "")}` } : {}),
         ...(form.notes.trim() ? { notes: form.notes.trim() } : {}),
@@ -694,7 +744,7 @@ export function PublicBooking() {
   }
 
   const canProceedDetails =
-    Boolean(form.name.trim() && form.email.trim() && form.phone.trim() && selectedSlotIso);
+    Boolean(form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && selectedSlotIso);
 
   const resolvedAppointmentFormat: AppointmentFormat | null = service
     ? service.appointment_type === "hybrid"
@@ -1541,32 +1591,88 @@ export function PublicBooking() {
                 }}
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                  {[
-                    { id: "name", label: "Full name", placeholder: "Alexandra Chen", Icon: User, type: "text", key: "name" },
-                    { id: "email", label: "Email address", placeholder: "alex@example.com", Icon: Mail, type: "email", key: "email" },
-                  ].map(({ id, label, placeholder, Icon, type, key }) => (
-                    <div key={id}>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
-                        {label}
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <Icon
-                          size={15}
-                          color={stone400}
-                          style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }}
-                        />
-                        <input
-                          type={type}
-                          value={form[key as keyof typeof form]}
-                          onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                          placeholder={placeholder}
-                          style={{ ...inputStyle, paddingLeft: 38 }}
-                          onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                          onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                        />
-                      </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
+                      Email address
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <Mail
+                        size={15}
+                        color={stone400}
+                        style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }}
+                      />
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                        placeholder="alex@example.com"
+                        autoComplete="email"
+                        style={{ ...inputStyle, paddingLeft: 38 }}
+                        onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
+                        onBlur={(e) => (e.target.style.borderColor = "transparent")}
+                      />
                     </div>
-                  ))}
+                  </div>
+
+                  {returningClient && (
+                    <div
+                      style={{
+                        backgroundColor: "var(--color-accent)",
+                        border: "1px solid rgba(146,64,14,0.14)",
+                        borderRadius: 14,
+                        padding: "12px 14px",
+                        fontSize: 13,
+                        color: stone600,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <Sparkles size={15} color={brandPrimary} />
+                      <span>
+                        Welcome back,{" "}
+                        <strong style={{ color: dark }}>
+                          {`${returningClient.first_name} ${returningClient.last_name}`.trim()}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 12,
+                    }}
+                  >
+                    {[
+                      { id: "firstName", label: "First name", placeholder: "Alexandra", key: "firstName" as const },
+                      { id: "lastName", label: "Surname", placeholder: "Chen", key: "lastName" as const },
+                    ].map(({ id, label, placeholder, key }) => (
+                      <div key={id}>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
+                          {label}
+                        </label>
+                        <div style={{ position: "relative" }}>
+                          <User
+                            size={15}
+                            color={stone400}
+                            style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }}
+                          />
+                          <input
+                            type="text"
+                            value={form[key]}
+                            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                            placeholder={placeholder}
+                            autoComplete={key === "firstName" ? "given-name" : "family-name"}
+                            style={{ ...inputStyle, paddingLeft: 38 }}
+                            onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
+                            onBlur={(e) => (e.target.style.borderColor = "transparent")}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
                   <PhoneInput
                     countryCode={phoneCountryCode}
@@ -1879,18 +1985,27 @@ export function PublicBooking() {
                       marginBottom: 8,
                     }}
                   >
-                    Payment check failed
+                    {/not completed yet|still processing/i.test(bookingError)
+                      ? "Payment still processing"
+                      : "Payment unsuccessful"}
                   </h2>
                   <p style={{ fontSize: 14, color: "#E74C3C", marginBottom: 16, maxWidth: 380, lineHeight: 1.6 }}>
                     {bookingError}
                   </p>
                   <p style={{ fontSize: 13, color: stone500, marginBottom: 20, maxWidth: 380, lineHeight: 1.6 }}>
-                    If you were charged, your booking may still confirm shortly. You can also try refreshing this page
-                    or contact the business for help.
+                    {/not completed yet|still processing/i.test(bookingError)
+                      ? "If you were charged, this page can take a moment to confirm. Refresh once, and do not pay again until you see a failure."
+                      : "You were not charged for a completed booking. The time slot is free again — you can start over and try a different payment method."}
                   </p>
                   <button
                     type="button"
-                    onClick={resetBooking}
+                    onClick={() => {
+                      if (/not completed yet|still processing/i.test(bookingError) && businessId) {
+                        window.location.reload();
+                        return;
+                      }
+                      resetBooking();
+                    }}
                     style={{
                       padding: "12px 20px",
                       borderRadius: 13,
@@ -1903,7 +2018,7 @@ export function PublicBooking() {
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >
-                    Start over
+                    {/not completed yet|still processing/i.test(bookingError) ? "Refresh status" : "Book again"}
                   </button>
                 </>
               )}
@@ -2044,6 +2159,13 @@ export function PublicBooking() {
                       confirmedBooking?.service_deposit ?? service?.deposit ?? 0;
                     const price = confirmedBooking?.service_price ?? service?.price ?? 0;
                     const rows = [
+                      {
+                        label: "Name",
+                        value:
+                          confirmedBooking?.client_name ||
+                          `${form.firstName} ${form.lastName}`.trim() ||
+                          "—",
+                      },
                       ...(confirmedBooking?.listing_name || selectedListing?.name
                         ? [{ label: "Listing", value: confirmedBooking?.listing_name || selectedListing?.name || "—" }]
                         : []),

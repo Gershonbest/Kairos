@@ -16,7 +16,7 @@ import { BrandLoader } from "../../components/brand/BrandLoader";
 import { DashboardHomeHeader } from "../../components/dashboard-home/DashboardHomeHeader";
 import { DashboardMiniCalendar } from "../../components/dashboard-home/DashboardMiniCalendar";
 import { DashboardStatsRow } from "../../components/dashboard-home/DashboardStatsRow";
-import { api } from "../../../lib/api/client";
+import { api, bookingClientLabel } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
 
@@ -53,6 +53,7 @@ function buildUpcomingAppointments(
     status: string;
     start_at: string;
     client_name: string;
+    client_profile_name?: string | null;
     service_name: string;
     listing_name?: string | null;
   }>
@@ -68,7 +69,7 @@ function buildUpcomingAppointments(
     .slice(0, 6)
     .map((booking) => ({
       id: booking.id,
-      client: booking.client_name,
+      client: bookingClientLabel(booking),
       service: booking.service_name,
       product: booking.listing_name ?? null,
       status: booking.status,
