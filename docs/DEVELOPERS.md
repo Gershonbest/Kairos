@@ -206,7 +206,8 @@ Copy `backend/.env.example` → `backend/.env`. Key variables:
 | `PAYSTACK_WEBHOOK_SECRET` | Webhook HMAC secret (defaults to secret key) |
 | `PAYSTACK_PLATFORM_FEE_PERCENT` | Platform fee on booking payments (default `5`) |
 | `PAYSTACK_CHANNELS` | Checkout methods (`card,bank,ussd,bank_transfer,qr`; OPay under `bank`) |
-| `PAYSTACK_CALLBACK_BASE_URL` | Frontend origin for Paystack redirects |
+| `PAYSTACK_CALLBACK_URL_PLATFORM` | Paystack return URL after a business pays for a plan |
+| `PAYSTACK_CALLBACK_URL_BOOKING` | Paystack return base after a client pays a business |
 
 Frontend optional env:
 
@@ -356,7 +357,8 @@ Orheo uses **Paystack** for two revenue streams:
 | `PAYSTACK_PUBLIC_KEY` | Optional frontend Inline JS |
 | `PAYSTACK_WEBHOOK_SECRET` | Webhook HMAC (defaults to secret key) |
 | `PAYSTACK_PLATFORM_FEE_PERCENT` | Platform cut on booking payments (default 5) |
-| `PAYSTACK_CALLBACK_BASE_URL` | Frontend origin for Paystack return URLs |
+| `PAYSTACK_CALLBACK_URL_PLATFORM` | Return URL after a business pays for a plan |
+| `PAYSTACK_CALLBACK_URL_BOOKING` | Return base after a client pays a business |
 
 **Client helpers**: `backend/app/infra/paystack.py`
 

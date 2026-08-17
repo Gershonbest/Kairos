@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { AlertTriangle, ArrowLeft, Check, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { BrandLoader } from "../../components/brand/BrandLoader";
-import { api, clearAuthTokens } from "../../../lib/api/client";
+import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 
@@ -21,11 +21,16 @@ function formatPrice(amount: number): string {
 
 export function ChoosePlan() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const paymentHandledRef = useRef(false);
   const [selectedPlan, setSelectedPlan] = useState("premium");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    typeof (location.state as { paymentError?: string } | null)?.paymentError === "string"
+      ? (location.state as { paymentError: string }).paymentError
+      : ""
+  );
   const [success, setSuccess] = useState("");
   const [isActivating, setIsActivating] = useState(false);
   const [paymentVerified, setPaymentVerified] = useState(false);
@@ -105,11 +110,9 @@ export function ChoosePlan() {
             result.message || "Payment is still processing. Wait a moment, then refresh this page."
           );
         }
-        // Verification activates the plan and queues the receipt email. Require
-        // a fresh login so the restored account starts with a clean session.
-        clearAuthTokens();
         markWelcomeAfterPayment();
-        navigate("/auth/login?payment=success", { replace: true });
+        await refreshSubscriptionCaches();
+        navigate("/dashboard", { replace: true });
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Unable to verify payment."))
       .finally(() => setIsActivating(false));

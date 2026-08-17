@@ -1,6 +1,6 @@
 // Sidebar navigation layout for tenant dashboard pages.
 
-import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigate, useSearchParams } from "react-router";
 import { 
   LayoutDashboard, 
   Calendar, 
@@ -20,6 +20,7 @@ import { TrialBanner } from "../billing/TrialBanner";
 import { NotificationBell } from "../notifications/NotificationBell";
 import { ThemeToggle } from "../theme/ThemeToggle";
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import orheoLogo from "../../../assets/orheo-logo.png";
 import {
   api,
@@ -28,11 +29,18 @@ import {
   isPlatformAdminSession,
   type SubscriptionStatus,
 } from "../../../lib/api/client";
+import { BrandLoader } from "../brand/BrandLoader";
 import { useSessionGuard } from "../../../lib/auth/useSessionGuard";
+import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
+import { queryKeys } from "../../../lib/queryClient";
+import { readPlatformPaymentReference } from "../../../lib/payments/platformReturn";
 
 export function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const paymentReference = readPlatformPaymentReference(searchParams);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState<{ full_name: string; email: string } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
@@ -50,9 +58,48 @@ export function DashboardLayout() {
   });
 
   useEffect(() => {
+    if (!paymentReference) return;
+    let cancelled = false;
+    api
+      .verifyPaymentReference(paymentReference)
+      .then(async (result) => {
+        if (cancelled) return;
+        if (!result.ok) {
+          if (result.status === "failed") {
+            throw new Error(result.message || "Payment failed or was cancelled. You can try again.");
+          }
+          throw new Error(
+            result.message || "Payment is still processing. Wait a moment, then refresh this page."
+          );
+        }
+        markWelcomeAfterPayment();
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.subscriptionStatus }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.me }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.tenant }),
+        ]);
+        navigate("/dashboard", { replace: true });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        navigate("/dashboard/choose-plan", {
+          replace: true,
+          state: {
+            paymentError: err instanceof Error ? err.message : "Unable to verify payment.",
+          },
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate, paymentReference, queryClient]);
+
+  useEffect(() => {
     if (!hasAccessToken() || isPlatformAdminSession()) {
       return;
     }
+    if (paymentReference) return;
 
     api
       .me()
@@ -77,10 +124,11 @@ export function DashboardLayout() {
         // fetches (e.g. the 402 redirect to /dashboard/choose-plan) must not
         // clear the session, or a locked-out tenant gets signed out instead.
       });
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname, paymentReference]);
 
   useEffect(() => {
     if (!hasAccessToken() || isPlatformAdminSession()) return;
+    if (paymentReference) return;
     if (location.pathname.startsWith("/dashboard/choose-plan")) return;
     api
       .getSubscriptionStatus()
@@ -96,7 +144,7 @@ export function DashboardLayout() {
       .catch(() => {
         // Non-blocking if status check fails during navigation.
       });
-  }, [location.pathname, navigate]);
+  }, [location.pathname, navigate, paymentReference]);
 
   const initials = user?.full_name
     ? user.full_name
@@ -122,6 +170,14 @@ export function DashboardLayout() {
 
   // Child pages fetch on mount, so an admin (or expired) session must not
   // reach them even for the frame before the guard redirects.
+  if (paymentReference) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <BrandLoader label="Confirming your payment…" size="lg" fullscreen />
+      </div>
+    );
+  }
+
   if (!hasLiveSession() || isPlatformAdminSession()) return null;
 
   return (

@@ -9,7 +9,6 @@ def _settings(**overrides):
     base = {
         "paystack_callback_url_platform": None,
         "paystack_callback_url_booking": None,
-        "paystack_callback_base_url": None,
         "frontend_base_url": "http://localhost:5173",
         "public_booking_base_url": "",
     }
@@ -21,10 +20,20 @@ def test_platform_callback_uses_dedicated_url(monkeypatch):
     monkeypatch.setattr(
         payment_service,
         "settings",
+        _settings(paystack_callback_url_platform="https://app.orheo.com/dashboard"),
+    )
+    url = payment_service.platform_payment_callback_url(reference="sub_abc")
+    assert url == "https://app.orheo.com/dashboard?payment=1&reference=sub_abc"
+
+
+def test_platform_callback_rewrites_legacy_choose_plan_path(monkeypatch):
+    monkeypatch.setattr(
+        payment_service,
+        "settings",
         _settings(paystack_callback_url_platform="https://app.orheo.com/dashboard/choose-plan"),
     )
     url = payment_service.platform_payment_callback_url(reference="sub_abc")
-    assert url == "https://app.orheo.com/dashboard/choose-plan?payment=1&reference=sub_abc"
+    assert url == "https://app.orheo.com/dashboard?payment=1&reference=sub_abc"
 
 
 def test_platform_callback_appends_path_when_origin_only(monkeypatch):
@@ -34,7 +43,7 @@ def test_platform_callback_appends_path_when_origin_only(monkeypatch):
         _settings(paystack_callback_url_platform="https://app.orheo.com"),
     )
     url = payment_service.platform_payment_callback_url(reference="sub_abc")
-    assert url == "https://app.orheo.com/dashboard/choose-plan?payment=1&reference=sub_abc"
+    assert url == "https://app.orheo.com/dashboard?payment=1&reference=sub_abc"
 
 
 def test_booking_callback_uses_dedicated_url(monkeypatch):
