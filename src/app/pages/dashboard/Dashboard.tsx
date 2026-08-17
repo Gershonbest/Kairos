@@ -6,6 +6,7 @@ import {
   DollarSign,
   TrendingUp,
   Clock,
+  Plus,
   Sparkles,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -146,7 +147,17 @@ export function Dashboard() {
       )}
 
       {/* Header */}
-      <DashboardHomeHeader firstName={me?.full_name?.trim().split(/\s+/)[0] ?? null} />
+      <DashboardHomeHeader
+        firstName={me?.full_name?.trim().split(/\s+/)[0] ?? null}
+        action={
+          <Button asChild className="w-full sm:w-auto">
+            <Link to="/dashboard/calendar?new=1">
+              <Plus className="w-4 h-4 mr-2" />
+              New booking
+            </Link>
+          </Button>
+        }
+      />
       {summaryError && <p className="text-sm text-amber-700">{summaryError}</p>}
 
       <DashboardStatsRow stats={homeStats} loading={homeStatsLoading} />

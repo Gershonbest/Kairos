@@ -50,19 +50,63 @@ def split_amounts(gross: float, fee_percent: float) -> tuple[float, float]:
     return fee, settlement
 
 
+def _trim_url(value: str | None) -> str:
+    return (value or "").strip().rstrip("/")
+
+
+def _with_query(base: str, params: dict[str, str]) -> str:
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}{urlencode(params)}"
+
+
+def callback_base_url() -> str:
+    """Origin used for business-to-platform (subscription) Paystack redirects."""
+    explicit = _trim_url(settings.paystack_callback_url_platform)
+    if explicit:
+        marker = "/dashboard/choose-plan"
+        if marker in explicit:
+            return explicit.split(marker, 1)[0].rstrip("/")
+        return explicit
+    return _trim_url(settings.paystack_callback_base_url or settings.frontend_base_url)
+
+
+def platform_payment_callback_url(*, reference: str) -> str:
+    """Paystack return URL after a business pays Orheo for a plan."""
+    explicit = _trim_url(settings.paystack_callback_url_platform)
+    if explicit:
+        base = explicit
+        if "/dashboard/choose-plan" not in base:
+            base = f"{base}/dashboard/choose-plan"
+    else:
+        base = f"{callback_base_url()}/dashboard/choose-plan"
+    return _with_query(base, {"payment": "1", "reference": reference})
+
+
 def callback_booking_base_url() -> str:
-    """Base URL used for public booking callback redirects.
+    """Base URL used for client-to-business booking callback redirects.
 
     Priority:
-    1) PUBLIC_BOOKING_BASE_URL (already includes `/book`)
-    2) PAYSTACK_CALLBACK_BASE_URL (origin only) + `/book`
-    3) FRONTEND_BASE_URL (origin only) + `/book`
+    1) PAYSTACK_CALLBACK_URL_BOOKING (already includes `/book`)
+    2) PUBLIC_BOOKING_BASE_URL (already includes `/book`)
+    3) PAYSTACK_CALLBACK_BASE_URL (origin only) + `/book`
+    4) FRONTEND_BASE_URL (origin only) + `/book`
     """
-    public_booking_base = (settings.public_booking_base_url or "").strip().rstrip("/")
+    explicit = _trim_url(settings.paystack_callback_url_booking)
+    if explicit:
+        return explicit
+    public_booking_base = _trim_url(settings.public_booking_base_url)
     if public_booking_base:
         return public_booking_base
-    callback_origin = (settings.paystack_callback_base_url or settings.frontend_base_url).rstrip("/")
+    callback_origin = _trim_url(settings.paystack_callback_base_url or settings.frontend_base_url)
     return f"{callback_origin}/book"
+
+
+def booking_payment_callback_url(*, tenant_key: str, booking_id: str, reference: str) -> str:
+    """Paystack return URL after a client pays a business for a booking."""
+    return _with_query(
+        f"{callback_booking_base_url()}/{tenant_key}",
+        {"payment": "1", "booking_id": booking_id, "reference": reference},
+    )
 
 
 async def ensure_booking_payment(
@@ -142,8 +186,11 @@ async def initialize_booking_paystack(
 
     tenant_key = business_key or tenant.public_slug or tenant.id
     reference = f"ps_{booking.id.replace('-', '')[:12]}_{tx.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:6]}"
-    query = urlencode({"payment": "1", "booking_id": booking.id, "reference": reference})
-    callback_url = f"{callback_booking_base_url()}/{tenant_key}?{query}"
+    callback_url = booking_payment_callback_url(
+        tenant_key=tenant_key,
+        booking_id=booking.id,
+        reference=reference,
+    )
 
     intent = await get_provider("paystack").create_intent(
         amount=amount,

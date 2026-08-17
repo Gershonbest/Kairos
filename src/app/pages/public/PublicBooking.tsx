@@ -122,8 +122,14 @@ function serviceDurationLabel(service: { scheduling_mode: string; duration: numb
 
 // ─── AI responses ─────────────────────────────────────────────────────────────
 
-function getAIResponse(input: string): string {
+function assistantIntro(businessName: string): string {
+  const name = businessName.trim() || "this business";
+  return `Hi! I'm the ${name} booking assistant. Ask me about services, pricing, availability — or just tell me what you need and I'll guide you through it.`;
+}
+
+function getAIResponse(input: string, businessName: string): string {
   const q = input.toLowerCase();
+  const name = businessName.trim() || "this business";
   if (q.includes("price") || q.includes("cost") || q.includes("how much"))
     return "Our treatments start at ₦120. Quick overview:\n\n• Swedish Massage — ₦120 (₦40 deposit)\n• Deep Tissue — ₦160 (₦55 deposit)\n• Signature Facial — ₦140 (₦45 deposit)\n• Hot Stone Ritual — ₦175 (₦60 deposit)\n\nDeposits are refundable if you cancel 24h+ in advance. Want to book?";
   if (q.includes("available") || q.includes("slot") || q.includes("open"))
@@ -139,7 +145,7 @@ function getAIResponse(input: string): string {
   if (q.includes("deposit") || q.includes("refund"))
     return "Deposits hold your time slot and are fully refundable with 24h+ notice. The balance is paid at your appointment. Deposits range from ₦40–₦60 depending on the service.";
   if (q.includes("hi") || q.includes("hello") || q.includes("hey"))
-    return "Hi there! I'm the Lumière booking assistant. Tell me what you're looking for — a treatment type, availability, pricing — and I'll help you get booked in minutes.";
+    return `Hi there! I'm the ${name} booking assistant. Tell me what you're looking for — a service, availability, pricing — and I'll help you get booked in minutes.`;
   if (q.includes("book") || q.includes("appointment"))
     return "I'd love to help you book! Use the steps on this page or just tell me: which service interests you, and when are you looking to come in?";
   if (q.includes("voice") || q.includes("speak") || q.includes("talk"))
@@ -229,8 +235,7 @@ export function PublicBooking() {
     {
       id: "0",
       role: "assistant",
-      content:
-        "Hi! I'm your Lumière booking assistant. Ask me about services, pricing, availability — or just tell me what you need and I'll guide you through it.",
+      content: assistantIntro("this business"),
     },
   ]);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -376,6 +381,14 @@ export function PublicBooking() {
           contact_email: biz.contact_email,
           help_email: biz.help_email,
         });
+        if (biz.name?.trim()) {
+          setMessages((prev) => {
+            if (prev.length === 1 && prev[0].id === "0") {
+              return [{ ...prev[0], content: assistantIntro(biz.name) }];
+            }
+            return prev;
+          });
+        }
         if (biz.country_code) {
           setPhoneCountryCode(biz.country_code);
           setPhoneDialCode(getDialCodeForCountry(biz.country_code));
@@ -523,7 +536,11 @@ export function PublicBooking() {
     const content = text ?? chatInput;
     if (!content.trim()) return;
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content };
-    const aiMsg: ChatMessage = { id: (Date.now() + 1).toString(), role: "assistant", content: getAIResponse(content) };
+    const aiMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      role: "assistant",
+      content: getAIResponse(content, businessProfile.name),
+    };
     setMessages((prev) => [...prev, userMsg, aiMsg]);
     setChatInput("");
   }
@@ -2401,8 +2418,8 @@ export function PublicBooking() {
                   <Sparkles size={15} color="#fff" />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>Lumière Assistant</p>
-                  <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>AI · Book by chat or voice</p>
+                  <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{businessProfile.name}</p>
+                  <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>Booking assistant</p>
                 </div>
                 <button
                   onClick={() => setVoiceActive(!voiceActive)}

@@ -7,9 +7,10 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
-import { Search, Plus, Mail, Phone, Calendar, DollarSign, MessageSquare } from "lucide-react";
+import { Search, Plus, Mail, Phone, Calendar, CalendarPlus, DollarSign, MessageSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 
@@ -25,6 +26,7 @@ interface Client {
 }
 
 export function ClientManagement() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -309,6 +311,16 @@ export function ClientManagement() {
                       </div>
                     </DialogTitle>
                   </DialogHeader>
+
+                  <Button
+                    className="mt-4 w-full sm:w-auto"
+                    onClick={() =>
+                      navigate(`/dashboard/calendar?new=1&client=${encodeURIComponent(client.id)}`)
+                    }
+                  >
+                    <CalendarPlus className="w-4 h-4 mr-2" />
+                    Book appointment
+                  </Button>
 
                   <Tabs defaultValue="overview" className="mt-4">
                     <TabsList className="grid w-full grid-cols-3">

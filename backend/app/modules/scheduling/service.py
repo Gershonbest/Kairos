@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infra.models import AvailabilityRule, Booking, BookingStatus, Service
+from app.infra.models import AvailabilityRule, Booking, BookingStatus, CalendarBlock, Service
 
 
 def _parse_time(value: str) -> time:
@@ -33,6 +33,7 @@ def generate_slots(
     service: Service,
     rules: list[AvailabilityRule],
     existing_bookings: list[Booking],
+    calendar_blocks: list[CalendarBlock] | None = None,
 ) -> list[str]:
     rules_by_day: dict[int, list[AvailabilityRule]] = defaultdict(list)
     for rule in rules:
@@ -49,8 +50,12 @@ def generate_slots(
     current_day = from_dt.date()
     final_day = to_dt.date()
     is_all_day = getattr(service.scheduling_mode, "value", service.scheduling_mode) == "all_day"
+    blocks = calendar_blocks or []
 
     while current_day <= final_day:
+        if any(block.start_date <= current_day <= block.end_date for block in blocks):
+            current_day += timedelta(days=1)
+            continue
         configured_day = (current_day.weekday() + 1) % 7
         day_rules = rules_by_day.get(configured_day, [])
         if not day_rules:
@@ -101,7 +106,7 @@ async def load_scheduling_context(
     *,
     from_dt: datetime | None = None,
     to_dt: datetime | None = None,
-) -> tuple[list[AvailabilityRule], list[Booking], list[Service]]:
+) -> tuple[list[AvailabilityRule], list[Booking], list[Service], list[CalendarBlock]]:
     if from_dt is None:
         from_dt = datetime.now(UTC)
     if to_dt is None:
@@ -126,7 +131,16 @@ async def load_scheduling_context(
             select(Service).where(Service.tenant_id == tenant_id, Service.active.is_(True))
         )
     ).scalars().all()
-    return list(rules), list(bookings), list(services)
+    blocks = (
+        await session.execute(
+            select(CalendarBlock).where(
+                CalendarBlock.tenant_id == tenant_id,
+                CalendarBlock.end_date >= from_dt.date(),
+                CalendarBlock.start_date <= to_dt.date(),
+            )
+        )
+    ).scalars().all()
+    return list(rules), list(bookings), list(services), list(blocks)
 
 
 def _format_slot_label(slot_iso: str) -> str:
@@ -139,6 +153,7 @@ def build_scheduling_insights(
     rules: list[AvailabilityRule],
     bookings: list[Booking],
     services: list[Service],
+    calendar_blocks: list[CalendarBlock],
     from_dt: datetime,
     to_dt: datetime,
 ) -> dict:
@@ -161,6 +176,7 @@ def build_scheduling_insights(
             service=primary_service,
             rules=rules,
             existing_bookings=active_bookings,
+            calendar_blocks=calendar_blocks,
         )
 
     # Detect schedule gaps (60+ min between bookings on same day).

@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router";
-import { Calendar as CalendarIcon, CheckCircle2, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, User, UserX, XCircle } from "lucide-react";
+import { Calendar as CalendarIcon, CalendarOff, CheckCircle2, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, Plus, Trash2, User, UserX, XCircle } from "lucide-react";
+import { CalendarBlockDialog } from "../../components/bookings/CalendarBlockDialog";
+import { ManualBookingDialog } from "../../components/bookings/ManualBookingDialog";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
@@ -99,12 +101,21 @@ export function BookingCalendar() {
   const [view, setView] = useState<CalendarView>("week");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState<BookingListItem | null>(null);
+  const [manualBookingOpen, setManualBookingOpen] = useState(false);
+  const [manualBookingStart, setManualBookingStart] = useState<Date | null>(null);
+  const [manualBookingClientId, setManualBookingClientId] = useState<string | null>(null);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [blockInitialDate, setBlockInitialDate] = useState<Date | null>(null);
   const [outcomeUpdating, setOutcomeUpdating] = useState<string | null>(null);
   const [outcomeError, setOutcomeError] = useState("");
 
   const { data: bookings = [] } = useQuery({
     queryKey: queryKeys.bookings,
     queryFn: () => api.listBookings(),
+  });
+  const { data: calendarBlocks = [] } = useQuery({
+    queryKey: queryKeys.calendarBlocks,
+    queryFn: () => api.listCalendarBlocks(),
   });
 
   useEffect(() => {
@@ -125,6 +136,20 @@ export function BookingCalendar() {
     if (Number.isNaN(parsed.getTime())) return;
     setCurrentDate(parsed);
     setView("day");
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("new") !== "1") return;
+    const dateParam = searchParams.get("date");
+    const startParam = searchParams.get("start");
+    const parsed = startParam
+      ? new Date(startParam)
+      : dateParam
+        ? new Date(`${dateParam}T09:00:00`)
+        : new Date();
+    setManualBookingStart(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
+    setManualBookingClientId(searchParams.get("client"));
+    setManualBookingOpen(true);
   }, [searchParams]);
 
   const bookingsByDate = useMemo(() => {
@@ -152,6 +177,10 @@ export function BookingCalendar() {
   }, [currentDate]);
 
   const dayBookings = bookingsByDate[localDateKey(currentDate)] ?? [];
+  const blocksForDate = (date: Date) => {
+    const key = localDateKey(date);
+    return calendarBlocks.filter((block) => block.start_date <= key && block.end_date >= key);
+  };
 
   const headerLabel = useMemo(() => {
     if (view === "day") {
@@ -188,6 +217,35 @@ export function BookingCalendar() {
     const next = new URLSearchParams(searchParams);
     next.delete("booking");
     setSearchParams(next, { replace: true });
+  };
+
+  const openManualBooking = (start?: Date) => {
+    setManualBookingStart(start ?? currentDate);
+    setManualBookingClientId(null);
+    setManualBookingOpen(true);
+  };
+
+  const closeManualBooking = () => {
+    setManualBookingOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.delete("new");
+    next.delete("client");
+    next.delete("start");
+    setSearchParams(next, { replace: true });
+  };
+
+  const openBlockDialog = (date = currentDate) => {
+    setBlockInitialDate(date);
+    setBlockDialogOpen(true);
+  };
+
+  const deleteBlock = async (blockId: string) => {
+    try {
+      await api.deleteCalendarBlock(blockId);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.calendarBlocks });
+    } catch (err) {
+      setOutcomeError(err instanceof Error ? err.message : "Unable to remove calendar block.");
+    }
   };
 
   const updateOutcomeMutation = useMutation({
@@ -261,10 +319,20 @@ export function BookingCalendar() {
           <h1 className="text-3xl font-semibold">Booking Calendar</h1>
           <p className="text-muted-foreground mt-1">Manage your appointments and schedule</p>
         </div>
-        <Button variant="outline" onClick={() => navigate("/dashboard/availability")}>
-          <Clock className="w-4 h-4 mr-2" />
-          Edit availability
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => openManualBooking(new Date())}>
+            <Plus className="w-4 h-4 mr-2" />
+            New booking
+          </Button>
+          <Button variant="outline" onClick={() => openBlockDialog(new Date())}>
+            <CalendarOff className="w-4 h-4 mr-2" />
+            Block time
+          </Button>
+          <Button variant="outline" onClick={() => navigate("/dashboard/availability")}>
+            <Clock className="w-4 h-4 mr-2" />
+            Edit availability
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -320,6 +388,7 @@ export function BookingCalendar() {
                   const inMonth = day.getMonth() === currentDate.getMonth();
                   const isToday = key === localDateKey(new Date());
                   const dayItems = bookingsByDate[key] ?? [];
+                  const dayBlocks = blocksForDate(day);
                   return (
                     <button
                       key={key}
@@ -329,12 +398,19 @@ export function BookingCalendar() {
                         setView("day");
                       }}
                       className={`min-h-[110px] p-2 border-r border-b border-border text-left align-top hover:bg-muted/40 ${
-                        inMonth ? "bg-card" : "bg-muted/30"
+                        dayBlocks.length > 0
+                          ? "bg-red-50 dark:bg-red-950/20"
+                          : inMonth ? "bg-card" : "bg-muted/30"
                       } ${isToday ? "ring-1 ring-inset ring-primary/40" : ""}`}
                     >
                       <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-primary" : ""}`}>
                         {day.getDate()}
                       </div>
+                      {dayBlocks.length > 0 && (
+                        <p className="mb-1 truncate rounded bg-red-100 px-1.5 py-1 text-[10px] font-medium text-red-700 dark:bg-red-500/20 dark:text-red-200">
+                          Blocked{dayBlocks[0].reason ? ` · ${dayBlocks[0].reason}` : ""}
+                        </p>
+                      )}
                       <div className="space-y-0.5">
                         {dayItems.slice(0, 3).map((booking) => bookingChip(booking, true))}
                         {dayItems.length > 3 && (
@@ -388,8 +464,17 @@ export function BookingCalendar() {
                   {weekDays.map((day) => {
                     const key = localDateKey(day);
                     const allDayItems = (bookingsByDate[key] ?? []).filter(isAllDayBooking);
+                    const dayBlocks = blocksForDate(day);
                     return (
                       <div key={`allday-${key}`} className="p-2 border-r border-border min-h-[56px]">
+                        {dayBlocks.map((block) => (
+                          <div
+                            key={block.id}
+                            className="mb-1 truncate rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+                          >
+                            Blocked{block.reason ? ` · ${block.reason}` : ""}
+                          </div>
+                        ))}
                         {allDayItems.map((booking) => bookingChip(booking, true))}
                       </div>
                     );
@@ -402,12 +487,26 @@ export function BookingCalendar() {
                     </div>
                     {weekDays.map((day) => {
                       const key = localDateKey(day);
+                      const blocked = blocksForDate(day).length > 0;
                       const hourBookings = (bookingsByDate[key] ?? []).filter(
                         (booking) =>
                           !isAllDayBooking(booking) && new Date(booking.start_at).getHours() === hour
                       );
                       return (
-                        <div key={`${key}-${hour}`} className="p-2 border-r border-border min-h-[80px]">
+                        <div
+                          key={`${key}-${hour}`}
+                          className={`p-2 border-r border-border min-h-[80px] ${
+                            blocked
+                              ? "bg-red-50/60 dark:bg-red-950/10"
+                              : "cursor-pointer hover:bg-muted/30"
+                          }`}
+                          onClick={() => {
+                            if (blocked) return;
+                            const start = new Date(day);
+                            start.setHours(hour, 0, 0, 0);
+                            openManualBooking(start);
+                          }}
+                        >
                           {hourBookings.map((booking) => bookingChip(booking))}
                         </div>
                       );
@@ -429,7 +528,16 @@ export function BookingCalendar() {
                   <span className="text-xs font-medium text-amber-900 dark:text-amber-100">All day</span>
                 </div>
                 <div className="p-3 space-y-2">
-                  {dayBookings.filter(isAllDayBooking).length === 0 ? (
+                  {blocksForDate(currentDate).map((block) => (
+                    <div
+                      key={block.id}
+                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+                    >
+                      Calendar blocked{block.reason ? ` · ${block.reason}` : ""}
+                    </div>
+                  ))}
+                  {dayBookings.filter(isAllDayBooking).length === 0 &&
+                  blocksForDate(currentDate).length === 0 ? (
                     <div className="h-full min-h-[40px] rounded-lg border border-dashed border-amber-300/70 dark:border-amber-400/30" />
                   ) : (
                     dayBookings.filter(isAllDayBooking).map((booking) => bookingChip(booking))
@@ -437,6 +545,7 @@ export function BookingCalendar() {
                 </div>
               </div>
               {HOURS.map((hour) => {
+                const blocked = blocksForDate(currentDate).length > 0;
                 const hourBookings = dayBookings.filter(
                   (booking) =>
                     !isAllDayBooking(booking) && new Date(booking.start_at).getHours() === hour
@@ -446,7 +555,19 @@ export function BookingCalendar() {
                     <div className="p-4 bg-muted/40 border-r border-border">
                       <span className="text-sm text-muted-foreground">{String(hour).padStart(2, "0")}:00</span>
                     </div>
-                    <div className="p-3 space-y-2">
+                    <div
+                      className={`p-3 space-y-2 ${
+                        blocked
+                          ? "bg-red-50/60 dark:bg-red-950/10"
+                          : "cursor-pointer hover:bg-muted/30"
+                      }`}
+                      onClick={() => {
+                        if (blocked) return;
+                        const start = new Date(currentDate);
+                        start.setHours(hour, 0, 0, 0);
+                        openManualBooking(start);
+                      }}
+                    >
                       {hourBookings.length === 0 ? (
                         <div className="h-full min-h-[56px] rounded-lg border border-dashed border-border" />
                       ) : (
@@ -481,6 +602,54 @@ export function BookingCalendar() {
         </CardContent>
       </Card>
 
+      {calendarBlocks.length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <h2 className="font-semibold">Blocked dates</h2>
+              <p className="text-sm text-muted-foreground">
+                Remove a block when the business is ready to accept bookings again.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {calendarBlocks.map((block) => (
+                <div
+                  key={block.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium">
+                      {new Date(`${block.start_date}T00:00:00`).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                      {block.end_date !== block.start_date &&
+                        ` – ${new Date(`${block.end_date}T00:00:00`).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}`}
+                    </p>
+                    {block.reason && (
+                      <p className="text-sm text-muted-foreground">{block.reason}</p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Remove calendar block"
+                    onClick={() => void deleteBlock(block.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Sheet open={Boolean(selectedBooking)} onOpenChange={(open) => !open && closeBooking()}>
         <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
           {selectedBooking && (
@@ -498,6 +667,9 @@ export function BookingCalendar() {
                     <Badge variant="outline" className="capitalize">
                       {selectedBooking.appointment_format === "online" ? "Online" : "In person"}
                     </Badge>
+                  )}
+                  {selectedBooking.booking_source === "dashboard" && (
+                    <Badge variant="outline">Staff-created</Badge>
                   )}
                 </div>
 
@@ -655,6 +827,35 @@ export function BookingCalendar() {
           )}
         </SheetContent>
       </Sheet>
+
+      <ManualBookingDialog
+        open={manualBookingOpen}
+        onOpenChange={(open) => {
+          if (!open) closeManualBooking();
+          else setManualBookingOpen(true);
+        }}
+        initialClientId={manualBookingClientId}
+        initialStart={manualBookingStart}
+        onCreated={(created) => {
+          queryClient.setQueryData<BookingListItem[]>(queryKeys.bookings, (rows) => [
+            ...(rows ?? []),
+            created,
+          ]);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.clients });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardHomeStats });
+          setCurrentDate(new Date(created.start_at));
+          setView("day");
+        }}
+      />
+      <CalendarBlockDialog
+        open={blockDialogOpen}
+        onOpenChange={setBlockDialogOpen}
+        initialDate={blockInitialDate}
+        onCreated={() => {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.calendarBlocks });
+        }}
+      />
     </div>
   );
 }

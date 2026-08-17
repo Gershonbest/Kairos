@@ -2,12 +2,13 @@
 
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -243,6 +244,20 @@ class AvailabilityRule(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+class CalendarBlock(Base):
+    __tablename__ = "calendar_blocks"
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    reason: Mapped[str | None] = mapped_column(String(200))
+    created_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Client(Base):
     __tablename__ = "clients"
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_clients_tenant_email"),)
@@ -293,6 +308,8 @@ class Booking(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     guest_first_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
     guest_last_name: Mapped[str] = mapped_column(String(60), default="", nullable=False)
+    booking_source: Mapped[str] = mapped_column(String(20), default="public", nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     appointment_format: Mapped[AppointmentFormat | None] = mapped_column(Enum(AppointmentFormat))
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

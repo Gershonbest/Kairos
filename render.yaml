@@ -76,6 +76,10 @@ services:
         value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
         value: https://kairos-frontend-sugb.onrender.com
+      - key: PAYSTACK_CALLBACK_URL_PLATFORM
+        value: https://kairos-frontend-sugb.onrender.com/dashboard/choose-plan
+      - key: PAYSTACK_CALLBACK_URL_BOOKING
+        value: https://kairos-frontend-sugb.onrender.com/book
 
   # ----- Frontend (Vite build served by nginx) -----
   - type: web

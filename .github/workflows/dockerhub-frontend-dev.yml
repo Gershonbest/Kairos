@@ -3,7 +3,7 @@ name: Docker Hub Frontend Push (Dev)
 on:
   push:
     branches:
-      - gersh-dev
+      - none
     paths:
       - "src/**"
       - "public/**"
