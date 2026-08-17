@@ -1,6 +1,7 @@
 // Typed HTTP API client with auth token handling.
 
 import { decodeToken, isTokenExpired } from "../auth/token";
+import { isPlatformPaymentReturn } from "../payments/platformReturn";
 import { queryClient } from "../queryClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
@@ -121,6 +122,8 @@ function redirectToLogin() {
 function redirectToChoosePlan() {
   if (typeof window === "undefined") return;
   if (window.location.pathname.startsWith("/dashboard/choose-plan")) return;
+  // Paystack just sent the owner back; verify the payment before locking the dashboard.
+  if (isPlatformPaymentReturn()) return;
   window.location.replace("/dashboard/choose-plan");
 }
 
@@ -354,6 +357,7 @@ export interface BookingListItem {
   client_profile_name?: string | null;
   client_email?: string | null;
   client_phone?: string | null;
+  booking_source?: "public" | "dashboard" | string;
   service_name: string;
   service_duration_minutes?: number;
   scheduling_mode?: SchedulingMode;
@@ -451,6 +455,14 @@ export interface AvailabilityRulePayload {
   start_time: string;
   end_time: string;
   is_enabled: boolean;
+}
+
+export interface CalendarBlockRecord {
+  id: string;
+  start_date: string;
+  end_date: string;
+  reason?: string | null;
+  created_at?: string | null;
 }
 
 export const api = {
@@ -637,6 +649,14 @@ export const api = {
     request<Array<{ id: string; day_of_week: number; start_time: string; end_time: string; is_enabled: boolean }>>(
       "/availability"
     ),
+  listCalendarBlocks: () => request<CalendarBlockRecord[]>("/availability/blocks"),
+  createCalendarBlock: (payload: { start_date: string; end_date: string; reason?: string }) =>
+    request<CalendarBlockRecord>("/availability/blocks", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteCalendarBlock: (blockId: string) =>
+    request<{ ok: boolean }>(`/availability/blocks/${blockId}`, { method: "DELETE" }),
   listSubscriptionPlans: () =>
     request<
       Array<{
@@ -736,6 +756,40 @@ export const api = {
     ),
   deleteClient: (clientId: string) => request<{ ok: boolean }>(`/clients/${clientId}`, { method: "DELETE" }),
   listBookings: () => request<BookingListItem[]>("/bookings"),
+  listManualBookingAvailability: (
+    serviceId: string,
+    fromIso: string,
+    toIso: string,
+    listingId?: string
+  ) =>
+    request<{ slots: string[] }>(
+      `/bookings/availability?service_id=${encodeURIComponent(serviceId)}&from_iso=${encodeURIComponent(
+        fromIso
+      )}&to_iso=${encodeURIComponent(toIso)}${
+        listingId ? `&listing_id=${encodeURIComponent(listingId)}` : ""
+      }`
+    ),
+  createManualBooking: (payload: {
+    client_id?: string;
+    new_client_first_name?: string;
+    new_client_last_name?: string;
+    new_client_email?: string;
+    new_client_phone?: string;
+    service_id: string;
+    listing_id?: string;
+    start_at: string;
+    guest_first_name?: string;
+    guest_last_name?: string;
+    notes?: string;
+    appointment_format?: "online" | "onsite";
+    send_confirmation: boolean;
+    payment_status: "unpaid" | "paid_external";
+    override_availability: boolean;
+  }) =>
+    request<BookingListItem>("/bookings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   updateBookingStatus: (bookingId: string, status: "completed" | "no_show" | "cancelled" | "confirmed") =>
     request<BookingListItem>(`/bookings/${bookingId}`, {
       method: "PATCH",

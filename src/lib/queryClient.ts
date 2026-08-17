@@ -9,6 +9,7 @@ export const queryKeys = {
   dashboardHomeStats: ["dashboard-home-stats"] as const,
   bookingLinks: ["booking-links"] as const,
   availability: ["availability"] as const,
+  calendarBlocks: ["calendar-blocks"] as const,
   transactions: ["transactions"] as const,
   paymentProvider: ["payment-provider"] as const,
   me: ["me"] as const,

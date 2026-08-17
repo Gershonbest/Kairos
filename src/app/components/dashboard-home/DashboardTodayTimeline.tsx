@@ -113,7 +113,7 @@ export function DashboardTodayTimeline({ bookings, loading = false }: DashboardT
           <div className="rounded-lg border border-dashed border-border p-5">
             <p className="text-sm text-muted-foreground">No bookings yet for today.</p>
             <Button className="mt-3" size="sm" asChild>
-              <Link to="/dashboard/booking-links">
+              <Link to="/dashboard/calendar?new=1">
                 <Plus className="h-4 w-4 mr-1.5" />
                 New booking
               </Link>

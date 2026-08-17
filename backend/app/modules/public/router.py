@@ -16,6 +16,7 @@ from app.infra.models import (
     AvailabilityRule,
     Booking,
     BookingStatus,
+    CalendarBlock,
     Client,
     Listing,
     ListingStatus,
@@ -442,6 +443,17 @@ async def get_public_availability(
     existing_bookings = list(
         (await session.execute(select(Booking).where(*booking_filters))).scalars().all()
     )
+    calendar_blocks = list(
+        (
+            await session.execute(
+                select(CalendarBlock).where(
+                    CalendarBlock.tenant_id == tenant.id,
+                    CalendarBlock.end_date >= from_dt.date(),
+                    CalendarBlock.start_date <= to_dt.date(),
+                )
+            )
+        ).scalars().all()
+    )
 
     slots = generate_slots(
         from_dt=from_dt,
@@ -449,6 +461,7 @@ async def get_public_availability(
         service=service,
         rules=rules,
         existing_bookings=existing_bookings,
+        calendar_blocks=calendar_blocks,
     )
 
     return {"business_id": business_id, "service_id": service_id, "from": from_iso, "to": to_iso, "slots": slots}
@@ -546,6 +559,17 @@ async def create_public_booking(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     start_at, end_at, is_all_day = _normalize_booking_window(service, payload.start_at)
+    calendar_block = (
+        await session.execute(
+            select(CalendarBlock).where(
+                CalendarBlock.tenant_id == tenant.id,
+                CalendarBlock.start_date <= start_at.date(),
+                CalendarBlock.end_date >= start_at.date(),
+            )
+        )
+    ).scalar_one_or_none()
+    if calendar_block:
+        raise HTTPException(status_code=409, detail="The business is unavailable on this date")
     buffer_minutes = service.buffer_minutes or 0
 
     slot_scope = listing.id if listing else "general"

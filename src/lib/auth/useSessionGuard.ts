@@ -3,8 +3,9 @@
 // role's area.
 
 import { useEffect } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { endSession, getSessionRole, hasLiveSession } from "../api/client";
+import { isPlatformPaymentReturn } from "../payments/platformReturn";
 
 const CHECK_INTERVAL_MS = 20_000;
 
@@ -26,10 +27,13 @@ export function useSessionGuard({
   redirectWhenSignedOut,
 }: SessionGuardOptions) {
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const check = () => {
       if (!hasLiveSession()) {
+        // Stay on this URL while Paystack return params are verified.
+        if (isPlatformPaymentReturn()) return;
         // A session that can no longer be refreshed is over: drop the cached
         // data and send the user to login instead of leaving the last
         // account's screen on display.
@@ -41,7 +45,12 @@ export function useSessionGuard({
         ) {
           endSession();
         } else {
-          navigate(redirectWhenSignedOut, { replace: true });
+          const here = `${location.pathname}${location.search}`;
+          const loginPath =
+            redirectWhenSignedOut.startsWith("/auth/login") && here && here !== "/auth/login"
+              ? `${redirectWhenSignedOut}?redirect=${encodeURIComponent(here)}`
+              : redirectWhenSignedOut;
+          navigate(loginPath, { replace: true });
         }
         return;
       }
@@ -66,5 +75,5 @@ export function useSessionGuard({
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("storage", check);
     };
-  }, [navigate, requiredRole, forbiddenRole, redirectOnRoleMismatch, redirectWhenSignedOut]);
+  }, [navigate, location.pathname, location.search, requiredRole, forbiddenRole, redirectOnRoleMismatch, redirectWhenSignedOut]);
 }

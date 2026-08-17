@@ -30,7 +30,8 @@ PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxx        # or pk_live_...
 PAYSTACK_WEBHOOK_SECRET=sk_test_xxxxxxxx    # usually same as secret key
 PAYSTACK_PLATFORM_FEE_PERCENT=5.0           # Orheo share of each booking payment
 PAYSTACK_CHANNELS=card,bank,ussd,bank_transfer,qr
-PAYSTACK_CALLBACK_BASE_URL=http://localhost:5173   # frontend origin for return URLs
+PAYSTACK_CALLBACK_URL_PLATFORM=http://localhost:5173/dashboard
+PAYSTACK_CALLBACK_URL_BOOKING=http://localhost:5173/book
 ```
 
 | Variable | Required | Notes |
@@ -40,7 +41,8 @@ PAYSTACK_CALLBACK_BASE_URL=http://localhost:5173   # frontend origin for return 
 | `PAYSTACK_WEBHOOK_SECRET` | Recommended | HMAC-SHA512 of webhook body; defaults to secret key if empty |
 | `PAYSTACK_PLATFORM_FEE_PERCENT` | No (default `5`) | Stored on subaccount as `percentage_charge` |
 | `PAYSTACK_CHANNELS` | No | Checkout methods sent on initialize. OPay is under `bank`. Empty = dashboard defaults |
-| `PAYSTACK_CALLBACK_BASE_URL` | Recommended | Defaults to `FRONTEND_BASE_URL` |
+| `PAYSTACK_CALLBACK_URL_PLATFORM` | Recommended | Business→Orheo plan checkout return URL (`/dashboard`) |
+| `PAYSTACK_CALLBACK_URL_BOOKING` | Recommended | Client→business booking return base (includes `/book`) |
 
 Optional frontend build arg / env:
 
@@ -210,7 +212,7 @@ One-month checkout for MVP (not auto-renewing Paystack Plans yet).
 
 - [ ] Switch from `sk_test_` / `pk_test_` to **live** keys  
 - [ ] Update webhook URL to production backend  
-- [ ] Set `PAYSTACK_CALLBACK_BASE_URL` to production frontend  
+- [ ] Set `PAYSTACK_CALLBACK_URL_PLATFORM` and `PAYSTACK_CALLBACK_URL_BOOKING` to production frontend  
 - [ ] Confirm business bank accounts settle correctly in Paystack  
 - [ ] Test one real booking payment and one subscription payment  
 - [ ] Confirm emails still send after paid bookings  

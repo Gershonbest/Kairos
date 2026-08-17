@@ -3,7 +3,7 @@ name: Docker Hub Push (Dev)
 on:
   push:
     branches:
-      - gersh-dev
+      - none
     paths:
       - "backend/**"
       - ".github/workflows/dockerhub-dev.yml"

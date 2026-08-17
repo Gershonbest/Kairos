@@ -38,6 +38,36 @@ class PublicBookingCreateRequest(BaseModel):
         return self
 
 
+class ManualBookingCreateRequest(BaseModel):
+    client_id: str | None = None
+    new_client_first_name: str | None = Field(default=None, max_length=60)
+    new_client_last_name: str | None = Field(default=None, max_length=60)
+    new_client_email: EmailStr | None = None
+    new_client_phone: str | None = Field(default=None, max_length=30)
+    service_id: str
+    listing_id: str | None = None
+    start_at: datetime
+    guest_first_name: str | None = Field(default=None, max_length=60)
+    guest_last_name: str | None = Field(default=None, max_length=60)
+    notes: str | None = Field(default=None, max_length=2000)
+    appointment_format: Literal["online", "onsite"] | None = None
+    send_confirmation: bool = True
+    payment_status: Literal["unpaid", "paid_external"] = "unpaid"
+    override_availability: bool = False
+
+    @model_validator(mode="after")
+    def resolve_client_choice(self) -> "ManualBookingCreateRequest":
+        if self.client_id:
+            return self
+        first = (self.new_client_first_name or "").strip()
+        last = (self.new_client_last_name or "").strip()
+        if not first or not last or not self.new_client_email:
+            raise ValueError("Choose an existing client or provide the new client's name and email")
+        self.new_client_first_name = first
+        self.new_client_last_name = last
+        return self
+
+
 class BookingOut(BaseModel):
     id: str
     status: str
