@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
 from app.infra.db import get_db_session
 from app.infra.models import Booking, Client, Service
+from app.modules.clients.names import visit_display_name
 from app.modules.scheduling.service import (
     build_scheduling_insights,
     format_insights_reply,
@@ -61,7 +62,7 @@ async def ask_assistant(
     ).all()
     bookings_meta = [
         {
-            "client_name": client.full_name,
+            "client_name": visit_display_name(booking, client),
             "service_name": service.name,
             "start_label": booking.start_at.strftime("%a, %b %d at %I:%M %p").replace(" 0", " "),
         }

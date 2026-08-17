@@ -41,7 +41,7 @@ export function GoogleSignInButton({ businessName, label = "login", onSignedIn }
         refresh_token: result.refresh_token,
       });
       onSignedIn?.();
-      navigate(result.is_new_user ? "/onboarding" : await resolvePostAuthPath());
+      navigate(await resolvePostAuthPath());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to sign in with Google.";
       setError(message);

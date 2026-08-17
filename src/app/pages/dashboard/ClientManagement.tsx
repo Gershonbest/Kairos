@@ -360,6 +360,11 @@ export function ClientManagement() {
                                   year: "numeric",
                                 })}
                               </p>
+                              {booking.client_name && booking.client_name !== client.name && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Booked as {booking.client_name}
+                                </p>
+                              )}
                             </div>
                             <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent">
                               {booking.status}

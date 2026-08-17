@@ -13,7 +13,7 @@ export function VerifyEmail() {
 
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [error, setError] = useState("");
-  const [redirectPath, setRedirectPath] = useState("/onboarding");
+  const [redirectPath, setRedirectPath] = useState("/dashboard");
 
   useEffect(() => {
     if (!token) {
@@ -30,12 +30,11 @@ export function VerifyEmail() {
           access_token: result.access_token,
           refresh_token: result.refresh_token,
         });
-        const nextPath = result.onboarding_completed ? "/dashboard" : "/onboarding";
         if (!cancelled) {
-          setRedirectPath(nextPath);
+          setRedirectPath("/dashboard");
           setStatus("success");
           window.setTimeout(() => {
-            if (!cancelled) navigate(nextPath, { replace: true });
+            if (!cancelled) navigate("/dashboard", { replace: true });
           }, 1200);
         }
       } catch {
@@ -80,11 +79,7 @@ export function VerifyEmail() {
               <MailCheck className="w-7 h-7" />
             </div>
             <h1 className="text-2xl font-semibold mb-2">Email confirmed</h1>
-            <p className="text-gray-600 mb-6">
-              {redirectPath === "/onboarding"
-                ? "Taking you to finish setting up your business..."
-                : "Taking you to your dashboard..."}
-            </p>
+            <p className="text-gray-600 mb-6">Taking you to your dashboard...</p>
             <Button
               className="w-full bg-primary hover:bg-primary/90"
               onClick={() => navigate(redirectPath, { replace: true })}

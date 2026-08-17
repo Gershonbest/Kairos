@@ -1,15 +1,12 @@
 // Application route definitions for public, auth, dashboard, and admin areas.
 
-import { createBrowserRouter } from "react-router";
+import { createElement } from "react";
+import { Navigate, createBrowserRouter } from "react-router";
 import { SignUp } from "./pages/auth/SignUp";
 import { Login } from "./pages/auth/Login";
 import { VerifyEmail } from "./pages/auth/VerifyEmail";
 import { ForgotPassword } from "./pages/auth/ForgotPassword";
 import { ResetPassword } from "./pages/auth/ResetPassword";
-import { BusinessSetup } from "./pages/onboarding/BusinessSetup";
-import { ServiceCreation } from "./pages/onboarding/ServiceCreation";
-import { AvailabilityScheduling } from "./pages/onboarding/AvailabilityScheduling";
-import { PaymentIntegration } from "./pages/onboarding/PaymentIntegration";
 import { Dashboard } from "./pages/dashboard/Dashboard";
 import { BookingCalendar } from "./pages/dashboard/BookingCalendar";
 import { ServicesManagement } from "./pages/dashboard/ServicesManagement";
@@ -32,6 +29,10 @@ import { AdminLayout } from "./components/layouts/AdminLayout";
 import { DashboardLayout } from "./components/layouts/DashboardLayout";
 import { PublicLayout } from "./components/layouts/PublicLayout";
 import { AuthLayout } from "./components/layouts/AuthLayout";
+
+function RedirectToDashboard() {
+  return createElement(Navigate, { to: "/dashboard", replace: true });
+}
 
 export const router = createBrowserRouter([
   {
@@ -70,16 +71,8 @@ export const router = createBrowserRouter([
       { path: "payments", Component: PaymentLogs },
     ],
   },
-  {
-    path: "/onboarding",
-    Component: AuthLayout,
-    children: [
-      { index: true, Component: BusinessSetup },
-      { path: "services", Component: ServiceCreation },
-      { path: "availability", Component: AvailabilityScheduling },
-      { path: "payment", Component: PaymentIntegration },
-    ],
-  },
+  { path: "/onboarding", Component: RedirectToDashboard },
+  { path: "/onboarding/*", Component: RedirectToDashboard },
   {
     path: "/dashboard",
     Component: DashboardLayout,

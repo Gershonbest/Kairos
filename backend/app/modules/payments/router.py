@@ -24,6 +24,7 @@ from app.infra.models import (
     WebhookEvent,
 )
 from app.infra.paystack import PaystackError, paystack_client
+from app.modules.clients.names import visit_display_name
 from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,
@@ -31,7 +32,12 @@ from app.modules.notifications.service import (
     send_subscription_payment_receipt_once,
 )
 from app.modules.payments.providers import get_provider, verify_paystack_signature, verify_webhook_signature
-from app.modules.payments.service import apply_successful_paystack_payment, ensure_booking_payment
+from app.modules.payments.service import (
+    apply_successful_paystack_payment,
+    classify_paystack_status,
+    ensure_booking_payment,
+    mark_failed_paystack_payment,
+)
 from app.modules.services.helpers import resolve_service_location
 from app.schemas.payments import PaymentIntentRequest, PaymentIntentResponse
 
@@ -153,7 +159,7 @@ async def list_transactions(
             "booking_id": tx.booking_id,
             "created_at": tx.created_at.isoformat() if tx.created_at else None,
             "paid_at": tx.paid_at.isoformat() if tx.paid_at else None,
-            "client_name": client.full_name if client else None,
+            "client_name": visit_display_name(_booking, client) if _booking and client else (client.full_name if client else None),
             "service_name": service.name if service else None,
             "service_price": float(service.price_amount) if service else None,
             "deposit_amount": float(service.deposit_amount or 0) if service else None,
@@ -247,7 +253,39 @@ async def verify_payment_reference(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if (data.get("status") or "").lower() != "success":
-        return {"ok": False, "status": data.get("status"), "reference": reference}
+        outcome = classify_paystack_status(data.get("status"))
+        if outcome == "failed":
+            tx = await mark_failed_paystack_payment(
+                session,
+                reference=reference,
+                gateway_status=str(data.get("status") or ""),
+                source="verify_payment_reference",
+            )
+            if tx:
+                await session.commit()
+                if tx.purpose == "booking" and tx.tenant_id:
+                    await redis_cache.invalidate_tenant(
+                        tx.tenant_id,
+                        "bookings:list",
+                        "clients:list",
+                        TRANSACTIONS_CACHE,
+                        DASHBOARD_CACHE,
+                    )
+                await redis_cache.invalidate_admin_payments()
+            return {
+                "ok": False,
+                "status": "failed",
+                "gateway_status": data.get("status"),
+                "reference": reference,
+                "message": "Payment failed or was cancelled. The slot has been released if this was a booking.",
+            }
+        return {
+            "ok": False,
+            "status": "pending",
+            "gateway_status": data.get("status"),
+            "reference": reference,
+            "message": "Payment is still processing. If you were charged, wait a moment and refresh.",
+        }
 
     tx = await apply_successful_paystack_payment(session, reference=reference)
     if not tx:
@@ -355,6 +393,24 @@ async def receive_webhook(
                         await send_subscription_payment_receipt_once(**receipt_args)
                     await redis_cache.invalidate_admin_payments()
                     await redis_cache.invalidate_admin_overview()
+        elif provider == "paystack" and event_type in {"charge.failed", "charge.abandoned"}:
+            reference = (payload.get("data") or {}).get("reference")
+            if reference:
+                tx = await mark_failed_paystack_payment(
+                    session,
+                    reference=str(reference),
+                    gateway_status=str((payload.get("data") or {}).get("status") or event_type),
+                    source=f"webhook:{event_type}",
+                )
+                if tx and tx.tenant_id:
+                    await redis_cache.invalidate_tenant(
+                        tx.tenant_id,
+                        "bookings:list",
+                        "clients:list",
+                        TRANSACTIONS_CACHE,
+                        DASHBOARD_CACHE,
+                    )
+                    await redis_cache.invalidate_admin_payments()
         elif event_type == "payment.succeeded":
             ref = payload.get("data", {}).get("provider_reference")
             if ref:
@@ -418,7 +474,7 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
     try:
         send_booking_confirmation_email(
             to=client.email,
-            client_name=client.full_name,
+            client_name=visit_display_name(booking, client),
             business_name=tenant.name,
             service_name=service.name,
             start_at=booking.start_at,
@@ -446,7 +502,7 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
                 to=owner.email,
                 owner_name=owner.full_name,
                 business_name=tenant.name,
-                client_name=client.full_name,
+                client_name=visit_display_name(booking, client),
                 client_email=client.email,
                 service_name=service.name,
                 start_at=booking.start_at,
@@ -476,6 +532,18 @@ async def retry_pending_webhooks(session: AsyncSession = Depends(get_db_session)
                 reference = (event.payload.get("data") or {}).get("reference")
                 if reference:
                     await apply_successful_paystack_payment(session, reference=str(reference))
+            elif event.provider == "paystack" and event.payload.get("event") in {
+                "charge.failed",
+                "charge.abandoned",
+            }:
+                reference = (event.payload.get("data") or {}).get("reference")
+                if reference:
+                    await mark_failed_paystack_payment(
+                        session,
+                        reference=str(reference),
+                        gateway_status=str(event.payload.get("event")),
+                        source="webhook_retry",
+                    )
             elif event.payload.get("type") == "payment.succeeded":
                 ref = event.payload.get("data", {}).get("provider_reference")
                 if ref:

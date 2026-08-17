@@ -11,14 +11,14 @@
 services:
   # ----- Managed Redis (Key Value) -----
   - type: keyvalue
-    name: orheo-redis
+    name: kairos-redis
     plan: starter
     maxmemoryPolicy: noeviction
     ipAllowList: []   # only reachable from other Render services
 
   # ----- Backend (FastAPI) -----
   - type: web
-    name: orheo-backend
+    name: kairos-backend
     runtime: docker
     plan: starter
     dockerfilePath: ./backend/Dockerfile
@@ -39,15 +39,15 @@ services:
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: orheo-redis
+          name: kairos-redis
           property: connectionString
       # Public frontend URL (update if you attach a custom domain).
       - key: ALLOWED_ORIGINS
-        value: https://orheo-frontend-sugb.onrender.com
+        value: https://kairos-frontend-sugb.onrender.com
       - key: FRONTEND_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com
+        value: https://kairos-frontend-sugb.onrender.com
       - key: PUBLIC_BOOKING_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com/book
+        value: https://kairos-frontend-sugb.onrender.com/book
       # Media uploads go to S3 (required in production). Set values in the dashboard.
       - key: AWS_ACCESS_KEY_ID
         sync: false
@@ -62,12 +62,6 @@ services:
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
-      - key: GOOGLE_GMAIL_SENDER
-        sync: false
-      - key: GOOGLE_GMAIL_APP_PASSWORD
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
       - key: PAYSTACK_SECRET_KEY
@@ -81,24 +75,18 @@ services:
       - key: PAYSTACK_CHANNELS
         value: card,bank,ussd,bank_transfer,qr
       - key: PAYSTACK_CALLBACK_BASE_URL
-        value: https://orheo-frontend-sugb.onrender.com
-      - key: SUPER_ADMIN_EMAIL
-        sync: false
-      - key: SUPER_ADMIN_PASSWORD
-        sync: false
+        value: https://kairos-frontend-sugb.onrender.com
 
   # ----- Frontend (Vite build served by nginx) -----
   - type: web
-    name: orheo-frontend
+    name: kairos-frontend
     runtime: docker
     plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
     autoDeployTrigger: commit
     envVars:
-      # Baked into the SPA at build time (see ARG in ./Dockerfile).
-      # Points the browser at the backend's public API.
       - key: VITE_API_BASE_URL
-        value: https://orheo-backend-rrof.onrender.com/api/v1
+        value: https://kairos-backend-rrof.onrender.com/api/v1
       - key: VITE_PAYSTACK_PUBLIC_KEY
         sync: false

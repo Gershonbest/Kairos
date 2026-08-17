@@ -8,6 +8,7 @@ from app.core.deps import CurrentUser, get_current_user, require_active_subscrip
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import AppointmentFormat, Booking, BookingStatus, Client, Listing, Service, Tenant
+from app.modules.clients.names import profile_display_name, visit_display_name
 from app.modules.services.helpers import resolve_service_location
 from app.schemas.bookings import UpdateBookingStatusRequest
 
@@ -37,7 +38,8 @@ def _serialize_booking(
         "listing_id": booking.listing_id,
         "listing_name": listing.name if listing else None,
         "listing_image_url": (listing.image_urls[0] if listing and listing.image_urls else None),
-        "client_name": client.full_name,
+        "client_name": visit_display_name(booking, client),
+        "client_profile_name": profile_display_name(client) or None,
         "client_email": client.email,
         "client_phone": client.phone,
         "service_name": service.name,
