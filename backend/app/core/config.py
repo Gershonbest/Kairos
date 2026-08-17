@@ -38,9 +38,7 @@ class Settings(BaseSettings):
     # Prefer Paystack secret key for webhook HMAC; falls back to payment_webhook_secret.
     paystack_webhook_secret: str | None = None
     paystack_platform_fee_percent: float = 5.0
-    # Shared origin fallback for Paystack return URLs (defaults to FRONTEND_BASE_URL).
-    paystack_callback_base_url: str | None = None
-    # Business paying Orheo (subscription). Origin or full /dashboard/choose-plan URL.
+    # Business paying Orheo (subscription). Origin or full /dashboard URL.
     paystack_callback_url_platform: str | None = None
     # Client paying a business (booking). Base like PUBLIC_BOOKING_BASE_URL (includes /book).
     paystack_callback_url_booking: str | None = None

@@ -81,12 +81,10 @@ services:
         value: "5.0"
       - key: PAYSTACK_CHANNELS
         value: card,bank,ussd,bank_transfer,qr
-      - key: PAYSTACK_CALLBACK_BASE_URL
-        sync: false
       - key: PAYSTACK_CALLBACK_URL_PLATFORM
-        sync: false
+        value: https://www.orheo.com/dashboard
       - key: PAYSTACK_CALLBACK_URL_BOOKING
-        sync: false
+        value: https://www.orheo.com/book
       - key: SUPER_ADMIN_EMAIL
         sync: false
       - key: SUPER_ADMIN_PASSWORD

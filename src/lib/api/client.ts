@@ -1,6 +1,7 @@
 // Typed HTTP API client with auth token handling.
 
 import { decodeToken, isTokenExpired } from "../auth/token";
+import { isPlatformPaymentReturn } from "../payments/platformReturn";
 import { queryClient } from "../queryClient";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "/api/v1";
@@ -121,6 +122,8 @@ function redirectToLogin() {
 function redirectToChoosePlan() {
   if (typeof window === "undefined") return;
   if (window.location.pathname.startsWith("/dashboard/choose-plan")) return;
+  // Paystack just sent the owner back; verify the payment before locking the dashboard.
+  if (isPlatformPaymentReturn()) return;
   window.location.replace("/dashboard/choose-plan");
 }
 

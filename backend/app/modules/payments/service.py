@@ -59,26 +59,30 @@ def _with_query(base: str, params: dict[str, str]) -> str:
     return f"{base}{sep}{urlencode(params)}"
 
 
+_PLATFORM_RETURN_PATH = "/dashboard"
+_LEGACY_PLATFORM_RETURN_PATH = "/dashboard/choose-plan"
+
+
 def callback_base_url() -> str:
     """Origin used for business-to-platform (subscription) Paystack redirects."""
     explicit = _trim_url(settings.paystack_callback_url_platform)
     if explicit:
-        marker = "/dashboard/choose-plan"
-        if marker in explicit:
-            return explicit.split(marker, 1)[0].rstrip("/")
+        for marker in (_LEGACY_PLATFORM_RETURN_PATH, _PLATFORM_RETURN_PATH):
+            if marker in explicit:
+                return explicit.split(marker, 1)[0].rstrip("/")
         return explicit
-    return _trim_url(settings.paystack_callback_base_url or settings.frontend_base_url)
+    return _trim_url(settings.frontend_base_url)
 
 
 def platform_payment_callback_url(*, reference: str) -> str:
     """Paystack return URL after a business pays Orheo for a plan."""
     explicit = _trim_url(settings.paystack_callback_url_platform)
     if explicit:
-        base = explicit
-        if "/dashboard/choose-plan" not in base:
-            base = f"{base}/dashboard/choose-plan"
+        base = explicit.replace(_LEGACY_PLATFORM_RETURN_PATH, _PLATFORM_RETURN_PATH)
+        if not base.rstrip("/").endswith(_PLATFORM_RETURN_PATH):
+            base = f"{base}{_PLATFORM_RETURN_PATH}"
     else:
-        base = f"{callback_base_url()}/dashboard/choose-plan"
+        base = f"{callback_base_url()}{_PLATFORM_RETURN_PATH}"
     return _with_query(base, {"payment": "1", "reference": reference})
 
 
@@ -88,8 +92,7 @@ def callback_booking_base_url() -> str:
     Priority:
     1) PAYSTACK_CALLBACK_URL_BOOKING (already includes `/book`)
     2) PUBLIC_BOOKING_BASE_URL (already includes `/book`)
-    3) PAYSTACK_CALLBACK_BASE_URL (origin only) + `/book`
-    4) FRONTEND_BASE_URL (origin only) + `/book`
+    3) FRONTEND_BASE_URL (origin only) + `/book`
     """
     explicit = _trim_url(settings.paystack_callback_url_booking)
     if explicit:
@@ -97,8 +100,7 @@ def callback_booking_base_url() -> str:
     public_booking_base = _trim_url(settings.public_booking_base_url)
     if public_booking_base:
         return public_booking_base
-    callback_origin = _trim_url(settings.paystack_callback_base_url or settings.frontend_base_url)
-    return f"{callback_origin}/book"
+    return f"{_trim_url(settings.frontend_base_url)}/book"
 
 
 def booking_payment_callback_url(*, tenant_key: str, booking_id: str, reference: str) -> str:
