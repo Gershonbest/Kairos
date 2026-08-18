@@ -703,6 +703,12 @@ export const api = {
     }>(`/payments/verify/${encodeURIComponent(reference)}`, { method: "POST" }),
   listPaystackBanks: () =>
     request<Array<{ name: string; code: string; slug?: string }>>("/tenants/me/paystack/banks"),
+  resolvePaystackAccount: (payload: { settlement_bank: string; account_number: string }) =>
+    request<{
+      account_number: string;
+      account_name: string;
+      bank_id?: number | null;
+    }>("/tenants/me/paystack/resolve-account", { method: "POST", body: JSON.stringify(payload) }),
   updatePublicProfile: (payload: {
     public_tagline?: string;
     public_description?: string;
@@ -846,6 +852,11 @@ export const api = {
       subaccount_code?: string;
       platform_fee_percent?: number;
       payments_enabled?: boolean;
+      settlement_bank_code?: string | null;
+      settlement_bank_name?: string | null;
+      settlement_account_name?: string | null;
+      settlement_account_number?: string | null;
+      settlement_account_last4?: string | null;
     }>("/tenants/me/payment-provider", { method: "POST", body: JSON.stringify(payload) }),
   getPaymentProvider: () =>
     request<{
@@ -853,6 +864,9 @@ export const api = {
       account_id: string | null;
       payments_enabled: boolean;
       settlement_bank_code?: string | null;
+      settlement_bank_name?: string | null;
+      settlement_account_name?: string | null;
+      settlement_account_number?: string | null;
       settlement_account_last4?: string | null;
       platform_fee_percent?: number;
     }>("/tenants/me/payment-provider"),

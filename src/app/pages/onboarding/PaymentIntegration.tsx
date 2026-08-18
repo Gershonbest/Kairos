@@ -7,6 +7,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { CreditCard, Check } from "lucide-react";
 import { OnboardingShell } from "../../components/layouts/OnboardingShell";
+import { SettlementAccountFields, type VerifiedSettlementAccount } from "../../components/payments/SettlementAccountFields";
 import { api, SessionExpiredError, SubscriptionRequiredError } from "../../../lib/api/client";
 
 export function PaymentIntegration() {
@@ -15,6 +16,8 @@ export function PaymentIntegration() {
   const [businessName, setBusinessName] = useState("");
   const [settlementBank, setSettlementBank] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
+  const [verifiedAccount, setVerifiedAccount] = useState<VerifiedSettlementAccount | null>(null);
+  const [verifyError, setVerifyError] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [banksLoading, setBanksLoading] = useState(true);
@@ -52,8 +55,8 @@ export function PaymentIntegration() {
   const handleComplete = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!settlementBank || !accountNumber.trim()) {
-      setError("Bank and account number are required.");
+    if (!verifiedAccount || verifiedAccount.bank_code !== settlementBank || verifiedAccount.account_number !== accountNumber.trim()) {
+      setError("Verify the account number before connecting Paystack.");
       return;
     }
     setIsLoading(true);
@@ -113,42 +116,30 @@ export function PaymentIntegration() {
           />
         </div>
 
-        <div>
-          <Label htmlFor="bank">Settlement bank</Label>
-          <select
-            id="bank"
-            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-            value={settlementBank}
-            onChange={(e) => setSettlementBank(e.target.value)}
-            disabled={isLoading || banksLoading}
-            required
-          >
-            <option value="">{banksLoading ? "Loading banks..." : "Select bank"}</option>
-            {banks.map((bank) => (
-              <option key={bank.code} value={bank.code}>
-                {bank.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <Label htmlFor="accountNumber">Account number</Label>
-          <Input
-            id="accountNumber"
-            className="mt-1"
-            value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value)}
-            placeholder="0123456789"
-            required
-            disabled={isLoading}
-          />
-        </div>
+        <SettlementAccountFields
+          banks={banks}
+          banksLoading={banksLoading}
+          disabled={isLoading}
+          bank={settlementBank}
+          accountNumber={accountNumber}
+          onBankChange={setSettlementBank}
+          onAccountNumberChange={setAccountNumber}
+          verified={verifiedAccount}
+          onVerifiedChange={setVerifiedAccount}
+          verifyError={verifyError}
+          onVerifyErrorChange={setVerifyError}
+        />
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button type="submit" className="flex-1" loading={isLoading} loadingLabel="Connecting...">
+          <Button
+            type="submit"
+            className="flex-1"
+            loading={isLoading}
+            loadingLabel="Connecting..."
+            disabled={!verifiedAccount || isLoading}
+          >
             Connect Paystack & finish
           </Button>
           <Button type="button" variant="outline" className="flex-1" onClick={handleSkip} disabled={isLoading}>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 import structlog
@@ -103,6 +104,19 @@ class PaystackClient:
             raise last_error
         return []
 
+    async def resolve_account(self, *, account_number: str, bank_code: str) -> dict:
+        """Look up the account name for a NUBAN + bank code before creating a subaccount."""
+        query = urlencode(
+            {
+                "account_number": account_number.strip(),
+                "bank_code": bank_code.strip(),
+            }
+        )
+        data = await self._request("GET", f"/bank/resolve?{query}")
+        if not isinstance(data, dict):
+            raise PaystackError("Unexpected account resolve response from Paystack")
+        return data
+
     async def create_subaccount(
         self,
         *,
@@ -124,6 +138,12 @@ class PaystackClient:
         if primary_contact_name:
             body["primary_contact_name"] = primary_contact_name
         data = await self._request("POST", "/subaccount", json=body)
+        if not isinstance(data, dict):
+            raise PaystackError("Unexpected subaccount response from Paystack")
+        return data
+
+    async def get_subaccount(self, code_or_id: str) -> dict:
+        data = await self._request("GET", f"/subaccount/{code_or_id}")
         if not isinstance(data, dict):
             raise PaystackError("Unexpected subaccount response from Paystack")
         return data

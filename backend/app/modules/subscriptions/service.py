@@ -24,6 +24,7 @@ DEFAULT_PLANS: list[dict] = [
             "Email notifications",
             "Client database",
             "Mobile booking page",
+            "Payment processing",
             "Standard support",
         ],
         "entitlements": {
@@ -31,7 +32,7 @@ DEFAULT_PLANS: list[dict] = [
             "team_members": 1,
             "ai_assistant": False,
             "custom_branding": False,
-            "payment_processing": False,
+            "payment_processing": True,
         },
         "self_serve": True,
         "is_active": True,
@@ -73,7 +74,6 @@ DEFAULT_PLANS: list[dict] = [
             "Everything in Premium",
             "Unlimited team members",
             "Multi-location support",
-            "API access",
             "White-label options",
             "Dedicated account manager",
         ],
@@ -83,7 +83,6 @@ DEFAULT_PLANS: list[dict] = [
             "ai_assistant": True,
             "custom_branding": True,
             "payment_processing": True,
-            "api_access": True,
             "white_label": True,
         },
         "self_serve": False,
@@ -256,6 +255,22 @@ async def ensure_default_plans(session: AsyncSession) -> None:
                 sort_order=plan.get("sort_order", 0),
             )
         )
+    defaults_by_code = {plan["code"]: plan for plan in DEFAULT_PLANS}
+    for plan in existing:
+        default = defaults_by_code.get(plan.code)
+        if not default:
+            continue
+        entitlements = dict(plan.entitlements or {})
+        if entitlements.get("payment_processing") is not True and default["entitlements"].get(
+            "payment_processing"
+        ):
+            entitlements["payment_processing"] = True
+            plan.entitlements = entitlements
+        features = list(plan.features or [])
+        if default["entitlements"].get("payment_processing") and "Payment processing" not in features:
+            insert_at = max(len(features) - 1, 0) if features else 0
+            features.insert(insert_at, "Payment processing")
+            plan.features = features
     await session.commit()
 
 
@@ -477,7 +492,8 @@ async def create_subscription_checkout(
 
 
 async def tenant_allows_payment_processing(session: AsyncSession, tenant: Tenant) -> bool:
-    """Trial tenants can connect Paystack; paid tenants need payment_processing entitlement."""
+    """Active trial or any paid plan with payment_processing can connect Paystack."""
+    await ensure_default_plans(session)
     status = subscription_status_payload(tenant)
     if status.get("is_trial"):
         return True

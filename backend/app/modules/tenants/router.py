@@ -33,6 +33,11 @@ class PaymentProviderConnectRequest(BaseModel):
     api_key: str | None = None
 
 
+class ResolveSettlementAccountRequest(BaseModel):
+    settlement_bank: str = Field(min_length=2, max_length=20)
+    account_number: str = Field(min_length=6, max_length=20)
+
+
 def _tenant_payload(tenant: Tenant) -> dict:
     return {
         "id": tenant.id,
@@ -316,6 +321,111 @@ async def list_paystack_banks(
     ]
 
 
+async def _resolve_settlement_account(bank_code: str, account_number: str) -> dict:
+    if not paystack_client.is_configured():
+        raise HTTPException(status_code=503, detail="Paystack is not configured on the server")
+    try:
+        resolved = await paystack_client.resolve_account(
+            account_number=account_number.strip(),
+            bank_code=bank_code.strip(),
+        )
+    except PaystackError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc) or "Could not verify this account number. Check the bank and number.",
+        ) from exc
+    account_name = str(resolved.get("account_name") or "").strip()
+    if not account_name:
+        raise HTTPException(status_code=400, detail="Could not verify this account number.")
+    return {
+        "account_number": str(resolved.get("account_number") or account_number).strip(),
+        "account_name": account_name,
+        "bank_id": resolved.get("bank_id"),
+    }
+
+
+async def _bank_name_for_code(bank_code: str) -> str | None:
+    try:
+        banks = await paystack_client.list_banks()
+    except PaystackError:
+        return None
+    match = next((bank for bank in banks if str(bank.get("code") or "") == bank_code), None)
+    name = str((match or {}).get("name") or "").strip()
+    return name or None
+
+
+def _payment_provider_payload(tenant: Tenant) -> dict:
+    return {
+        "provider": tenant.payment_provider,
+        "account_id": tenant.payment_account_id,
+        "payments_enabled": tenant.payments_enabled,
+        "settlement_bank_code": tenant.settlement_bank_code,
+        "settlement_bank_name": tenant.settlement_bank_name,
+        "settlement_account_name": tenant.settlement_account_name,
+        "settlement_account_number": tenant.settlement_account_number,
+        "settlement_account_last4": tenant.settlement_account_last4,
+        "platform_fee_percent": float(tenant.platform_fee_percent)
+        if tenant.platform_fee_percent is not None
+        else float(settings.paystack_platform_fee_percent),
+    }
+
+
+async def _hydrate_settlement_details(tenant: Tenant) -> bool:
+    """Fill missing bank/account display fields from Paystack for older connections."""
+    if not tenant.payment_account_id:
+        return False
+    changed = False
+    if not tenant.settlement_account_number or not tenant.settlement_bank_name:
+        try:
+            subaccount = await paystack_client.get_subaccount(tenant.payment_account_id)
+        except PaystackError:
+            subaccount = {}
+        number = str(subaccount.get("account_number") or "").strip()
+        if number and not tenant.settlement_account_number:
+            tenant.settlement_account_number = number
+            tenant.settlement_account_last4 = number[-4:]
+            changed = True
+        bank_label = str(subaccount.get("settlement_bank") or "").strip()
+        if bank_label and not tenant.settlement_bank_name:
+            if bank_label.isdigit():
+                if not tenant.settlement_bank_code:
+                    tenant.settlement_bank_code = bank_label
+                tenant.settlement_bank_name = await _bank_name_for_code(bank_label) or bank_label
+            else:
+                tenant.settlement_bank_name = bank_label
+            changed = True
+    if not tenant.settlement_bank_name and tenant.settlement_bank_code:
+        tenant.settlement_bank_name = await _bank_name_for_code(tenant.settlement_bank_code)
+        changed = bool(tenant.settlement_bank_name) or changed
+    if (
+        not tenant.settlement_account_name
+        and tenant.settlement_account_number
+        and tenant.settlement_bank_code
+    ):
+        try:
+            resolved = await paystack_client.resolve_account(
+                account_number=tenant.settlement_account_number,
+                bank_code=tenant.settlement_bank_code,
+            )
+            name = str(resolved.get("account_name") or "").strip()
+            if name:
+                tenant.settlement_account_name = name
+                changed = True
+        except PaystackError:
+            pass
+    return changed
+
+
+@router.post("/me/paystack/resolve-account")
+async def resolve_settlement_account(
+    payload: ResolveSettlementAccountRequest,
+    current_user: CurrentUser = Depends(require_active_subscription),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    return await _resolve_settlement_account(payload.settlement_bank, payload.account_number)
+
+
 @router.post("/me/payment-provider")
 async def connect_payment_provider(
     payload: PaymentProviderConnectRequest,
@@ -333,10 +443,12 @@ async def connect_payment_provider(
     if not await tenant_allows_payment_processing(session, tenant):
         raise HTTPException(
             status_code=403,
-            detail="Payment processing requires a Premium plan or an active trial.",
+            detail="Your current plan does not include payment processing.",
         )
     if not paystack_client.is_configured():
         raise HTTPException(status_code=503, detail="Paystack is not configured on the server")
+
+    resolved = await _resolve_settlement_account(payload.settlement_bank, payload.account_number)
 
     owner = (await session.execute(select(User).where(User.id == current_user.id))).scalar_one_or_none()
     business_name = (payload.business_name or tenant.name or "Orheo Business").strip()
@@ -358,21 +470,29 @@ async def connect_payment_provider(
     if not subaccount_code:
         raise HTTPException(status_code=502, detail="Paystack did not return a subaccount code")
 
+    account_number = str(resolved["account_number"] or payload.account_number).strip()
+    bank_code = payload.settlement_bank.strip()
+    bank_label = str(subaccount.get("settlement_bank") or "").strip()
+    bank_name = bank_label if bank_label and not bank_label.isdigit() else None
+    if not bank_name:
+        bank_name = await _bank_name_for_code(bank_code) or bank_label or bank_code
+
     tenant.payment_provider = "paystack"
     tenant.payment_account_id = str(subaccount_code)
     tenant.paystack_subaccount_id = str(subaccount.get("id") or "")
-    tenant.settlement_bank_code = payload.settlement_bank.strip()
-    tenant.settlement_account_last4 = payload.account_number.strip()[-4:]
+    tenant.settlement_bank_code = bank_code
+    tenant.settlement_bank_name = bank_name
+    tenant.settlement_account_name = resolved["account_name"]
+    tenant.settlement_account_number = account_number
+    tenant.settlement_account_last4 = account_number[-4:]
     tenant.platform_fee_percent = fee_percent
     tenant.payments_enabled = True
     await session.commit()
     await redis_cache.invalidate_tenant(current_user.tenant_id, PAYMENT_PROVIDER_CACHE, TENANT_CACHE)
     return {
         "ok": True,
-        "provider": "paystack",
+        **_payment_provider_payload(tenant),
         "subaccount_code": tenant.payment_account_id,
-        "platform_fee_percent": fee_percent,
-        "payments_enabled": True,
     }
 
 
@@ -386,7 +506,7 @@ async def get_payment_provider(
 
     cache_key = redis_cache.tenant_key(current_user.tenant_id, PAYMENT_PROVIDER_CACHE)
     cached = await redis_cache.get_json(cache_key)
-    if isinstance(cached, dict):
+    if isinstance(cached, dict) and "settlement_account_number" in cached:
         return cached
 
     tenant = (
@@ -394,16 +514,10 @@ async def get_payment_provider(
     ).scalar_one_or_none()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    payload = {
-        "provider": tenant.payment_provider,
-        "account_id": tenant.payment_account_id,
-        "payments_enabled": tenant.payments_enabled,
-        "settlement_bank_code": tenant.settlement_bank_code,
-        "settlement_account_last4": tenant.settlement_account_last4,
-        "platform_fee_percent": float(tenant.platform_fee_percent)
-        if tenant.platform_fee_percent is not None
-        else float(settings.paystack_platform_fee_percent),
-    }
+    if tenant.payments_enabled and await _hydrate_settlement_details(tenant):
+        await session.commit()
+        await redis_cache.invalidate_tenant(current_user.tenant_id, PAYMENT_PROVIDER_CACHE)
+    payload = _payment_provider_payload(tenant)
     await redis_cache.set_json(cache_key, payload)
     return payload
 
