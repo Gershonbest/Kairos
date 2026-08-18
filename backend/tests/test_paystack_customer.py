@@ -88,3 +88,20 @@ async def test_checkout_still_works_when_customer_api_fails(monkeypatch) -> None
         customer_phone="+2348012345678",
     )
     assert data["reference"] == "ref_2"
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_queries_paystack(monkeypatch) -> None:
+    client = PaystackClient()
+    calls: list[tuple[str, str, dict | None]] = []
+
+    async def fake_request(method: str, path: str, *, json: dict | None = None):
+        calls.append((method, path, json))
+        return {"account_number": "0123456789", "account_name": "ADA OBI", "bank_id": 9}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    data = await client.resolve_account(account_number="0123456789", bank_code="058")
+    assert data["account_name"] == "ADA OBI"
+    assert calls[0][0] == "GET"
+    assert "account_number=0123456789" in calls[0][1]
+    assert "bank_code=058" in calls[0][1]
