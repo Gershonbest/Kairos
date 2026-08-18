@@ -12,6 +12,7 @@ import { BrandLoader } from "../../components/brand/BrandLoader";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
+import { SettlementAccountFields, type VerifiedSettlementAccount } from "../../components/payments/SettlementAccountFields";
 import { api, clearAuthTokens, type TenantBranchPayload } from "../../../lib/api/client";
 import { COUNTRIES, getDialCodeForCountry, normalizeStateForCountry } from "../../../lib/data/locations";
 import { queryKeys } from "../../../lib/queryClient";
@@ -87,11 +88,16 @@ export function AccountSettings() {
   // Payments
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [settlementBank, setSettlementBank] = useState("");
+  const [settlementBankName, setSettlementBankName] = useState("");
+  const [settlementAccountName, setSettlementAccountName] = useState("");
+  const [settlementAccountNumber, setSettlementAccountNumber] = useState("");
   const [settlementLast4, setSettlementLast4] = useState("");
   const [platformFee, setPlatformFee] = useState(5);
   const [banks, setBanks] = useState<Array<{ name: string; code: string }>>([]);
   const [reconnectBank, setReconnectBank] = useState("");
   const [reconnectAccount, setReconnectAccount] = useState("");
+  const [reconnectVerified, setReconnectVerified] = useState<VerifiedSettlementAccount | null>(null);
+  const [reconnectVerifyError, setReconnectVerifyError] = useState("");
   const [reconnectBusinessName, setReconnectBusinessName] = useState("");
 
   // Notifications
@@ -184,6 +190,9 @@ export function AccountSettings() {
     if (payment) {
       setPaymentsEnabled(Boolean(payment.payments_enabled));
       setSettlementBank(payment.settlement_bank_code || "");
+      setSettlementBankName(payment.settlement_bank_name || "");
+      setSettlementAccountName(payment.settlement_account_name || "");
+      setSettlementAccountNumber(payment.settlement_account_number || "");
       setSettlementLast4(payment.settlement_account_last4 || "");
       setPlatformFee(Number(payment.platform_fee_percent ?? 5));
       setReconnectBank(payment.settlement_bank_code || "");
@@ -394,8 +403,12 @@ export function AccountSettings() {
     setSaving(true);
     setError("");
     try {
-      if (!reconnectBank || !reconnectAccount.trim()) {
-        throw new Error("Bank and account number are required.");
+      if (
+        !reconnectVerified ||
+        reconnectVerified.bank_code !== reconnectBank ||
+        reconnectVerified.account_number !== reconnectAccount.trim()
+      ) {
+        throw new Error("Verify the account number before saving.");
       }
       const result = await api.connectPaymentProvider({
         provider: "paystack",
@@ -404,10 +417,17 @@ export function AccountSettings() {
         account_number: reconnectAccount.trim(),
       });
       setPaymentsEnabled(Boolean(result.payments_enabled));
-      setSettlementBank(reconnectBank);
-      setSettlementLast4(reconnectAccount.trim().slice(-4));
+      setSettlementBank(result.settlement_bank_code || reconnectBank);
+      setSettlementBankName(result.settlement_bank_name || banks.find((b) => b.code === reconnectBank)?.name || "");
+      setSettlementAccountName(result.settlement_account_name || reconnectVerified.account_name);
+      setSettlementAccountNumber(result.settlement_account_number || reconnectAccount.trim());
+      setSettlementLast4(
+        result.settlement_account_last4 || reconnectAccount.trim().slice(-4)
+      );
       setPlatformFee(Number(result.platform_fee_percent ?? platformFee));
       setReconnectAccount("");
+      setReconnectVerified(null);
+      setReconnectVerifyError("");
       flash("Paystack settlement account connected.");
       void queryClient.invalidateQueries({ queryKey: queryKeys.paymentProvider });
       void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
@@ -854,9 +874,28 @@ export function AccountSettings() {
                 <span className="font-medium">{paymentsEnabled ? "Paystack connected" : "Not connected"}</span>
               </p>
               {paymentsEnabled && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  Settlement bank {settlementBank || "—"} · ····{settlementLast4 || "----"} · Platform fee {platformFee}%
-                </p>
+                <dl className="mt-3 grid gap-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Bank</dt>
+                    <dd className="font-medium text-right">
+                      {settlementBankName || banks.find((b) => b.code === settlementBank)?.name || settlementBank || "—"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Account name</dt>
+                    <dd className="font-medium text-right">{settlementAccountName || "—"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Account number</dt>
+                    <dd className="font-medium text-right tracking-wide">
+                      {settlementAccountNumber || (settlementLast4 ? `····${settlementLast4}` : "—")}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Platform fee</dt>
+                    <dd className="font-medium text-right">{platformFee}%</dd>
+                  </div>
+                </dl>
               )}
               <Link to="/dashboard/payments" className="text-sm text-primary hover:underline mt-2 inline-block">
                 Open payments dashboard
@@ -868,26 +907,25 @@ export function AccountSettings() {
                 <Label>Settlement business name</Label>
                 <Input value={reconnectBusinessName} onChange={(e) => setReconnectBusinessName(e.target.value)} className="mt-1" disabled={saving} />
               </div>
-              <div>
-                <Label>Bank</Label>
-                <select
-                  value={reconnectBank}
-                  onChange={(e) => setReconnectBank(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-input rounded-lg bg-background"
-                  disabled={saving || banks.length === 0}
-                  required
-                >
-                  <option value="">Select bank</option>
-                  {banks.map((bank) => (
-                    <option key={bank.code} value={bank.code}>{bank.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label>Account number</Label>
-                <Input value={reconnectAccount} onChange={(e) => setReconnectAccount(e.target.value)} className="mt-1" disabled={saving} required />
-              </div>
-              <Button type="submit" className="bg-primary hover:bg-primary/90" loading={saving} loadingLabel="Connecting...">
+              <SettlementAccountFields
+                banks={banks}
+                disabled={saving}
+                bank={reconnectBank}
+                accountNumber={reconnectAccount}
+                onBankChange={setReconnectBank}
+                onAccountNumberChange={setReconnectAccount}
+                verified={reconnectVerified}
+                onVerifiedChange={setReconnectVerified}
+                verifyError={reconnectVerifyError}
+                onVerifyErrorChange={setReconnectVerifyError}
+              />
+              <Button
+                type="submit"
+                className="bg-primary hover:bg-primary/90"
+                loading={saving}
+                loadingLabel="Connecting..."
+                disabled={!reconnectVerified || saving}
+              >
                 {paymentsEnabled ? "Update Paystack account" : "Connect Paystack"}
               </Button>
             </form>

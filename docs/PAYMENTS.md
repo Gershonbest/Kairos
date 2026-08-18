@@ -115,7 +115,7 @@ Orheo calls Paystack **Create Subaccount** and stores:
 - `tenant.payments_enabled = true`
 - platform fee % used at create time
 
-Trial tenants can connect Paystack. After trial, **payment processing** requires a plan with the `payment_processing` entitlement (Premium+).
+Trial and paid Standard/Premium/Enterprise tenants can connect Paystack. The plan must include the `payment_processing` entitlement (enabled on Standard, Premium, and Enterprise by default).
 
 ### 5. Smoke test
 
@@ -189,6 +189,7 @@ One-month checkout for MVP (not auto-renewing Paystack Plans yet).
 | POST | `/api/v1/payments/verify/{reference}` | No* | Verify Paystack reference |
 | POST | `/api/v1/payments/webhooks/paystack` | Signature | Webhook receiver |
 | GET | `/api/v1/tenants/me/paystack/banks` | Tenant | Bank list for onboarding |
+| POST | `/api/v1/tenants/me/paystack/resolve-account` | Tenant | Verify bank account name before save |
 | POST | `/api/v1/tenants/me/payment-provider` | Tenant | Create/link subaccount |
 | GET | `/api/v1/tenants/me/payment-provider` | Tenant | Connection status |
 | POST | `/api/v1/subscriptions/checkout` | Tenant | Start plan payment |
