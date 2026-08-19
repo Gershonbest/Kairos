@@ -870,6 +870,13 @@ export const api = {
       settlement_account_last4?: string | null;
       platform_fee_percent?: number;
     }>("/tenants/me/payment-provider"),
+  disconnectPaymentProvider: () =>
+    request<{
+      ok: boolean;
+      provider: string | null;
+      account_id: string | null;
+      payments_enabled: boolean;
+    }>("/tenants/me/payment-provider", { method: "DELETE" }),
   getSchedulingInsights: () =>
     request<{
       open_slots: string[];

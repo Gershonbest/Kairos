@@ -191,6 +191,7 @@ One-month checkout for MVP (not auto-renewing Paystack Plans yet).
 | GET | `/api/v1/tenants/me/paystack/banks` | Tenant | Bank list for onboarding |
 | POST | `/api/v1/tenants/me/paystack/resolve-account` | Tenant | Verify bank account name before save |
 | POST | `/api/v1/tenants/me/payment-provider` | Tenant | Create/link subaccount |
+| DELETE | `/api/v1/tenants/me/payment-provider` | Tenant | Deactivate on Paystack and disconnect locally |
 | GET | `/api/v1/tenants/me/payment-provider` | Tenant | Connection status |
 | POST | `/api/v1/subscriptions/checkout` | Tenant | Start plan payment |
 | POST | `/api/v1/public/.../bookings/{id}/confirm-payment` | No | Verify after booking redirect |

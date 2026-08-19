@@ -438,6 +438,37 @@ export function AccountSettings() {
     }
   };
 
+  const handleDisconnectPaystack = async () => {
+    if (
+      !window.confirm(
+        "Remove this settlement account from Paystack and Orheo? New booking payments will stop until you connect another account."
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await api.disconnectPaymentProvider();
+      setPaymentsEnabled(false);
+      setSettlementBank("");
+      setSettlementBankName("");
+      setSettlementAccountName("");
+      setSettlementAccountNumber("");
+      setSettlementLast4("");
+      setReconnectAccount("");
+      setReconnectVerified(null);
+      setReconnectVerifyError("");
+      flash("Settlement account removed from Paystack and Orheo.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.paymentProvider });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
+    } catch (err) {
+      fail(err, "Unable to remove the settlement account.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveNotifications = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -900,6 +931,20 @@ export function AccountSettings() {
               <Link to="/dashboard/payments" className="text-sm text-primary hover:underline mt-2 inline-block">
                 Open payments dashboard
               </Link>
+              {paymentsEnabled && (
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    loading={saving}
+                    loadingLabel="Removing..."
+                    onClick={() => void handleDisconnectPaystack()}
+                  >
+                    Remove settlement account
+                  </Button>
+                </div>
+              )}
             </div>
             <form onSubmit={handleReconnectPaystack} className="space-y-4">
               <h2 className="text-lg font-medium">{paymentsEnabled ? "Update settlement account" : "Connect Paystack"}</h2>
