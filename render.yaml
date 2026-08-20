@@ -78,6 +78,8 @@ services:
         value: https://kairos-frontend-sugb.onrender.com/dashboard
       - key: PAYSTACK_CALLBACK_URL_BOOKING
         value: https://kairos-frontend-sugb.onrender.com/book
+      - key: MESSAGING_DRY_RUN
+        value: "true"
 
   # ----- Frontend (Vite build served by nginx) -----
   - type: web

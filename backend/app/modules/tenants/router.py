@@ -12,6 +12,7 @@ from app.infra.db import get_db_session
 from app.infra.models import AvailabilityRule, Listing, Service, ServiceBookingType, Tenant, User
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.tenants.helpers import branches_to_dict, tenant_display_location
+from app.core.plans import plan_code_value
 from app.modules.subscriptions.service import start_tenant_trial, tenant_allows_payment_processing
 from app.schemas.tenants import TenantOnboardingUpdate, TenantProfileUpdate, TenantPublicProfileUpdate
 
@@ -53,7 +54,7 @@ def _tenant_payload(tenant: Tenant) -> dict:
         "longitude": float(tenant.longitude) if tenant.longitude is not None else None,
         "branches": tenant.branches or [],
         "status": tenant.status,
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "public_slug": tenant.public_slug,
         "public_tagline": tenant.public_tagline,
         "public_description": tenant.public_description,

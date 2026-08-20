@@ -665,6 +665,7 @@ export const api = {
         monthly_price: number;
         description: string;
         features: string[];
+        feature_codes?: string[];
         entitlements: Record<string, unknown>;
         self_serve: boolean;
         is_featured: boolean;
@@ -722,6 +723,18 @@ export const api = {
       booking_created_email: boolean;
       payment_received_email: boolean;
       sms_enabled: boolean;
+      client_reminder_email: boolean;
+      client_reminder_sms: boolean;
+      client_reminder_whatsapp: boolean;
+      client_reminder_voice: boolean;
+      reminder_offsets_minutes:
+        | number[]
+        | {
+            email: number[];
+            sms: number[];
+            whatsapp: number[];
+            voice: number[];
+          };
       email?: boolean;
       sms?: boolean;
     }>("/notifications/preferences"),
@@ -730,12 +743,34 @@ export const api = {
     booking_created_email?: boolean;
     payment_received_email?: boolean;
     sms_enabled?: boolean;
+    client_reminder_email?: boolean;
+    client_reminder_sms?: boolean;
+    client_reminder_whatsapp?: boolean;
+    client_reminder_voice?: boolean;
+    reminder_offsets_minutes?: {
+      email?: number[];
+      sms?: number[];
+      whatsapp?: number[];
+      voice?: number[];
+    };
   }) =>
     request<{
       email_enabled: boolean;
       booking_created_email: boolean;
       payment_received_email: boolean;
       sms_enabled: boolean;
+      client_reminder_email: boolean;
+      client_reminder_sms: boolean;
+      client_reminder_whatsapp: boolean;
+      client_reminder_voice: boolean;
+      reminder_offsets_minutes:
+        | number[]
+        | {
+            email: number[];
+            sms: number[];
+            whatsapp: number[];
+            voice: number[];
+          };
     }>("/notifications/preferences", { method: "PUT", body: JSON.stringify(payload) }),
   listClients: () =>
     request<
@@ -1237,60 +1272,6 @@ export const api = {
         sort_order: number;
       }>
     >("/admin/plans"),
-  createAdminPlan: (payload: {
-    code: string;
-    name: string;
-    monthly_price: number;
-    description?: string;
-    features?: string[];
-    entitlements?: Record<string, unknown>;
-    self_serve?: boolean;
-    is_active?: boolean;
-    is_featured?: boolean;
-    sort_order?: number;
-  }) =>
-    request<{
-      id: string;
-      code: string;
-      name: string;
-      monthly_price: number;
-      description: string;
-      features: string[];
-      entitlements: Record<string, unknown>;
-      self_serve: boolean;
-      is_active: boolean;
-      is_featured: boolean;
-      sort_order: number;
-    }>("/admin/plans", { method: "POST", body: JSON.stringify(payload) }),
-  updateAdminPlan: (
-    planCode: string,
-    payload: {
-      name?: string;
-      monthly_price?: number;
-      description?: string;
-      features?: string[];
-      entitlements?: Record<string, unknown>;
-      self_serve?: boolean;
-      is_active?: boolean;
-      is_featured?: boolean;
-      sort_order?: number;
-    }
-  ) =>
-    request<{
-      id: string;
-      code: string;
-      name: string;
-      monthly_price: number;
-      description: string;
-      features: string[];
-      entitlements: Record<string, unknown>;
-      self_serve: boolean;
-      is_active: boolean;
-      is_featured: boolean;
-      sort_order: number;
-    }>(`/admin/plans/${planCode}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteAdminPlan: (planCode: string) =>
-    request<{ ok: boolean }>(`/admin/plans/${planCode}`, { method: "DELETE" }),
 };
 
 export function hasAccessToken(): boolean {

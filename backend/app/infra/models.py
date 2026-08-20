@@ -24,6 +24,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from app.core.plans import PlanCode
+
 
 class Base(DeclarativeBase):
     pass
@@ -87,6 +89,26 @@ class NotificationType(str, enum.Enum):
     booking_created = "booking_created"
 
 
+class OutboundChannel(str, enum.Enum):
+    email = "email"
+    sms = "sms"
+    whatsapp = "whatsapp"
+    voice = "voice"
+
+
+class OutboundPurpose(str, enum.Enum):
+    booking_reminder = "booking_reminder"
+
+
+class OutboundMessageStatus(str, enum.Enum):
+    pending = "pending"
+    sending = "sending"
+    sent = "sent"
+    failed = "failed"
+    cancelled = "cancelled"
+    skipped = "skipped"
+
+
 service_listings = Table(
     "service_listings",
     Base.metadata,
@@ -103,7 +125,11 @@ class Tenant(Base):
     business_type: Mapped[str | None] = mapped_column(String(80))
     location: Mapped[str | None] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
-    plan_code: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)
+    plan_code: Mapped[PlanCode] = mapped_column(
+        Enum(PlanCode, native_enum=False, length=20),
+        default=PlanCode.standard,
+        nullable=False,
+    )
     public_slug: Mapped[str | None] = mapped_column(String(180), unique=True)
     public_tagline: Mapped[str | None] = mapped_column(String(220))
     public_description: Mapped[str | None] = mapped_column(Text)
@@ -367,7 +393,9 @@ class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
 
     id: Mapped[str] = uuid_pk()
-    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    code: Mapped[PlanCode] = mapped_column(
+        Enum(PlanCode, native_enum=False, length=40), unique=True, nullable=False
+    )
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     monthly_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500))
@@ -405,6 +433,68 @@ class NotificationPreference(Base):
     booking_created_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     payment_received_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sms_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    client_reminder_email: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    client_reminder_sms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    client_reminder_whatsapp: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    client_reminder_voice: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reminder_offsets_minutes: Mapped[dict] = mapped_column(
+        JSON,
+        default=lambda: {
+            "email": [1440, 120],
+            "sms": [1440, 120],
+            "whatsapp": [1440, 120],
+            "voice": [1440, 120],
+        },
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class OutboundMessage(Base):
+    """Durable outbound reminder (and later transactional) messages."""
+
+    __tablename__ = "outbound_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "booking_id",
+            "channel",
+            "purpose",
+            "offset_minutes",
+            name="uq_outbound_booking_channel_purpose_offset",
+        ),
+        Index("ix_outbound_messages_due", "status", "scheduled_for"),
+    )
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    booking_id: Mapped[str] = mapped_column(ForeignKey("bookings.id"), index=True, nullable=False)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), index=True, nullable=False)
+    channel: Mapped[OutboundChannel] = mapped_column(
+        Enum(OutboundChannel, native_enum=False, length=20), nullable=False
+    )
+    purpose: Mapped[OutboundPurpose] = mapped_column(
+        Enum(OutboundPurpose, native_enum=False, length=40),
+        default=OutboundPurpose.booking_reminder,
+        nullable=False,
+    )
+    offset_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    status: Mapped[OutboundMessageStatus] = mapped_column(
+        Enum(OutboundMessageStatus, native_enum=False, length=20),
+        default=OutboundMessageStatus.pending,
+        nullable=False,
+    )
+    to_address: Mapped[str] = mapped_column(String(255), nullable=False)
+    template_key: Mapped[str] = mapped_column(String(80), default="booking_reminder", nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str | None] = mapped_column(String(40))
+    provider_message_id: Mapped[str | None] = mapped_column(String(160))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

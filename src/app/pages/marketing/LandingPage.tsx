@@ -5,7 +5,6 @@ import { Link } from "react-router";
 import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import {
   Calendar,
-  Sparkles,
   Users,
   CheckCircle2,
   ArrowRight,
@@ -14,6 +13,8 @@ import {
   Brain,
   CreditCard,
   BarChart3,
+  Menu,
+  X,
 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import orheoLogo from "../../../assets/branding/logo.png";
@@ -56,7 +57,7 @@ const features = [
     icon: Calendar,
     title: "Smart Booking Calendar",
     description:
-      "Drag-and-drop scheduling with real-time availability. Sync with Google, Apple, and Outlook calendars.",
+      "Intuitive scheduling with real-time availability. Sync with Google, Apple, and Outlook calendars.",
     color: "#00D19A",
     image: featureCalendar,
   },
@@ -94,9 +95,9 @@ const features = [
   },
   {
     icon: Smartphone,
-    title: "Mobile-First Design",
+    title: "Notifications & Reminders",
     description:
-      "Your clients book from any device. Your team manages from anywhere. Beautiful on every screen.",
+      "Send SMS and email notifications to your clients and team members. Set reminders for upcoming bookings and appointments.",
     color: "#3D5AFE",
     image: featureMobile,
   },
@@ -157,8 +158,13 @@ const onboardingSteps = [
   },
 ];
 
+const inViewProps = {
+  once: true,
+  amount: 0.05,
+} as const;
+
 export function LandingPage() {
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("monthly");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
   const [plansLoading, setPlansLoading] = useState(true);
   const shouldReduceMotion = useReducedMotion();
@@ -248,7 +254,55 @@ export function LandingPage() {
               </Link>
               </motion.div>
             </div>
+            <button
+              type="button"
+              className="md:hidden inline-flex items-center justify-center rounded-xl p-2 text-gray-700 hover:bg-gray-100"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((open) => !open)}
+            >
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
           </div>
+          {mobileMenuOpen && (
+            <div className="md:hidden flex flex-col gap-1 pb-2 pt-3 border-t border-gray-100 mt-3">
+              <a
+                href="#features"
+                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Features
+              </a>
+              <a
+                href="#pricing"
+                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Pricing
+              </a>
+              <a
+                href="#testimonials"
+                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Testimonials
+              </a>
+              <Link
+                to="/login"
+                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/signup"
+                className="mt-1 px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-xl text-center"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Start Free Trial
+              </Link>
+            </div>
+          )}
         </div>
       </motion.nav>
 
@@ -286,8 +340,6 @@ export function LandingPage() {
               transition={{ duration: 0.4, delay: 0.15 }}
               whileHover={shouldReduceMotion ? undefined : { y: -2 }}
             >
-              <Sparkles className="w-4 h-4 text-[#00D19A]" />
-              AI-Powered Booking System for African Businesses
             </motion.div>
             <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
               Grow Your Service Business with{" "}
@@ -383,7 +435,7 @@ export function LandingPage() {
                 key={stat.label}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={inViewProps}
                 transition={{ delay: index * 0.1 }}
                 className="text-center"
                 whileHover={shouldReduceMotion ? undefined : { y: -4, scale: 1.02 }}
@@ -399,7 +451,7 @@ export function LandingPage() {
       </section> */}
 
       {/* Features Section */}
-      <section id="features" className="py-24 bg-gradient-to-b from-white to-gray-50">
+      <section id="features" className="scroll-mt-24 py-16 md:py-24 bg-gradient-to-b from-white to-gray-50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
@@ -419,7 +471,7 @@ export function LandingPage() {
                 key={feature.title}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={inViewProps}
                 transition={{ delay: index * 0.1 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -8, scale: 1.02 }}
                 className="overflow-hidden rounded-2xl border border-gray-100 bg-white hover:shadow-xl transition-all"
@@ -475,7 +527,7 @@ export function LandingPage() {
                 key={item.step}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={inViewProps}
                 transition={{ delay: index * 0.2 }}
                 className="relative"
                 whileHover={shouldReduceMotion ? undefined : { y: -6 }}
@@ -505,7 +557,7 @@ export function LandingPage() {
       </section>
 
       {/* Pricing Section */}
-      <section id="pricing" className="py-24 bg-gradient-to-b from-gray-50 to-white">
+      <section id="pricing" className="scroll-mt-24 py-16 md:py-24 bg-gradient-to-b from-gray-50 to-white">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
@@ -522,7 +574,7 @@ export function LandingPage() {
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            viewport={inViewProps}
             className="max-w-5xl mx-auto mb-10 rounded-2xl overflow-hidden border border-gray-200"
           >
             <div className="relative">
@@ -553,12 +605,12 @@ export function LandingPage() {
                 key={tier.code}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={inViewProps}
                 transition={{ delay: index * 0.1 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -8 }}
                 className={`relative bg-white rounded-2xl border-2 p-8 ${
                   tier.highlighted
-                    ? "border-primary shadow-2xl shadow-primary/20 scale-105"
+                    ? "border-primary shadow-2xl shadow-primary/20 md:scale-105"
                     : "border-gray-200"
                 }`}
               >
@@ -619,7 +671,7 @@ export function LandingPage() {
       </section>
 
       {/* Testimonials Section */}
-      <section id="testimonials" className="py-24 bg-white">
+      <section id="testimonials" className="scroll-mt-24 py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
@@ -639,7 +691,7 @@ export function LandingPage() {
                 key={testimonial.name}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
+                viewport={inViewProps}
                 transition={{ delay: index * 0.1 }}
                 whileHover={shouldReduceMotion ? undefined : { y: -6, scale: 1.01 }}
                 className="bg-gradient-to-br from-primary/10 to-white p-8 rounded-2xl border border-primary/15"
@@ -673,13 +725,13 @@ export function LandingPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
+            viewport={inViewProps}
           >
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
               Ready to transform your booking experience?
             </h2>
             <p className="text-xl text-white/85 mb-10">
-              Join 2,500+ African businesses already growing with Orheo. Start your free trial today.
+              Join thousands of African businesses already growing with Orheo. Start your free trial today.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
