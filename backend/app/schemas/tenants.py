@@ -135,8 +135,20 @@ class TenantPublicProfileUpdate(BaseModel):
         return value
 
 
+class ChannelReminderOffsets(BaseModel):
+    email: list[int] | None = None
+    sms: list[int] | None = None
+    whatsapp: list[int] | None = None
+    voice: list[int] | None = None
+
+
 class NotificationPreferencesUpdate(BaseModel):
     email_enabled: bool | None = None
     booking_created_email: bool | None = None
     payment_received_email: bool | None = None
     sms_enabled: bool | None = None
+    client_reminder_email: bool | None = None
+    client_reminder_sms: bool | None = None
+    client_reminder_whatsapp: bool | None = None
+    client_reminder_voice: bool | None = None
+    reminder_offsets_minutes: ChannelReminderOffsets | list[int] | None = None

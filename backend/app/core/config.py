@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     app_name: str = "Orheo Bookings API"
     app_env: str = "dev"
     app_debug: bool = False
+    port: int = 8000
     database_url: str = "sqlite+aiosqlite:///./orheo.db"
     redis_url: str = "redis://localhost:6379/0"
     cache_ttl_seconds: int = 300
@@ -82,6 +83,10 @@ class Settings(BaseSettings):
     super_admin_name: str = "System Admin"
     trial_days: int = 7
     trial_warning_days: int = 2
+    messaging_dry_run: bool = True
+    outbound_job_token: str | None = None
+    outbound_poll_interval_seconds: int = 60
+    outbound_batch_size: int = 50
 
     @field_validator("allowed_origins")
     @classmethod

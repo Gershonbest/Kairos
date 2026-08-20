@@ -1,6 +1,8 @@
 """FastAPI application entrypoint, middleware, and health endpoints."""
 
+import asyncio
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -20,12 +22,29 @@ from app.core.telemetry import configure_telemetry
 from app.infra.cache import redis_client
 from app.infra.db import engine
 from app.infra.email import email_service
+from app.modules.notifications.outbound import outbound_poller_loop
 
 settings = get_settings()
 configure_logging()
 email_service.log_config_status()
 
-app = FastAPI(title=settings.app_name, debug=settings.app_debug)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stop = asyncio.Event()
+    poller = asyncio.create_task(outbound_poller_loop(stop))
+    try:
+        yield
+    finally:
+        stop.set()
+        poller.cancel()
+        try:
+            await poller
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title=settings.app_name, debug=settings.app_debug, lifespan=lifespan)
 app.include_router(api_router)
 app.middleware("http")(request_observability_middleware)
 app.add_middleware(
@@ -80,7 +99,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
-        reload=True,
+        port=get_settings().port,
+        reload=get_settings().app_debug,
         reload_dirs=[str(PROJECT_ROOT / "app")],
     )

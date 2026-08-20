@@ -17,6 +17,53 @@ import { api, clearAuthTokens, type TenantBranchPayload } from "../../../lib/api
 import { COUNTRIES, getDialCodeForCountry, normalizeStateForCountry } from "../../../lib/data/locations";
 import { queryKeys } from "../../../lib/queryClient";
 
+type ReminderChannelOffsets = {
+  email: number[];
+  sms: number[];
+  whatsapp: number[];
+  voice: number[];
+};
+
+const DEFAULT_REMINDER_OFFSETS = [1440, 120];
+const REMINDER_OFFSET_OPTIONS = [
+  { minutes: 15, label: "15 min" },
+  { minutes: 30, label: "30 min" },
+  { minutes: 60, label: "1 hour" },
+  { minutes: 120, label: "2 hours" },
+  { minutes: 360, label: "6 hours" },
+  { minutes: 720, label: "12 hours" },
+  { minutes: 1440, label: "1 day" },
+  { minutes: 2880, label: "2 days" },
+];
+
+function parseChannelOffsets(raw: unknown): ReminderChannelOffsets {
+  const fallback = [...DEFAULT_REMINDER_OFFSETS];
+  const asList = (value: unknown): number[] =>
+    Array.isArray(value) ? value.map(Number).filter((minutes) => minutes > 0) : [];
+  if (Array.isArray(raw)) {
+    const shared = asList(raw);
+    const list = shared.length ? shared : fallback;
+    return { email: [...list], sms: [...list], whatsapp: [...list], voice: [...list] };
+  }
+  if (raw && typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    const pick = (key: string) => {
+      const list = asList(obj[key]);
+      return list.length ? list : [...fallback];
+    };
+    return { email: pick("email"), sms: pick("sms"), whatsapp: pick("whatsapp"), voice: pick("voice") };
+  }
+  return { email: fallback, sms: fallback, whatsapp: fallback, voice: fallback };
+}
+
+function toggleReminderOffset(offsets: number[], minutes: number): number[] {
+  if (offsets.includes(minutes)) {
+    const next = offsets.filter((value) => value !== minutes);
+    return next.length ? next : offsets;
+  }
+  return [...offsets, minutes].sort((a, b) => b - a);
+}
+
 const TIMEZONES = [
   "Africa/Lagos",
   "Africa/Accra",
@@ -105,6 +152,14 @@ export function AccountSettings() {
   const [bookingCreatedEmail, setBookingCreatedEmail] = useState(true);
   const [paymentReceivedEmail, setPaymentReceivedEmail] = useState(true);
   const [smsEnabled, setSmsEnabled] = useState(false);
+  const [clientReminderEmail, setClientReminderEmail] = useState(true);
+  const [clientReminderWhatsapp, setClientReminderWhatsapp] = useState(false);
+  const [reminderOffsets, setReminderOffsets] = useState<ReminderChannelOffsets>({
+    email: [...DEFAULT_REMINDER_OFFSETS],
+    sms: [...DEFAULT_REMINDER_OFFSETS],
+    whatsapp: [...DEFAULT_REMINDER_OFFSETS],
+    voice: [...DEFAULT_REMINDER_OFFSETS],
+  });
 
   // Billing
   const [planCode, setPlanCode] = useState("standard");
@@ -202,7 +257,10 @@ export function AccountSettings() {
       setEmailEnabled(Boolean(prefs.email_enabled ?? prefs.email ?? true));
       setBookingCreatedEmail(Boolean(prefs.booking_created_email ?? true));
       setPaymentReceivedEmail(Boolean(prefs.payment_received_email ?? true));
-      setSmsEnabled(Boolean(prefs.sms_enabled ?? prefs.sms ?? false));
+      setSmsEnabled(Boolean(prefs.sms_enabled ?? prefs.client_reminder_sms ?? prefs.sms ?? false));
+      setClientReminderEmail(Boolean(prefs.client_reminder_email ?? true));
+      setClientReminderWhatsapp(Boolean(prefs.client_reminder_whatsapp ?? false));
+      setReminderOffsets(parseChannelOffsets(prefs.reminder_offsets_minutes));
     }
 
     if (sub) {
@@ -438,6 +496,37 @@ export function AccountSettings() {
     }
   };
 
+  const handleDisconnectPaystack = async () => {
+    if (
+      !window.confirm(
+        "Remove this settlement account from Paystack and Orheo? New booking payments will stop until you connect another account."
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await api.disconnectPaymentProvider();
+      setPaymentsEnabled(false);
+      setSettlementBank("");
+      setSettlementBankName("");
+      setSettlementAccountName("");
+      setSettlementAccountNumber("");
+      setSettlementLast4("");
+      setReconnectAccount("");
+      setReconnectVerified(null);
+      setReconnectVerifyError("");
+      flash("Settlement account removed from Paystack and Orheo.");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.paymentProvider });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
+    } catch (err) {
+      fail(err, "Unable to remove the settlement account.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveNotifications = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -448,11 +537,18 @@ export function AccountSettings() {
         booking_created_email: bookingCreatedEmail,
         payment_received_email: paymentReceivedEmail,
         sms_enabled: smsEnabled,
+        client_reminder_email: clientReminderEmail,
+        client_reminder_sms: smsEnabled,
+        client_reminder_whatsapp: clientReminderWhatsapp,
+        reminder_offsets_minutes: reminderOffsets,
       });
       setEmailEnabled(prefs.email_enabled);
       setBookingCreatedEmail(prefs.booking_created_email);
       setPaymentReceivedEmail(prefs.payment_received_email);
       setSmsEnabled(prefs.sms_enabled);
+      setClientReminderEmail(prefs.client_reminder_email);
+      setClientReminderWhatsapp(prefs.client_reminder_whatsapp);
+      setReminderOffsets(parseChannelOffsets(prefs.reminder_offsets_minutes));
       flash("Notification preferences saved.");
       void queryClient.invalidateQueries({ queryKey: queryKeys.notificationPrefs });
       void queryClient.invalidateQueries({ queryKey: queryKeys.settingsBundle });
@@ -900,6 +996,20 @@ export function AccountSettings() {
               <Link to="/dashboard/payments" className="text-sm text-primary hover:underline mt-2 inline-block">
                 Open payments dashboard
               </Link>
+              {paymentsEnabled && (
+                <div className="mt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    loading={saving}
+                    loadingLabel="Removing..."
+                    onClick={() => void handleDisconnectPaystack()}
+                  >
+                    Remove settlement account
+                  </Button>
+                </div>
+              )}
             </div>
             <form onSubmit={handleReconnectPaystack} className="space-y-4">
               <h2 className="text-lg font-medium">{paymentsEnabled ? "Update settlement account" : "Connect Paystack"}</h2>
@@ -933,27 +1043,109 @@ export function AccountSettings() {
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-4">
-          <form onSubmit={handleSaveNotifications} className="bg-card border border-border rounded-xl p-6 space-y-4">
-            {[
-              { id: "emailEnabled", label: "Email notifications", checked: emailEnabled, set: setEmailEnabled },
-              { id: "bookingCreated", label: "Email when a booking is created", checked: bookingCreatedEmail, set: setBookingCreatedEmail },
-              { id: "paymentReceived", label: "Email when a payment is received", checked: paymentReceivedEmail, set: setPaymentReceivedEmail },
-            ].map((item) => (
-              <label key={item.id} className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={item.checked}
-                  onChange={(e) => item.set(e.target.checked)}
-                  className="w-4 h-4 rounded border-border text-primary"
-                  disabled={saving}
-                />
-                <span className="text-sm">{item.label}</span>
-              </label>
-            ))}
-            <label className="flex items-center gap-3 opacity-60 cursor-not-allowed">
-              <input type="checkbox" checked={smsEnabled} disabled className="w-4 h-4 rounded border-border" />
-              <span className="text-sm">SMS notifications (coming soon)</span>
-            </label>
+          <form onSubmit={handleSaveNotifications} className="bg-card border border-border rounded-xl p-6 space-y-6">
+            <div className="space-y-4">
+              <h2 className="text-sm font-medium">Business alerts</h2>
+              {[
+                { id: "emailEnabled", label: "Email notifications (business)", checked: emailEnabled, set: setEmailEnabled },
+                { id: "bookingCreated", label: "Email when a booking is created", checked: bookingCreatedEmail, set: setBookingCreatedEmail },
+                { id: "paymentReceived", label: "Email when a payment is received", checked: paymentReceivedEmail, set: setPaymentReceivedEmail },
+              ].map((item) => (
+                <label key={item.id} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={item.checked}
+                    onChange={(e) => item.set(e.target.checked)}
+                    className="w-4 h-4 rounded border-border text-primary"
+                    disabled={saving}
+                  />
+                  <span className="text-sm">{item.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-sm font-medium">Client booking reminders</h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Choose when each channel reminds the client before the appointment. Times are in your business timezone.
+                </p>
+              </div>
+              {(
+                [
+                  {
+                    key: "email" as const,
+                    label: "Email reminders",
+                    enabled: clientReminderEmail,
+                    setEnabled: setClientReminderEmail,
+                    disabled: false,
+                  },
+                  {
+                    key: "sms" as const,
+                    label: "SMS reminders",
+                    enabled: smsEnabled,
+                    setEnabled: setSmsEnabled,
+                    disabled: false,
+                  },
+                  {
+                    key: "whatsapp" as const,
+                    label: "WhatsApp reminders",
+                    enabled: clientReminderWhatsapp,
+                    setEnabled: setClientReminderWhatsapp,
+                    disabled: false,
+                  },
+                  {
+                    key: "voice" as const,
+                    label: "AI call reminders (coming soon)",
+                    enabled: false,
+                    setEnabled: () => undefined,
+                    disabled: true,
+                  },
+                ]
+              ).map((channel) => (
+                <div key={channel.key} className={`rounded-xl border border-border p-4 space-y-3 ${channel.disabled ? "opacity-60" : ""}`}>
+                  <label className={`flex items-center gap-3 ${channel.disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                    <input
+                      type="checkbox"
+                      checked={channel.enabled}
+                      onChange={(e) => channel.setEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-border text-primary"
+                      disabled={saving || channel.disabled}
+                    />
+                    <span className="text-sm font-medium">{channel.label}</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2 pl-7">
+                    {REMINDER_OFFSET_OPTIONS.map((option) => {
+                      const selected = reminderOffsets[channel.key].includes(option.minutes);
+                      return (
+                        <button
+                          key={option.minutes}
+                          type="button"
+                          disabled={saving || channel.disabled || !channel.enabled}
+                          onClick={() =>
+                            setReminderOffsets((current) => ({
+                              ...current,
+                              [channel.key]: toggleReminderOffset(current[channel.key], option.minutes),
+                            }))
+                          }
+                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                            selected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-background text-muted-foreground border-border"
+                          } disabled:opacity-40`}
+                        >
+                          {option.label} before
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              SMS and WhatsApp currently run in dry-run mode until a messaging provider is connected.
+              Clients without a phone number are skipped for SMS and WhatsApp.
+            </p>
             <Button type="submit" className="bg-primary hover:bg-primary/90" loading={saving} loadingLabel="Saving...">
               Save notifications
             </Button>
