@@ -1,4 +1,4 @@
-"""Platform admin metrics, subscribers, plans, and payment logs."""
+"""Platform admin metrics, subscribers, and payment logs."""
 
 from datetime import datetime
 from hashlib import sha1
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import CurrentUser, require_roles
+from app.core.plans import plan_code_value
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
@@ -21,15 +22,13 @@ from app.infra.models import (
     PaymentTransaction,
     RefreshToken,
     Service,
-    SubscriptionPlan,
     Tenant,
     User,
     UserRole,
     WebhookEvent,
 )
 from app.modules.audit.service import record_audit_event
-from app.modules.subscriptions.service import grant_plan_to_tenant, list_admin_plans, serialize_plan
-from app.schemas.subscriptions import CreatePlanRequest, UpdatePlanRequest
+from app.modules.subscriptions.service import grant_plan_to_tenant, list_admin_plans
 
 router = APIRouter()
 
@@ -185,7 +184,7 @@ async def list_subscribers(
             "business_type": tenant.business_type,
             "location": tenant.location,
             "status": tenant.status,
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "public_slug": tenant.public_slug,
             "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
             "onboarding_completed": tenant.onboarding_completed,
@@ -212,7 +211,7 @@ async def update_subscriber(
 
     before = {
         "status": tenant.status,
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "name": tenant.name,
         "location": tenant.location,
         "subscription_paid_until": (
@@ -237,7 +236,7 @@ async def update_subscriber(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        changes["plan_code"] = {"from": before["plan_code"], "to": tenant.plan_code}
+        changes["plan_code"] = {"from": before["plan_code"], "to": plan_code_value(tenant.plan_code)}
         changes["status"] = {"from": before["status"], "to": tenant.status}
         changes["subscription_paid_until"] = {
             "from": before["subscription_paid_until"],
@@ -284,7 +283,7 @@ async def update_subscriber(
     await redis_cache.invalidate_admin_overview()
     return {
         "ok": True,
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "status": tenant.status,
         "subscription_paid_until": (
             tenant.subscription_paid_until.isoformat() if tenant.subscription_paid_until else None
@@ -313,7 +312,7 @@ async def delete_subscriber(
         metadata={
             "name": tenant.name,
             "status": tenant.status,
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "public_slug": tenant.public_slug,
         },
         request=request,
@@ -351,128 +350,6 @@ async def list_subscription_plans(
     payload = await list_admin_plans(session)
     await redis_cache.set_json(cache_key, payload)
     return payload
-
-
-@router.post("/plans")
-async def create_subscription_plan(
-    payload: CreatePlanRequest,
-    request: Request,
-    actor: CurrentUser = Depends(require_roles("platform_admin")),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    existing = (
-        await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == payload.code))
-    ).scalar_one_or_none()
-    if existing:
-        raise HTTPException(status_code=400, detail="A plan with this code already exists")
-
-    plan = SubscriptionPlan(
-        code=payload.code,
-        name=payload.name,
-        monthly_price=payload.monthly_price,
-        description=payload.description,
-        features=payload.features,
-        entitlements=payload.entitlements.model_dump(),
-        self_serve=payload.self_serve,
-        is_active=payload.is_active,
-        is_featured=payload.is_featured,
-        sort_order=payload.sort_order,
-    )
-    session.add(plan)
-    await session.flush()
-    await record_audit_event(
-        session,
-        action="plan.create",
-        entity_type="subscription_plan",
-        entity_id=plan.id,
-        actor=actor,
-        metadata={"code": plan.code, "name": plan.name, "monthly_price": float(plan.monthly_price)},
-        request=request,
-    )
-    await session.commit()
-    await session.refresh(plan)
-    await redis_cache.invalidate_admin("plans")
-    return serialize_plan(plan, include_admin_fields=True)
-
-
-@router.patch("/plans/{plan_code}")
-async def update_subscription_plan(
-    plan_code: str,
-    payload: UpdatePlanRequest,
-    request: Request,
-    actor: CurrentUser = Depends(require_roles("platform_admin")),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    plan = (
-        await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == plan_code))
-    ).scalar_one_or_none()
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-
-    updates = payload.model_dump(exclude_unset=True)
-    if "entitlements" in updates and updates["entitlements"] is not None:
-        updates["entitlements"] = payload.entitlements.model_dump() if payload.entitlements else {}
-
-    before = {}
-    for field in updates:
-        value = getattr(plan, field)
-        if hasattr(value, "as_integer_ratio"):
-            before[field] = float(value)
-        else:
-            before[field] = value
-    for field, value in updates.items():
-        setattr(plan, field, value)
-
-    await record_audit_event(
-        session,
-        action="plan.update",
-        entity_type="subscription_plan",
-        entity_id=plan.id,
-        actor=actor,
-        metadata={"code": plan.code, "before": before, "updates": list(updates.keys())},
-        request=request,
-    )
-    await session.commit()
-    await session.refresh(plan)
-    await redis_cache.invalidate_admin("plans")
-    return serialize_plan(plan, include_admin_fields=True)
-
-
-@router.delete("/plans/{plan_code}")
-async def delete_subscription_plan(
-    plan_code: str,
-    request: Request,
-    actor: CurrentUser = Depends(require_roles("platform_admin")),
-    session: AsyncSession = Depends(get_db_session),
-) -> dict:
-    plan = (
-        await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == plan_code))
-    ).scalar_one_or_none()
-    if not plan:
-        raise HTTPException(status_code=404, detail="Plan not found")
-
-    tenant_count = (
-        await session.execute(select(func.count(Tenant.id)).where(Tenant.plan_code == plan_code))
-    ).scalar_one()
-    if tenant_count:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot delete a plan that is assigned to tenants. Deactivate it instead.",
-        )
-
-    await record_audit_event(
-        session,
-        action="plan.delete",
-        entity_type="subscription_plan",
-        entity_id=plan.id,
-        actor=actor,
-        metadata={"code": plan.code, "name": plan.name},
-        request=request,
-    )
-    await session.delete(plan)
-    await session.commit()
-    await redis_cache.invalidate_admin("plans")
-    return {"ok": True}
 
 
 def _date_filters(date_from: datetime | None, date_to: datetime | None) -> list:
@@ -618,7 +495,7 @@ async def list_payments_by_tenant(
             "tenant_id": row.tenant_id,
             "tenant_name": row.tenant_name,
             "tenant_status": row.tenant_status,
-            "plan_code": row.plan_code,
+            "plan_code": plan_code_value(row.plan_code),
             "transactions": int(row.transactions or 0),
             "clients": int(row.clients or 0),
             "gross": float(row.gross or 0),
@@ -894,7 +771,7 @@ async def get_payment_log_detail(
                 "id": tenant.id,
                 "name": tenant.name,
                 "status": tenant.status,
-                "plan_code": tenant.plan_code,
+                "plan_code": plan_code_value(tenant.plan_code),
                 "public_slug": tenant.public_slug,
                 "help_email": tenant.help_email,
                 "phone_number": tenant.phone_number,

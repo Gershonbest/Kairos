@@ -8,108 +8,40 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.plans import (
+    PLAN_CATALOG,
+    PlanCode,
+    PlanFeature,
+    coerce_plan_code,
+    plan_code_value,
+    plan_definition,
+    plan_has_feature,
+    require_plan_code,
+)
 from app.infra.models import SubscriptionPlan, Tenant, User
 
 settings = get_settings()
 
-DEFAULT_PLANS: list[dict] = [
-    {
-        "code": "standard",
-        "name": "Standard",
-        "monthly_price": 15000.0,
-        "description": "Perfect for solo practitioners and small teams getting started",
-        "features": [
-            "Up to 100 bookings/month",
-            "1 team member",
-            "Email notifications",
-            "Client database",
-            "Mobile booking page",
-            "Payment processing",
-            "Standard support",
-        ],
-        "entitlements": {
-            "bookings_per_month": 100,
-            "team_members": 1,
-            "ai_assistant": False,
-            "custom_branding": False,
-            "payment_processing": True,
-        },
-        "self_serve": True,
-        "is_active": True,
-        "is_featured": False,
-        "sort_order": 1,
-    },
-    {
-        "code": "premium",
-        "name": "Premium",
-        "monthly_price": 45000.0,
-        "description": "For growing businesses that need advanced features and AI",
-        "features": [
-            "Unlimited bookings",
-            "Up to 5 team members",
-            "AI booking assistant",
-            "Payment processing",
-            "Custom branding",
-            "Priority support",
-            "Analytics dashboard",
-        ],
-        "entitlements": {
-            "bookings_per_month": None,
-            "team_members": 5,
-            "ai_assistant": True,
-            "custom_branding": True,
-            "payment_processing": True,
-        },
-        "self_serve": True,
-        "is_active": True,
-        "is_featured": True,
-        "sort_order": 2,
-    },
-    {
-        "code": "enterprise",
-        "name": "Enterprise",
-        "monthly_price": 120000.0,
-        "description": "Complete solution for multi-location businesses",
-        "features": [
-            "Everything in Premium",
-            "Unlimited team members",
-            "Multi-location support",
-            "White-label options",
-            "Dedicated account manager",
-        ],
-        "entitlements": {
-            "bookings_per_month": None,
-            "team_members": None,
-            "ai_assistant": True,
-            "custom_branding": True,
-            "payment_processing": True,
-            "white_label": True,
-        },
-        "self_serve": False,
-        "is_active": True,
-        "is_featured": False,
-        "sort_order": 3,
-    },
-]
-
 
 def serialize_plan(plan: SubscriptionPlan, *, include_admin_fields: bool = False) -> dict:
+    definition = plan_definition(plan.code)
     payload = {
-        "code": plan.code,
-        "name": plan.name,
-        "monthly_price": float(plan.monthly_price),
-        "description": plan.description or "",
-        "features": plan.features or [],
-        "entitlements": plan.entitlements or {},
-        "self_serve": plan.self_serve,
-        "is_featured": plan.is_featured,
+        "code": definition.code.value,
+        "name": definition.name,
+        "monthly_price": float(definition.monthly_price),
+        "description": definition.description,
+        "features": definition.feature_labels(),
+        "feature_codes": definition.feature_codes(),
+        "entitlements": definition.entitlements(),
+        "self_serve": definition.self_serve,
+        "is_featured": definition.is_featured,
     }
     if include_admin_fields:
         payload.update(
             {
                 "id": plan.id,
-                "is_active": plan.is_active,
-                "sort_order": plan.sort_order,
+                "is_active": definition.is_active,
+                "sort_order": definition.sort_order,
             }
         )
     return payload
@@ -129,8 +61,7 @@ def start_tenant_trial(tenant: Tenant, *, now: datetime | None = None) -> None:
     tenant.trial_started_at = now
     tenant.trial_ends_at = now + timedelta(days=settings.trial_days)
     tenant.trial_warning_sent_at = None
-    if not tenant.plan_code or tenant.plan_code == "standard":
-        tenant.plan_code = "standard"
+    tenant.plan_code = coerce_plan_code(tenant.plan_code)
 
 
 def _tenant_phone(tenant: Tenant) -> str | None:
@@ -159,7 +90,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
     if tenant.status == "suspended":
         return {
             "status": "suspended",
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "is_trial": False,
             "requires_plan_selection": True,
             "days_remaining": 0,
@@ -172,7 +103,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
     if tenant.status == "inactive":
         return {
             "status": "inactive",
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "is_trial": False,
             "requires_plan_selection": True,
             "days_remaining": 0,
@@ -185,7 +116,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
     if paid_until and paid_until > now:
         return {
             "status": "active",
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "is_trial": False,
             "requires_plan_selection": False,
             "days_remaining": _days_remaining(paid_until, now),
@@ -208,7 +139,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
             )
         return {
             "status": "trial",
-            "plan_code": tenant.plan_code,
+            "plan_code": plan_code_value(tenant.plan_code),
             "is_trial": True,
             "requires_plan_selection": False,
             "days_remaining": days_left,
@@ -220,7 +151,7 @@ def subscription_status_payload(tenant: Tenant, *, now: datetime | None = None) 
 
     return {
         "status": "expired",
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "is_trial": False,
         "requires_plan_selection": True,
         "days_remaining": 0,
@@ -237,40 +168,35 @@ def tenant_has_active_access(tenant: Tenant, *, now: datetime | None = None) -> 
 
 async def ensure_default_plans(session: AsyncSession) -> None:
     existing = (await session.execute(select(SubscriptionPlan))).scalars().all()
-    existing_codes = {plan.code for plan in existing}
-    for plan in DEFAULT_PLANS:
-        if plan["code"] in existing_codes:
-            continue
-        session.add(
-            SubscriptionPlan(
-                code=plan["code"],
-                name=plan["name"],
-                monthly_price=plan["monthly_price"],
-                description=plan.get("description"),
-                features=plan.get("features", []),
-                entitlements=plan["entitlements"],
-                self_serve=plan.get("self_serve", False),
-                is_active=plan.get("is_active", True),
-                is_featured=plan.get("is_featured", False),
-                sort_order=plan.get("sort_order", 0),
+    existing_by_code = {coerce_plan_code(plan.code): plan for plan in existing}
+    for definition in PLAN_CATALOG.values():
+        seed = definition.seed_dict()
+        plan = existing_by_code.get(definition.code)
+        if plan is None:
+            session.add(
+                SubscriptionPlan(
+                    code=definition.code,
+                    name=seed["name"],
+                    monthly_price=seed["monthly_price"],
+                    description=seed["description"],
+                    features=seed["features"],
+                    entitlements=seed["entitlements"],
+                    self_serve=seed["self_serve"],
+                    is_active=seed["is_active"],
+                    is_featured=seed["is_featured"],
+                    sort_order=seed["sort_order"],
+                )
             )
-        )
-    defaults_by_code = {plan["code"]: plan for plan in DEFAULT_PLANS}
-    for plan in existing:
-        default = defaults_by_code.get(plan.code)
-        if not default:
             continue
-        entitlements = dict(plan.entitlements or {})
-        if entitlements.get("payment_processing") is not True and default["entitlements"].get(
-            "payment_processing"
-        ):
-            entitlements["payment_processing"] = True
-            plan.entitlements = entitlements
-        features = list(plan.features or [])
-        if default["entitlements"].get("payment_processing") and "Payment processing" not in features:
-            insert_at = max(len(features) - 1, 0) if features else 0
-            features.insert(insert_at, "Payment processing")
-            plan.features = features
+        plan.name = seed["name"]
+        plan.monthly_price = seed["monthly_price"]
+        plan.description = seed["description"]
+        plan.features = seed["features"]
+        plan.entitlements = seed["entitlements"]
+        plan.self_serve = seed["self_serve"]
+        plan.is_active = seed["is_active"]
+        plan.is_featured = seed["is_featured"]
+        plan.sort_order = seed["sort_order"]
     await session.commit()
 
 
@@ -299,25 +225,27 @@ async def list_admin_plans(session: AsyncSession) -> list[dict]:
 async def activate_plan(
     session: AsyncSession,
     tenant: Tenant,
-    plan_code: str,
+    plan_code: PlanCode | str,
     *,
     now: datetime | None = None,
 ) -> dict:
+    code = require_plan_code(plan_code)
+    definition = plan_definition(code)
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
-                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.code == code,
                 SubscriptionPlan.is_active.is_(True),
             )
         )
     ).scalar_one_or_none()
     if not plan:
         raise ValueError("Unknown subscription plan")
-    if not plan.self_serve:
+    if not definition.self_serve:
         raise ValueError("This plan requires sales assistance. Please contact us for Enterprise pricing.")
 
     now = now or datetime.now(UTC)
-    tenant.plan_code = plan_code
+    tenant.plan_code = code
     tenant.status = "active"
     tenant.subscription_paid_until = now + timedelta(days=30)
     tenant.trial_warning_sent_at = None
@@ -329,7 +257,7 @@ async def activate_plan(
 async def grant_plan_to_tenant(
     session: AsyncSession,
     tenant: Tenant,
-    plan_code: str,
+    plan_code: PlanCode | str,
     *,
     days: int = 30,
     now: datetime | None = None,
@@ -340,10 +268,11 @@ async def grant_plan_to_tenant(
     if days < 1:
         raise ValueError("Grant period must be at least 1 day")
 
+    code = require_plan_code(plan_code)
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
-                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.code == code,
                 SubscriptionPlan.is_active.is_(True),
             )
         )
@@ -358,17 +287,17 @@ async def grant_plan_to_tenant(
     start = paid_until if paid_until and paid_until > now else now
 
     before = {
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "status": tenant.status,
         "subscription_paid_until": paid_until.isoformat() if paid_until else None,
     }
-    tenant.plan_code = plan_code
+    tenant.plan_code = code
     tenant.status = "active"
     tenant.subscription_paid_until = start + timedelta(days=days)
     tenant.trial_warning_sent_at = None
     return {
         "before": before,
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "status": tenant.status,
         "subscription_paid_until": tenant.subscription_paid_until.isoformat(),
         "grant_days": days,
@@ -378,23 +307,23 @@ async def grant_plan_to_tenant(
 
 async def activate_plan_from_payment(session: AsyncSession, tx) -> None:
     """Activate a tenant plan after a successful Paystack subscription payment (no commit)."""
-    plan_code = tenant_plan_from_reference(tx)
+    code = require_plan_code(tenant_plan_from_reference(tx))
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
-                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.code == code,
                 SubscriptionPlan.is_active.is_(True),
             )
         )
     ).scalar_one_or_none()
     if not plan:
-        raise ValueError(f"Unknown subscription plan: {plan_code}")
+        raise ValueError(f"Unknown subscription plan: {code.value}")
 
     tenant = (await session.execute(select(Tenant).where(Tenant.id == tx.tenant_id))).scalar_one()
     if tenant.status == "inactive":
         raise ValueError("Cannot activate a deactivated business")
     now = tx.paid_at or datetime.now(UTC)
-    tenant.plan_code = plan_code
+    tenant.plan_code = code
     tenant.status = "active"
     tenant.subscription_paid_until = now + timedelta(days=30)
     tenant.trial_warning_sent_at = None
@@ -415,7 +344,7 @@ async def create_subscription_checkout(
     *,
     tenant: Tenant,
     owner: User,
-    plan_code: str,
+    plan_code: PlanCode | str,
 ) -> dict:
     """Create a Paystack checkout for monthly plan payment (100% to Orheo)."""
     import uuid
@@ -424,27 +353,29 @@ async def create_subscription_checkout(
     from app.infra.models import PaymentStatus, PaymentTransaction
     from app.modules.payments.service import platform_payment_callback_url
 
+    code = require_plan_code(plan_code)
+    definition = plan_definition(code)
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
-                SubscriptionPlan.code == plan_code,
+                SubscriptionPlan.code == code,
                 SubscriptionPlan.is_active.is_(True),
             )
         )
     ).scalar_one_or_none()
     if not plan:
         raise ValueError("Unknown subscription plan")
-    if not plan.self_serve:
+    if not definition.self_serve:
         raise ValueError("This plan requires sales assistance. Please contact us for Enterprise pricing.")
     if not paystack_client.is_configured():
         raise ValueError("Paystack is not configured on the server")
 
-    amount = float(plan.monthly_price)
+    amount = float(definition.monthly_price)
     if amount <= 0:
-        return await activate_plan(session, tenant, plan_code)
+        return await activate_plan(session, tenant, code)
 
-    reference = f"sub_{plan_code}_{tenant.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:8]}"
-    idempotency_key = f"sub-{tenant.id}-{plan_code}-{uuid.uuid4().hex[:8]}"
+    reference = f"sub_{code.value}_{tenant.id.replace('-', '')[:8]}_{uuid.uuid4().hex[:8]}"
+    idempotency_key = f"sub-{tenant.id}-{code.value}-{uuid.uuid4().hex[:8]}"
     callback_url = platform_payment_callback_url(reference=reference)
 
     intent = await paystack_client.initialize_transaction(
@@ -454,7 +385,7 @@ async def create_subscription_checkout(
         callback_url=callback_url,
         metadata={
             "tenant_id": tenant.id,
-            "plan_code": plan_code,
+            "plan_code": code.value,
             "purpose": "subscription",
         },
         customer_name=owner.full_name,
@@ -486,7 +417,7 @@ async def create_subscription_checkout(
         "authorization_url": tx.authorization_url,
         "access_code": tx.access_code,
         "amount": float(tx.amount),
-        "plan_code": plan_code,
+        "plan_code": code.value,
         "status": tx.status.value,
     }
 
@@ -497,11 +428,7 @@ async def tenant_allows_payment_processing(session: AsyncSession, tenant: Tenant
     status = subscription_status_payload(tenant)
     if status.get("is_trial"):
         return True
-    plan = (
-        await session.execute(select(SubscriptionPlan).where(SubscriptionPlan.code == tenant.plan_code))
-    ).scalar_one_or_none()
-    entitlements = (plan.entitlements if plan else None) or {}
-    return bool(entitlements.get("payment_processing"))
+    return plan_has_feature(tenant.plan_code, PlanFeature.payment_processing)
 
 
 async def maybe_send_trial_warning(

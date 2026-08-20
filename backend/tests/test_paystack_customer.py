@@ -105,3 +105,35 @@ async def test_resolve_account_queries_paystack(monkeypatch) -> None:
     assert calls[0][0] == "GET"
     assert "account_number=0123456789" in calls[0][1]
     assert "bank_code=058" in calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_delete_subaccount_falls_back_to_deactivate(monkeypatch) -> None:
+    from app.infra.paystack import PaystackError
+
+    client = PaystackClient()
+    calls: list[tuple[str, str, dict | None]] = []
+
+    async def fake_request(method: str, path: str, *, json: dict | None = None):
+        calls.append((method, path, json))
+        if method == "DELETE":
+            raise PaystackError("Method not allowed", status_code=405)
+        return {"active": False}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    await client.delete_subaccount("ACCT_test")
+    assert calls[0] == ("DELETE", "/subaccount/ACCT_test", None)
+    assert calls[1] == ("PUT", "/subaccount/ACCT_test", {"active": False})
+
+
+@pytest.mark.asyncio
+async def test_delete_subaccount_ignores_missing_account(monkeypatch) -> None:
+    from app.infra.paystack import PaystackError
+
+    client = PaystackClient()
+
+    async def fake_request(method: str, path: str, *, json: dict | None = None):
+        raise PaystackError("Subaccount not found", status_code=404)
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    await client.delete_subaccount("ACCT_gone")

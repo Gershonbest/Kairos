@@ -28,6 +28,7 @@ from app.infra.models import (
     Tenant,
 )
 from app.modules.clients.names import compose_full_name, profile_display_name, split_person_name, visit_display_name
+from app.modules.notifications.outbound import schedule_booking_reminders, sync_booking_reminders
 from app.modules.notifications.service import send_booking_confirmation_email
 from app.modules.payments.service import booking_payment_amount
 from app.modules.scheduling.service import booking_blocks_slot, generate_slots
@@ -384,6 +385,10 @@ async def create_manual_booking(
             )
         )
 
+    await schedule_booking_reminders(
+        session, tenant=tenant, booking=booking, client=client, service=service
+    )
+
     try:
         await session.commit()
     except IntegrityError as exc:
@@ -514,6 +519,7 @@ async def update_booking_status(
 
     booking.status = next_status
     booking.version = int(booking.version or 1) + 1
+    await sync_booking_reminders(session, booking)
     await session.commit()
     await session.refresh(booking)
     await redis_cache.invalidate_tenant(current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary")

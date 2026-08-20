@@ -68,12 +68,16 @@ class PaystackClient:
         try:
             payload = response.json()
         except ValueError as exc:
+            if 200 <= response.status_code < 300:
+                return None
             raise PaystackError(
                 f"Paystack returned non-JSON response ({response.status_code})",
                 status_code=response.status_code,
             ) from exc
 
-        if response.status_code >= 400 or not payload.get("status"):
+        if response.status_code >= 400 or (
+            isinstance(payload, dict) and payload.get("status") is False
+        ):
             message = payload.get("message") if isinstance(payload, dict) else "Paystack API error"
             if not message and isinstance(payload, dict):
                 message = payload.get("title") or payload.get("detail") or f"Paystack HTTP {response.status_code}"
@@ -85,7 +89,9 @@ class PaystackClient:
             )
             raise PaystackError(str(message), status_code=response.status_code, payload=payload)
 
-        return payload.get("data")
+        if isinstance(payload, dict):
+            return payload.get("data")
+        return payload
 
     async def list_banks(self, *, country: str = "nigeria") -> list[dict]:
         last_error: PaystackError | None = None
@@ -147,6 +153,29 @@ class PaystackClient:
         if not isinstance(data, dict):
             raise PaystackError("Unexpected subaccount response from Paystack")
         return data
+
+    async def delete_subaccount(self, code_or_id: str) -> None:
+        """Remove a subaccount from the Paystack integration.
+
+        Paystack has no documented hard-delete. We try DELETE, then deactivate
+        with `active: false`. A missing subaccount is treated as already gone.
+        """
+        identifier = (code_or_id or "").strip()
+        if not identifier:
+            return
+        try:
+            await self._request("DELETE", f"/subaccount/{identifier}")
+            return
+        except PaystackError as exc:
+            if exc.status_code in {401, 403}:
+                raise
+        try:
+            await self._request("PUT", f"/subaccount/{identifier}", json={"active": False})
+        except PaystackError as exc:
+            message = str(exc).lower()
+            if exc.status_code == 404 or "not found" in message:
+                return
+            raise
 
     @staticmethod
     def split_full_name(full_name: str | None) -> tuple[str | None, str | None]:

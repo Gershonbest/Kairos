@@ -12,6 +12,7 @@ from app.infra.db import get_db_session
 from app.infra.models import AvailabilityRule, Listing, Service, ServiceBookingType, Tenant, User
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.tenants.helpers import branches_to_dict, tenant_display_location
+from app.core.plans import plan_code_value
 from app.modules.subscriptions.service import start_tenant_trial, tenant_allows_payment_processing
 from app.schemas.tenants import TenantOnboardingUpdate, TenantProfileUpdate, TenantPublicProfileUpdate
 
@@ -53,7 +54,7 @@ def _tenant_payload(tenant: Tenant) -> dict:
         "longitude": float(tenant.longitude) if tenant.longitude is not None else None,
         "branches": tenant.branches or [],
         "status": tenant.status,
-        "plan_code": tenant.plan_code,
+        "plan_code": plan_code_value(tenant.plan_code),
         "public_slug": tenant.public_slug,
         "public_tagline": tenant.public_tagline,
         "public_description": tenant.public_description,
@@ -370,6 +371,18 @@ def _payment_provider_payload(tenant: Tenant) -> dict:
     }
 
 
+def _clear_payment_provider(tenant: Tenant) -> None:
+    tenant.payment_provider = None
+    tenant.payment_account_id = None
+    tenant.paystack_subaccount_id = None
+    tenant.payments_enabled = False
+    tenant.settlement_bank_code = None
+    tenant.settlement_bank_name = None
+    tenant.settlement_account_name = None
+    tenant.settlement_account_number = None
+    tenant.settlement_account_last4 = None
+
+
 async def _hydrate_settlement_details(tenant: Tenant) -> bool:
     """Fill missing bank/account display fields from Paystack for older connections."""
     if not tenant.payment_account_id:
@@ -520,6 +533,35 @@ async def get_payment_provider(
     payload = _payment_provider_payload(tenant)
     await redis_cache.set_json(cache_key, payload)
     return payload
+
+
+@router.delete("/me/payment-provider")
+async def disconnect_payment_provider(
+    current_user: CurrentUser = Depends(require_active_subscription),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    tenant = (
+        await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    subaccount_ref = (tenant.payment_account_id or tenant.paystack_subaccount_id or "").strip()
+    if subaccount_ref and paystack_client.is_configured():
+        try:
+            await paystack_client.delete_subaccount(subaccount_ref)
+        except PaystackError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=str(exc) or "Unable to remove this settlement account from Paystack.",
+            ) from exc
+
+    _clear_payment_provider(tenant)
+    await session.commit()
+    await redis_cache.invalidate_tenant(current_user.tenant_id, PAYMENT_PROVIDER_CACHE, TENANT_CACHE)
+    return {"ok": True, **_payment_provider_payload(tenant)}
 
 
 @router.post("/me/deactivate")

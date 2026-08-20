@@ -30,6 +30,7 @@ from app.infra.models import (
 )
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.clients.names import compose_full_name, profile_display_name, split_person_name, visit_display_name
+from app.modules.notifications.outbound import schedule_booking_reminders
 from app.modules.notifications.service import (
     build_booking_receipt_data,
     create_booking_notifications,
@@ -691,6 +692,9 @@ async def create_public_booking(
         owner = await create_booking_notifications(
             session, tenant=tenant, booking=booking, client=client, service=service
         )
+        await schedule_booking_reminders(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
         await session.commit()
         await session.refresh(booking)
         await redis.delete(lock_key)
@@ -844,6 +848,9 @@ async def confirm_public_booking_payment(
     owner = None
     if newly_confirmed:
         owner = await create_booking_notifications(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
+        await schedule_booking_reminders(
             session, tenant=tenant, booking=booking, client=client, service=service
         )
 
