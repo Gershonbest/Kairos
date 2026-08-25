@@ -7,8 +7,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
-from app.infra.models import Booking, Client, PaymentStatus, PaymentTransaction
+from app.infra.models import Booking, Client, ClientEmailTemplate, PaymentStatus, PaymentTransaction, User
+from app.modules.clients.client_email import ClientEmailError, render_client_email, send_client_email
+from app.modules.clients.email_templates import (
+    SYSTEM_TEMPLATES,
+    is_system_template_id,
+    system_template_id,
+)
 from app.modules.clients.names import apply_canonical_full_name
+from app.modules.clients.communications import list_client_communications, log_client_phone_outreach
+from app.schemas.client_communications import ClientCommunicationLogIn, ClientCommunicationOut
+from app.schemas.client_emails import (
+    ClientEmailPreviewIn,
+    ClientEmailPreviewOut,
+    ClientEmailSendIn,
+    ClientEmailSendOut,
+    ClientEmailTemplateCreate,
+    ClientEmailTemplateOut,
+    ClientEmailTemplateUpdate,
+)
 from app.schemas.clients import ClientCreate, ClientOut, ClientUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
@@ -92,6 +109,283 @@ async def list_clients(
     payload = [_client_out(row, stats) for row in rows]
     await redis_cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload])
     return payload
+
+
+def _system_template_outs() -> list[ClientEmailTemplateOut]:
+    return [
+        ClientEmailTemplateOut(
+            id=system_template_id(item.key),
+            name=item.name,
+            subject=item.subject,
+            body=item.body,
+            is_system=True,
+        )
+        for item in SYSTEM_TEMPLATES
+    ]
+
+
+@router.get("/email-templates", response_model=list[ClientEmailTemplateOut])
+async def list_client_email_templates(
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ClientEmailTemplateOut]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    rows = (
+        await session.execute(
+            select(ClientEmailTemplate)
+            .where(ClientEmailTemplate.tenant_id == current_user.tenant_id)
+            .order_by(ClientEmailTemplate.name)
+        )
+    ).scalars().all()
+    custom = [
+        ClientEmailTemplateOut(
+            id=row.id,
+            name=row.name,
+            subject=row.subject,
+            body=row.body,
+            is_system=False,
+        )
+        for row in rows
+    ]
+    return _system_template_outs() + custom
+
+
+@router.post("/email-templates", response_model=ClientEmailTemplateOut, status_code=201)
+async def create_client_email_template(
+    payload: ClientEmailTemplateCreate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientEmailTemplateOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    row = ClientEmailTemplate(
+        tenant_id=current_user.tenant_id,
+        name=payload.name.strip(),
+        subject=payload.subject.strip(),
+        body=payload.body.strip(),
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return ClientEmailTemplateOut(
+        id=row.id,
+        name=row.name,
+        subject=row.subject,
+        body=row.body,
+        is_system=False,
+    )
+
+
+@router.patch("/email-templates/{template_id}", response_model=ClientEmailTemplateOut)
+async def update_client_email_template(
+    template_id: str,
+    payload: ClientEmailTemplateUpdate,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientEmailTemplateOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    if is_system_template_id(template_id):
+        raise HTTPException(status_code=400, detail="Built-in templates cannot be edited")
+
+    row = (
+        await session.execute(
+            select(ClientEmailTemplate).where(
+                ClientEmailTemplate.id == template_id,
+                ClientEmailTemplate.tenant_id == current_user.tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    if payload.name is not None:
+        row.name = payload.name.strip()
+    if payload.subject is not None:
+        row.subject = payload.subject.strip()
+    if payload.body is not None:
+        row.body = payload.body.strip()
+
+    await session.commit()
+    await session.refresh(row)
+    return ClientEmailTemplateOut(
+        id=row.id,
+        name=row.name,
+        subject=row.subject,
+        body=row.body,
+        is_system=False,
+    )
+
+
+@router.delete("/email-templates/{template_id}")
+async def delete_client_email_template(
+    template_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, bool]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    if is_system_template_id(template_id):
+        raise HTTPException(status_code=400, detail="Built-in templates cannot be deleted")
+
+    row = (
+        await session.execute(
+            select(ClientEmailTemplate).where(
+                ClientEmailTemplate.id == template_id,
+                ClientEmailTemplate.tenant_id == current_user.tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    await session.delete(row)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.get("/{client_id}", response_model=ClientOut)
+async def get_client(
+    client_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    client = (
+        await session.execute(
+            select(Client).where(Client.id == client_id, Client.tenant_id == current_user.tenant_id)
+        )
+    ).scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    stats = await _client_stats(session, current_user.tenant_id, [client.id])
+    return _client_out(client, stats)
+
+
+@router.post("/{client_id}/email/preview", response_model=ClientEmailPreviewOut)
+async def preview_client_email(
+    client_id: str,
+    payload: ClientEmailPreviewIn,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientEmailPreviewOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    try:
+        subject, body = await render_client_email(
+            session,
+            tenant_id=current_user.tenant_id,
+            client_id=client_id,
+            template_id=payload.template_id,
+            subject=payload.subject,
+            body=payload.body,
+        )
+    except ClientEmailError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ClientEmailPreviewOut(subject=subject, body=body)
+
+
+@router.post("/{client_id}/email", response_model=ClientEmailSendOut)
+async def send_client_email_message(
+    client_id: str,
+    payload: ClientEmailSendIn,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientEmailSendOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    try:
+        message = await send_client_email(
+            session,
+            tenant_id=current_user.tenant_id,
+            client_id=client_id,
+            subject=payload.subject,
+            body=payload.body,
+            actor_user_id=current_user.id,
+            template_id=payload.template_id,
+        )
+        await session.commit()
+    except ClientEmailError as exc:
+        status = 503 if "not configured" in str(exc).lower() else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    return ClientEmailSendOut(ok=True, message=message)
+
+
+@router.get("/{client_id}/communications", response_model=list[ClientCommunicationOut])
+async def get_client_communications(
+    client_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[ClientCommunicationOut]:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    client = (
+        await session.execute(
+            select(Client).where(Client.id == client_id, Client.tenant_id == current_user.tenant_id)
+        )
+    ).scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    rows = await list_client_communications(
+        session,
+        tenant_id=current_user.tenant_id,
+        client_id=client_id,
+    )
+    return [ClientCommunicationOut.model_validate(row) for row in rows]
+
+
+@router.post("/{client_id}/communications", response_model=ClientCommunicationOut, status_code=201)
+async def log_client_communication(
+    client_id: str,
+    payload: ClientCommunicationLogIn,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> ClientCommunicationOut:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    try:
+        row = await log_client_phone_outreach(
+            session,
+            tenant_id=current_user.tenant_id,
+            client_id=client_id,
+            channel=payload.channel,
+            actor_user_id=current_user.id,
+            phone=payload.phone,
+        )
+        await session.commit()
+        await session.refresh(row)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    actor_name = (
+        await session.execute(select(User.full_name).where(User.id == current_user.id))
+    ).scalar_one_or_none()
+
+    return ClientCommunicationOut(
+        id=row.id,
+        channel=row.channel,  # type: ignore[arg-type]
+        status=row.status,
+        recipient=row.recipient,
+        subject=row.subject,
+        summary=row.summary,
+        template_id=row.template_id,
+        template_name=row.template_name,
+        actor_name=actor_name,
+        created_at=row.created_at.isoformat(),
+    )
 
 
 @router.post("", response_model=ClientOut, status_code=201)

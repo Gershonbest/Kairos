@@ -16,6 +16,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { RecordBalanceDialog } from "../../components/payments/RecordBalanceDialog";
 import { api, bookingClientLabel, type BookingListItem } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 
@@ -107,6 +108,12 @@ export function BookingCalendar() {
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
   const [blockInitialDate, setBlockInitialDate] = useState<Date | null>(null);
   const [outcomeUpdating, setOutcomeUpdating] = useState<string | null>(null);
+  const [balanceTarget, setBalanceTarget] = useState<{
+    bookingId: string;
+    clientName: string;
+    serviceName: string;
+    balanceDue: number;
+  } | null>(null);
   const [outcomeError, setOutcomeError] = useState("");
 
   const { data: bookings = [] } = useQuery({
@@ -256,6 +263,9 @@ export function BookingCalendar() {
         (rows ?? []).map((row) => (row.id === updated.id ? updated : row))
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.clients });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.balanceTracking });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary });
       setSelectedBooking(updated);
     },
   });
@@ -265,7 +275,20 @@ export function BookingCalendar() {
     setOutcomeError("");
     setOutcomeUpdating(status);
     try {
-      await updateOutcomeMutation.mutateAsync({ id: selectedBooking.id, status });
+      const updated = await updateOutcomeMutation.mutateAsync({ id: selectedBooking.id, status });
+      if (
+        status === "completed" &&
+        updated.payment &&
+        updated.payment.balance_due > 0 &&
+        updated.payment.payment_state === "deposit_paid"
+      ) {
+        setBalanceTarget({
+          bookingId: updated.id,
+          clientName: bookingClientLabel(updated),
+          serviceName: updated.service_name,
+          balanceDue: updated.payment.balance_due,
+        });
+      }
     } catch (err) {
       setOutcomeError(err instanceof Error ? err.message : "Unable to update appointment outcome.");
     } finally {
@@ -761,6 +784,49 @@ export function BookingCalendar() {
                   </div>
                 )}
 
+                {selectedBooking.payment && selectedBooking.payment.deposit_amount > 0 && (
+                  <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Service total</p>
+                        <p className="font-medium">₦{selectedBooking.payment.service_price.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Collected</p>
+                        <p className="font-medium">₦{selectedBooking.payment.collected_total.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Balance due</p>
+                        <p className="font-medium">₦{selectedBooking.payment.balance_due.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Status</p>
+                        <p className="font-medium capitalize">
+                          {selectedBooking.payment.payment_state.replace("_", " ")}
+                        </p>
+                      </div>
+                    </div>
+                    {selectedBooking.payment.balance_due > 0 &&
+                      selectedBooking.payment.payment_state === "deposit_paid" && (
+                        <Button
+                          size="sm"
+                          className="mt-1"
+                          onClick={() =>
+                            setBalanceTarget({
+                              bookingId: selectedBooking.id,
+                              clientName: bookingClientLabel(selectedBooking),
+                              serviceName: selectedBooking.service_name,
+                              balanceDue: selectedBooking.payment!.balance_due,
+                            })
+                          }
+                        >
+                          Record balance payment
+                        </Button>
+                      )}
+                  </div>
+                )}
+
                 <div className="space-y-3 pt-2 border-t border-border">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Appointment outcome</p>
@@ -827,6 +893,28 @@ export function BookingCalendar() {
           )}
         </SheetContent>
       </Sheet>
+
+      <RecordBalanceDialog
+        open={balanceTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setBalanceTarget(null);
+        }}
+        bookingId={balanceTarget?.bookingId ?? ""}
+        clientName={balanceTarget?.clientName ?? ""}
+        serviceName={balanceTarget?.serviceName ?? ""}
+        balanceDue={balanceTarget?.balanceDue ?? 0}
+        onSubmit={async (payload) => {
+          if (!balanceTarget) return;
+          const updated = await api.recordBookingBalance(balanceTarget.bookingId, payload);
+          queryClient.setQueryData<BookingListItem[]>(queryKeys.bookings, (rows) =>
+            (rows ?? []).map((row) => (row.id === updated.id ? updated : row)),
+          );
+          setSelectedBooking(updated);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.balanceTracking });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary });
+        }}
+      />
 
       <ManualBookingDialog
         open={manualBookingOpen}

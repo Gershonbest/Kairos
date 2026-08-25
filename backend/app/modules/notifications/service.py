@@ -15,6 +15,7 @@ from app.infra.cache import redis_cache
 from app.infra.email import EmailAttachment, email_service
 from app.core.config import get_settings
 from app.infra.models import (
+    AppointmentFormat,
     Booking,
     Client,
     Notification,
@@ -233,7 +234,9 @@ def build_booking_receipt_data(
         host_title=service.host_title,
         client_instructions=service.client_instructions,
         online_meeting_link=(
-            service.online_meeting_link if appointment_format == "online" else None
+            service.online_meeting_link
+            if booking.appointment_format == AppointmentFormat.online
+            else None
         ),
         amount_paid=amount,
         currency=(payment_tx.currency if payment_tx and payment_tx.currency else "NGN"),

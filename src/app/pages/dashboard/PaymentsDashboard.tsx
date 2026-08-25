@@ -26,11 +26,12 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
+import { RecordBalanceDialog } from "../../components/payments/RecordBalanceDialog";
 
 type Transaction = {
   id: string;
@@ -42,6 +43,8 @@ type Transaction = {
   status: string;
   date: string;
   method: string;
+  purpose?: string;
+  viaOrheo?: boolean;
 };
 
 function MetricTitleWithTooltip({ title, hint }: { title: string; hint: string }) {
@@ -67,12 +70,25 @@ function MetricTitleWithTooltip({ title, hint }: { title: string; hint: string }
 }
 
 export function PaymentsDashboard() {
+  const queryClient = useQueryClient();
+  const [balanceTarget, setBalanceTarget] = useState<{
+    bookingId: string;
+    clientName: string;
+    serviceName: string;
+    balanceDue: number;
+  } | null>(null);
+
   const {
     data: provider,
     isError: providerFailed,
   } = useQuery({
     queryKey: queryKeys.paymentProvider,
     queryFn: () => api.getPaymentProvider(),
+  });
+
+  const { data: paymentConfig } = useQuery({
+    queryKey: queryKeys.paymentConfig,
+    queryFn: () => api.getPaymentConfig(),
   });
 
   const {
@@ -83,12 +99,20 @@ export function PaymentsDashboard() {
     queryFn: () => api.listTransactions(),
   });
 
-  const platformFeePercent = Number(provider?.platform_fee_percent ?? 5);
+  const {
+    data: balanceRows = [],
+    isError: balanceFailed,
+  } = useQuery({
+    queryKey: queryKeys.balanceTracking,
+    queryFn: () => api.listBalanceTracking(),
+  });
+
+  const platformFeePercent = Number(paymentConfig?.platform_fee_percent ?? provider?.platform_fee_percent ?? 5);
   const paymentsEnabled = Boolean(provider?.payments_enabled && provider?.account_id);
   const settlementSplit = useMemo(
     () => [
       { name: "Your settlement", value: Math.max(0, 100 - platformFeePercent), color: "var(--color-primary)" },
-      { name: "Orheo fee", value: platformFeePercent, color: "var(--color-accent)" },
+      { name: "Merchant fee", value: platformFeePercent, color: "var(--color-accent)" },
     ],
     [platformFeePercent]
   );
@@ -104,7 +128,14 @@ export function PaymentsDashboard() {
         configuredDeposit: row.deposit_amount ?? 0,
         status: row.status === "succeeded" ? "completed" : row.status,
         date: row.paid_at ?? row.created_at,
-        method: row.provider === "orheo" || row.provider === "kairos" ? "Demo" : "Paystack",
+        method:
+          row.purpose === "balance"
+            ? row.provider.replace("_", " ")
+            : row.provider === "orheo" || row.provider === "kairos"
+              ? "Demo"
+              : "Paystack",
+        purpose: row.purpose,
+        viaOrheo: row.via_orheo,
       })),
     [transactionRows]
   );
@@ -119,7 +150,7 @@ export function PaymentsDashboard() {
     tx.serviceTotal > tx.collectedAmount + 0.01;
 
   const revenueData = useMemo(() => {
-    const monthly: Record<string, { month: string; collected: number; deposits: number }> = {};
+    const monthly: Record<string, { month: string; collected: number; deposits: number; balances: number }> = {};
     for (const tx of completedTransactions) {
       const stamp = new Date(tx.date);
       const key = `${stamp.getFullYear()}-${stamp.getMonth() + 1}`;
@@ -128,10 +159,13 @@ export function PaymentsDashboard() {
           month: stamp.toLocaleDateString("en-US", { month: "short" }),
           collected: 0,
           deposits: 0,
+          balances: 0,
         };
       }
       monthly[key].collected += tx.collectedAmount;
-      if (isLikelyDepositCollection(tx)) {
+      if (tx.purpose === "balance") {
+        monthly[key].balances += tx.collectedAmount;
+      } else if (isLikelyDepositCollection(tx) || tx.purpose === "deposit" || tx.purpose === "booking") {
         monthly[key].deposits += tx.collectedAmount;
       }
     }
@@ -139,27 +173,34 @@ export function PaymentsDashboard() {
   }, [completedTransactions]);
 
   const error =
-    transactionsFailed || providerFailed ? "Unable to load payment data." : "";
+    transactionsFailed || providerFailed || balanceFailed ? "Unable to load payment data." : "";
 
   const totalCollected = completedTransactions.reduce((sum, tx) => sum + tx.collectedAmount, 0);
+  const orheoDepositsCollected = completedTransactions
+    .filter((tx) => tx.viaOrheo || (tx.purpose !== "balance" && tx.method === "Paystack"))
+    .reduce((sum, tx) => sum + tx.collectedAmount, 0);
+  const balancesRecorded = completedTransactions
+    .filter((tx) => tx.purpose === "balance")
+    .reduce((sum, tx) => sum + tx.collectedAmount, 0);
   const totalDepositsCollected = completedTransactions
-    .filter((tx) => isLikelyDepositCollection(tx))
+    .filter((tx) => tx.purpose !== "balance" && isLikelyDepositCollection(tx))
     .reduce((sum, tx) => sum + tx.collectedAmount, 0);
   const pendingCheckoutTotal = pendingTransactions.reduce((sum, tx) => sum + tx.collectedAmount, 0);
   const averageCollected =
     completedTransactions.length > 0 ? totalCollected / completedTransactions.length : 0;
-  const depositTracking = completedTransactions
-    .filter((tx) => isLikelyDepositCollection(tx))
-    .map((tx) => ({
-      id: tx.id,
-      client: tx.client,
-      service: tx.service,
-      depositPaid: tx.collectedAmount,
-      depositRequired: tx.configuredDeposit,
-      remainingBalance: Math.max(tx.serviceTotal - tx.collectedAmount, 0),
-      dueDate: tx.date,
-      status: "partial",
-    }));
+  const outstandingBalanceTotal = balanceRows
+    .filter((row) => row.payment_state === "deposit_paid" && row.balance_due > 0)
+    .reduce((sum, row) => sum + row.balance_due, 0);
+
+  const refreshPaymentData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactions }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.balanceTracking }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.bookings }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardHomeStats }),
+    ]);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -211,7 +252,7 @@ export function PaymentsDashboard() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               <MetricTitleWithTooltip
                 title="Revenue Collected"
-                hint="Total amount successfully collected from booking transactions."
+                hint="Deposits via Orheo plus balance payments you record after appointments."
               />
             </CardTitle>
             <DollarSign className="w-4 h-4 text-accent" />
@@ -220,7 +261,9 @@ export function PaymentsDashboard() {
             <div className="text-3xl font-semibold">₦{totalCollected.toFixed(2)}</div>
             <p className="text-xs text-accent flex items-center gap-1 mt-2">
               <ArrowUpRight className="w-3 h-3" />
-              <span>Succeeded payment transactions only</span>
+              <span>
+                Orheo deposits ₦{orheoDepositsCollected.toFixed(2)} · Balances ₦{balancesRecorded.toFixed(2)}
+              </span>
             </p>
           </CardContent>
         </Card>
@@ -229,16 +272,16 @@ export function PaymentsDashboard() {
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               <MetricTitleWithTooltip
-                title="Deposits Collected"
-                hint="Successful upfront payments collected for services that require deposits."
+                title="Deposits via Orheo"
+                hint="Upfront deposits collected through Orheo/Paystack. Merchant fee applies to these only."
               />
             </CardTitle>
             <CreditCard className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">₦{totalDepositsCollected.toFixed(2)}</div>
+            <div className="text-3xl font-semibold">₦{orheoDepositsCollected.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground mt-2">
-              {totalCollected > 0 ? Math.round((totalDepositsCollected / totalCollected) * 100) : 0}% of collected revenue
+              Outstanding balances: ₦{outstandingBalanceTotal.toFixed(2)}
             </p>
           </CardContent>
         </Card>
@@ -301,6 +344,7 @@ export function PaymentsDashboard() {
                 />
                 <Bar key="collected" dataKey="collected" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
                 <Bar key="deposits" dataKey="deposits" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
+                <Bar key="balances" dataKey="balances" fill="#64748b" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -311,7 +355,7 @@ export function PaymentsDashboard() {
             <CardTitle>Paystack settlement split</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {paymentsEnabled
-                ? `Subaccount percentage_charge: ${platformFeePercent}% to Orheo`
+                ? `${platformFeePercent}% merchant fee on deposits collected through Orheo; the rest settles to you.`
                 : "Connect Paystack to enable live settlement splits"}
             </p>
           </CardHeader>
@@ -348,6 +392,10 @@ export function PaymentsDashboard() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              This split applies only to booking deposits that pass through Orheo. Payments you collect outside Orheo
+              are not subject to the merchant fee.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -421,72 +469,112 @@ export function PaymentsDashboard() {
             <CardHeader>
             <CardTitle>Deposit Tracking</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Shows completed deposit payments and remaining balance per service.
+              Record balance payments after service, or view no-shows where only the deposit was collected.
             </p>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {depositTracking.map((deposit) => (
+                {balanceRows.map((row) => (
                   <div
-                    key={deposit.id}
+                    key={row.booking_id}
                     className="p-4 border border-border rounded-lg hover:bg-accent/30 transition-colors"
                   >
-                    <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-start justify-between mb-3 gap-3">
                       <div>
-                        <h4 className="font-medium">{deposit.client}</h4>
-                        <p className="text-sm text-muted-foreground">{deposit.service}</p>
+                        <h4 className="font-medium">{row.client_name}</h4>
+                        <p className="text-sm text-muted-foreground">{row.service_name}</p>
                       </div>
                       <span
-                        className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
-                          deposit.status
+                        className={`px-2 py-1 text-xs rounded-full shrink-0 ${getStatusColor(
+                          row.payment_state === "forfeited"
+                            ? "failed"
+                            : row.payment_state === "deposit_paid"
+                              ? "partial"
+                              : "completed",
                         )}`}
                       >
-                        {deposit.status}
+                        {row.payment_state === "forfeited"
+                          ? "No-show · deposit only"
+                          : row.payment_state === "deposit_paid"
+                            ? "Balance due"
+                            : row.payment_state}
                       </span>
                     </div>
                     <div className="grid grid-cols-3 gap-4 mb-3">
                       <div>
-                        <p className="text-xs text-muted-foreground">Deposit Paid</p>
+                        <p className="text-xs text-muted-foreground">Deposit via Orheo</p>
                         <p className="font-semibold text-accent">
-                          ₦{deposit.depositPaid.toFixed(2)} / ₦{deposit.depositRequired.toFixed(2)}
+                          ₦{row.deposit_paid.toFixed(2)} / ₦{row.deposit_required.toFixed(2)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Remaining Balance</p>
-                        <p className="font-semibold">₦{deposit.remainingBalance.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">Remaining balance</p>
+                        <p className="font-semibold">₦{row.balance_due.toFixed(2)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Due Date</p>
+                        <p className="text-xs text-muted-foreground">Appointment</p>
                         <p className="font-medium">
-                          {new Date(deposit.dueDate).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}
+                          {row.appointment_at
+                            ? new Date(row.appointment_at).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                              })
+                            : "—"}
                         </p>
                       </div>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-primary to-accent h-2 rounded-full transition-all"
-                        style={{
-                          width: `${
-                            deposit.depositRequired > 0
-                              ? Math.min(100, (deposit.depositPaid / deposit.depositRequired) * 100)
-                              : 100
-                          }%`,
-                        }}
-                      />
-                    </div>
+                    {row.payment_state === "deposit_paid" && row.balance_due > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            setBalanceTarget({
+                              bookingId: row.booking_id,
+                              clientName: row.client_name,
+                              serviceName: row.service_name,
+                              balanceDue: row.balance_due,
+                            })
+                          }
+                        >
+                          Record balance
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            void api.waiveBookingBalance(row.booking_id).then(() => refreshPaymentData());
+                          }}
+                        >
+                          Waive balance
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
-                {depositTracking.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No pending deposit balances.</p>
+                {balanceRows.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No outstanding deposit balances.</p>
                 )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <RecordBalanceDialog
+        open={balanceTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setBalanceTarget(null);
+        }}
+        bookingId={balanceTarget?.bookingId ?? ""}
+        clientName={balanceTarget?.clientName ?? ""}
+        serviceName={balanceTarget?.serviceName ?? ""}
+        balanceDue={balanceTarget?.balanceDue ?? 0}
+        onSubmit={async (payload) => {
+          if (!balanceTarget) return;
+          await api.recordBookingBalance(balanceTarget.bookingId, payload);
+          await refreshPaymentData();
+        }}
+      />
     </div>
   );
 }

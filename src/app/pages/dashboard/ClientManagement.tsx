@@ -1,38 +1,41 @@
-// Tenant client list and contact management page.
+// Tenant client list with search, stats, and navigation to client detail pages.
 
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
-import { Search, Plus, Mail, Phone, Calendar, CalendarPlus, DollarSign, MessageSquare } from "lucide-react";
+import { Search, Plus, Mail, Phone, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 
-interface Client {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  totalBookings: number;
-  totalSpent: number;
-  lastVisit: string;
-  notes: string;
+function clientInitials(name: string): string {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("")
+    .slice(0, 2);
+}
+
+function formatLastVisit(value?: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function ClientManagement() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [error, setError] = useState("");
-  const [noteDraft, setNoteDraft] = useState("");
-  const [isSavingNote, setIsSavingNote] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [newClient, setNewClient] = useState({ name: "", email: "", phone: "", notes: "" });
@@ -41,10 +44,6 @@ export function ClientManagement() {
     queryKey: queryKeys.clients,
     queryFn: () => api.listClients(),
   });
-  const { data: bookings = [], isError: bookingsFailed } = useQuery({
-    queryKey: queryKeys.bookings,
-    queryFn: () => api.listBookings(),
-  });
 
   const clients = useMemo(
     () =>
@@ -52,44 +51,34 @@ export function ClientManagement() {
         id: row.id,
         name: row.full_name,
         email: row.email,
-        phone: row.phone ?? "N/A",
+        phone: row.phone ?? "",
         totalBookings: row.total_bookings,
         totalSpent: row.total_spent,
-        lastVisit: row.last_visit_at ?? new Date().toISOString(),
-        notes: row.notes ?? "",
+        lastVisit: row.last_visit_at,
       })),
     [clientRows]
   );
 
-  const displayError =
-    error || (clientsFailed || bookingsFailed ? "Unable to load clients from API." : "");
-
-  async function refreshLists() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.clients }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.bookings }),
-    ]);
-  }
+  const displayError = error || (clientsFailed ? "Unable to load clients from API." : "");
 
   const filteredClients = clients.filter(
     (client) =>
       client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      client.email.toLowerCase().includes(searchTerm.toLowerCase())
+      client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      client.phone.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
   const totalBookings = clients.reduce((sum, client) => sum + client.totalBookings, 0);
   const avgBookingsPerClient = clients.length > 0 ? totalBookings / clients.length : 0;
   const avgLifetimeValue =
     clients.length > 0 ? clients.reduce((sum, client) => sum + client.totalSpent, 0) / clients.length : 0;
-  const clientBookingHistory = selectedClient
-    ? bookings.filter((booking) => booking.client_id === selectedClient.id)
-    : [];
 
   async function handleAddClient(e: React.FormEvent) {
     e.preventDefault();
     setIsAdding(true);
     setError("");
     try {
-      await api.createClient({
+      const created = await api.createClient({
         full_name: newClient.name.trim(),
         email: newClient.email.trim(),
         phone: newClient.phone.trim() || undefined,
@@ -97,7 +86,8 @@ export function ClientManagement() {
       });
       setNewClient({ name: "", email: "", phone: "", notes: "" });
       setShowAddDialog(false);
-      await refreshLists();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.clients });
+      navigate(`/dashboard/clients/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add client.");
     } finally {
@@ -105,33 +95,18 @@ export function ClientManagement() {
     }
   }
 
-  async function handleSaveNotes() {
-    if (!selectedClient) return;
-    setIsSavingNote(true);
-    setError("");
-    try {
-      await api.updateClient(selectedClient.id, { notes: noteDraft });
-      setSelectedClient((prev) => (prev ? { ...prev, notes: noteDraft } : prev));
-      await refreshLists();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save notes.");
-    } finally {
-      setIsSavingNote(false);
-    }
-  }
-
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">Client Management</h1>
-          <p className="text-muted-foreground mt-1">View and manage your client relationships</p>
+          <h1 className="text-3xl font-semibold">Clients</h1>
+          <p className="text-muted-foreground mt-1">Manage relationships, bookings, and notes</p>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
           <DialogTrigger asChild>
             <Button className="bg-primary hover:bg-primary/90">
               <Plus className="w-4 h-4 mr-2" />
-              Add Client
+              Add client
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -191,7 +166,7 @@ export function ClientManagement() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
-              placeholder="Search clients by name or email..."
+              placeholder="Search by name, email, or phone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
@@ -203,7 +178,7 @@ export function ClientManagement() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Clients</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total clients</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{clients.length}</div>
@@ -211,7 +186,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Active This Month</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">With bookings</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{clients.filter((c) => c.totalBookings > 0).length}</div>
@@ -219,7 +194,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Bookings/Client</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. bookings / client</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{avgBookingsPerClient.toFixed(1)}</div>
@@ -227,7 +202,7 @@ export function ClientManagement() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. Lifetime Value</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Avg. lifetime value</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">₦{avgLifetimeValue.toFixed(0)}</div>
@@ -236,184 +211,63 @@ export function ClientManagement() {
       </div>
 
       {displayError && <p className="text-sm text-red-600">{displayError}</p>}
+
       <Card>
         <CardHeader>
-          <CardTitle>All Clients</CardTitle>
+          <CardTitle>All clients</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
             {filteredClients.map((client) => (
-              <Dialog key={client.id}>
-                <DialogTrigger asChild>
-                  <div
-                    className="p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
-                    onClick={() => {
-                      setSelectedClient(client);
-                      setNoteDraft(client.notes);
-                    }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium text-lg">
-                          {client.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")}
-                        </div>
-                        <div>
-                          <h3 className="font-medium">{client.name}</h3>
-                          <div className="flex items-center gap-4 mt-1">
-                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                              <Mail className="w-3 h-3" />
-                              {client.email}
-                            </div>
-                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                              <Phone className="w-3 h-3" />
-                              {client.phone}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-8">
-                        <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Total Bookings</p>
-                          <p className="font-semibold">{client.totalBookings}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Total Spent</p>
-                          <p className="font-semibold text-accent">₦{client.totalSpent.toFixed(0)}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-muted-foreground">Last Visit</p>
-                          <p className="font-medium">
-                            {new Date(client.lastVisit).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </p>
-                        </div>
+              <button
+                key={client.id}
+                type="button"
+                onClick={() => navigate(`/dashboard/clients/${client.id}`)}
+                className="w-full text-left p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium text-lg shrink-0">
+                      {clientInitials(client.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-medium truncate">{client.name}</h3>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground truncate">
+                          <Mail className="w-3 h-3 shrink-0" />
+                          {client.email}
+                        </span>
+                        {client.phone && (
+                          <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Phone className="w-3 h-3 shrink-0" />
+                            {client.phone}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
-                </DialogTrigger>
-                <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium text-lg">
-                        {client.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </div>
-                      <div>
-                        <div>{client.name}</div>
-                        <p className="text-sm text-muted-foreground font-normal">{client.email}</p>
-                      </div>
-                    </DialogTitle>
-                  </DialogHeader>
-
-                  <Button
-                    className="mt-4 w-full sm:w-auto"
-                    onClick={() =>
-                      navigate(`/dashboard/calendar?new=1&client=${encodeURIComponent(client.id)}`)
-                    }
-                  >
-                    <CalendarPlus className="w-4 h-4 mr-2" />
-                    Book appointment
-                  </Button>
-
-                  <Tabs defaultValue="overview" className="mt-4">
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="overview">Overview</TabsTrigger>
-                      <TabsTrigger value="bookings">Booking History</TabsTrigger>
-                      <TabsTrigger value="notes">Notes</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="overview" className="space-y-4 mt-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <Card>
-                          <CardContent className="p-4">
-                            <div className="flex items-center gap-3">
-                              <Calendar className="w-8 h-8 text-primary" />
-                              <div>
-                                <p className="text-sm text-muted-foreground">Total Bookings</p>
-                                <p className="text-2xl font-semibold">{client.totalBookings}</p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4">
-                            <div className="flex items-center gap-3">
-                              <DollarSign className="w-8 h-8 text-accent" />
-                              <div>
-                                <p className="text-sm text-muted-foreground">Total Spent</p>
-                                <p className="text-2xl font-semibold">₦{client.totalSpent.toFixed(0)}</p>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="bookings" className="mt-4">
-                      <div className="space-y-2">
-                        {clientBookingHistory.map((booking) => (
-                          <div
-                            key={booking.id}
-                            className="flex items-center justify-between p-3 border border-border rounded-lg"
-                          >
-                            <div>
-                              <p className="font-medium">{booking.service_name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {new Date(booking.start_at).toLocaleDateString("en-US", {
-                                  month: "long",
-                                  day: "numeric",
-                                  year: "numeric",
-                                })}
-                              </p>
-                              {booking.client_name && booking.client_name !== client.name && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Booked as {booking.client_name}
-                                </p>
-                              )}
-                            </div>
-                            <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent">
-                              {booking.status}
-                            </span>
-                          </div>
-                        ))}
-                        {clientBookingHistory.length === 0 && (
-                          <p className="text-sm text-muted-foreground">No bookings yet for this client.</p>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="notes" className="mt-4 space-y-4">
-                      <div className="flex items-start gap-2">
-                        <MessageSquare className="w-4 h-4 text-muted-foreground mt-2" />
-                        <Textarea
-                          value={noteDraft}
-                          onChange={(e) => setNoteDraft(e.target.value)}
-                          placeholder="Add notes about preferences, allergies, follow-ups..."
-                          rows={5}
-                        />
-                      </div>
-                      <Button
-                        className="w-full bg-primary hover:bg-primary/90"
-                        onClick={handleSaveNotes}
-                        loading={isSavingNote}
-                        loadingLabel="Saving..."
-                      >
-                        Save notes
-                      </Button>
-                    </TabsContent>
-                  </Tabs>
-                </DialogContent>
-              </Dialog>
+                  <div className="hidden sm:flex items-center gap-8 shrink-0">
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Bookings</p>
+                      <p className="font-semibold">{client.totalBookings}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Spent</p>
+                      <p className="font-semibold text-accent">₦{client.totalSpent.toFixed(0)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">Last visit</p>
+                      <p className="font-medium">{formatLastVisit(client.lastVisit)}</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0" />
+                </div>
+              </button>
             ))}
             {filteredClients.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-8">No clients yet. Add one or share your booking link.</p>
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No clients found. Add one or share your booking link.
+              </p>
             )}
           </div>
         </CardContent>

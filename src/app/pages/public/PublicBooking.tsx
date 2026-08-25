@@ -26,7 +26,7 @@ import {
   Loader2,
   Download,
 } from "lucide-react";
-import { api, type PublicBookingResponse } from "../../../lib/api/client";
+import { api, type AiStreamEvent, type PublicBookingResponse } from "../../../lib/api/client";
 import {
   appointmentTypeLabels,
   formatHostLabel,
@@ -81,6 +81,51 @@ interface ChatMessage {
   content: string;
 }
 
+type ActivityStep = {
+  id: string;
+  label: string;
+  status: "running" | "done";
+};
+
+function handlePublicStreamEvent(
+  event: AiStreamEvent,
+  setActivitySteps: React.Dispatch<React.SetStateAction<ActivityStep[]>>,
+  aiMessageId: string,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setAiThreadId: React.Dispatch<React.SetStateAction<string | undefined>>,
+) {
+  if (event.type === "status") {
+    setActivitySteps([{ id: "status", label: event.text, status: "running" }]);
+    return;
+  }
+  if (event.type === "tool_start") {
+    setActivitySteps((prev) => {
+      const done = prev.map((step) => ({ ...step, status: "done" as const }));
+      return [...done, { id: `tool-${event.name}`, label: event.label || event.name, status: "running" }];
+    });
+    return;
+  }
+  if (event.type === "tool_end") {
+    setActivitySteps((prev) =>
+      prev.map((step) => (step.id === `tool-${event.name}` ? { ...step, status: "done" } : step)),
+    );
+    return;
+  }
+  if (event.type === "token") {
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === aiMessageId ? { ...msg, content: msg.content + event.text } : msg)),
+    );
+    return;
+  }
+  if (event.type === "final") {
+    setAiThreadId(event.thread_id);
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === aiMessageId ? { ...msg, content: event.reply } : msg)),
+    );
+    setActivitySteps([]);
+  }
+}
+
 type StepId = "service" | "listing" | "datetime" | "details" | "payment" | "confirmation";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -125,32 +170,6 @@ function serviceDurationLabel(service: { scheduling_mode: string; duration: numb
 function assistantIntro(businessName: string): string {
   const name = businessName.trim() || "this business";
   return `Hi! I'm the ${name} booking assistant. Ask me about services, pricing, availability — or just tell me what you need and I'll guide you through it.`;
-}
-
-function getAIResponse(input: string, businessName: string): string {
-  const q = input.toLowerCase();
-  const name = businessName.trim() || "this business";
-  if (q.includes("price") || q.includes("cost") || q.includes("how much"))
-    return "Our treatments start at ₦120. Quick overview:\n\n• Swedish Massage — ₦120 (₦40 deposit)\n• Deep Tissue — ₦160 (₦55 deposit)\n• Signature Facial — ₦140 (₦45 deposit)\n• Hot Stone Ritual — ₦175 (₦60 deposit)\n\nDeposits are refundable if you cancel 24h+ in advance. Want to book?";
-  if (q.includes("available") || q.includes("slot") || q.includes("open"))
-    return "We have openings starting tomorrow! Morning (9–11 AM), afternoon (12–3 PM), and evening slots (4–6 PM) are available Monday through Saturday. Which treatment interests you?";
-  if (q.includes("swedish") || q.includes("relax"))
-    return "The Classic Swedish Massage (60 min, ₦120) is perfect for unwinding. It uses long, flowing strokes across the full body. Just ₦40 secures your spot — want me to walk you through booking?";
-  if (q.includes("facial") || q.includes("skin"))
-    return "Our Signature Facial (75 min, ₦140) is customized to your skin type — cleansing, exfoliation, and serums tailored on the day. A ₦45 deposit holds your appointment.";
-  if (q.includes("hot stone"))
-    return "The Hot Stone Ritual (90 min, ₦175) uses heated basalt stones to melt tension at a deeper level than hands alone. One of our most-booked treatments — ₦60 deposit required.";
-  if (q.includes("cancel") || q.includes("reschedule"))
-    return "No problem! You can cancel or reschedule at no cost up to 24 hours before your appointment. After that, the deposit is non-refundable. Need help with anything else?";
-  if (q.includes("deposit") || q.includes("refund"))
-    return "Deposits hold your time slot and are fully refundable with 24h+ notice. The balance is paid at your appointment. Deposits range from ₦40–₦60 depending on the service.";
-  if (q.includes("hi") || q.includes("hello") || q.includes("hey"))
-    return `Hi there! I'm the ${name} booking assistant. Tell me what you're looking for — a service, availability, pricing — and I'll help you get booked in minutes.`;
-  if (q.includes("book") || q.includes("appointment"))
-    return "I'd love to help you book! Use the steps on this page or just tell me: which service interests you, and when are you looking to come in?";
-  if (q.includes("voice") || q.includes("speak") || q.includes("talk"))
-    return "Voice mode is on — just speak your question or request and I'll respond. You can also type if you prefer. How can I help?";
-  return "Happy to help! Ask me about pricing, services, availability, or what to expect — or just tap a service above to get started.";
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -238,6 +257,9 @@ export function PublicBooking() {
       content: assistantIntro("this business"),
     },
   ]);
+  const [aiThreadId, setAiThreadId] = useState<string | undefined>(undefined);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const paymentHandledRef = useRef(false);
 
@@ -532,17 +554,42 @@ export function PublicBooking() {
     return new Date(slotIso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
 
-  function sendMessage(text?: string) {
+  async function sendMessage(text?: string) {
     const content = text ?? chatInput;
-    if (!content.trim()) return;
+    if (!content.trim() || aiBusy || !businessId) return;
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content };
-    const aiMsg: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: getAIResponse(content, businessProfile.name),
-    };
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setChatInput("");
+    setAiBusy(true);
+    setActivitySteps([{ id: "status", label: "Starting…", status: "running" }]);
+    const aiMessageId = `${Date.now()}-ai`;
+    setMessages((prev) => [...prev, { id: aiMessageId, role: "assistant", content: "" }]);
+    try {
+      await api.publicAiChatStream(
+        businessId,
+        {
+          message: content.trim(),
+          thread_id: aiThreadId,
+        },
+        (event) => {
+          handlePublicStreamEvent(event, setActivitySteps, aiMessageId, setMessages, setAiThreadId);
+        },
+      );
+    } catch {
+      setActivitySteps([]);
+      setMessages((prev) =>
+        prev
+          .filter((msg) => msg.id !== aiMessageId)
+          .concat({
+            id: `${Date.now()}-err`,
+            role: "assistant",
+            content: "I couldn't reach the booking assistant just now. Please try again in a moment.",
+          }),
+      );
+    } finally {
+      setAiBusy(false);
+      setActivitySteps([]);
+    }
   }
 
   function applyConfirmedBooking(confirmed: PublicBookingResponse) {
@@ -2519,6 +2566,64 @@ export function PublicBooking() {
                     </div>
                   </div>
                 ))}
+                {aiBusy && activitySteps.length > 0 && (
+                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                    <div
+                      style={{
+                        marginLeft: 30,
+                        padding: "10px 12px",
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                        backgroundColor: creamCard,
+                        color: "var(--color-muted-foreground)",
+                        borderRadius: "12px",
+                        border: "1px solid var(--color-border)",
+                        maxWidth: "85%",
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>Working…</div>
+                      {activitySteps.map((step) => (
+                        <div key={step.id} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                          {step.status === "running" ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Check size={12} color={brandAccent} />
+                          )}
+                          <span>{step.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {aiBusy && activitySteps.length === 0 && (
+                  <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", gap: 6 }}>
+                    <div
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: "50%",
+                        backgroundColor: creamCard,
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Sparkles size={11} color={brandAccent} />
+                    </div>
+                    <div
+                      style={{
+                        padding: "9px 12px",
+                        fontSize: 12,
+                        backgroundColor: creamCard,
+                        color: "var(--color-muted-foreground)",
+                        borderRadius: "14px 14px 14px 4px",
+                      }}
+                    >
+                      Thinking…
+                    </div>
+                  </div>
+                )}
                 <div ref={chatEndRef} />
               </div>
 
@@ -2559,8 +2664,9 @@ export function PublicBooking() {
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                  placeholder={voiceActive ? "Listening… or type here" : "Ask me anything…"}
+                  onKeyDown={(e) => e.key === "Enter" && !aiBusy && sendMessage()}
+                  placeholder={aiBusy ? "Waiting for reply…" : voiceActive ? "Listening… or type here" : "Ask me anything…"}
+                  disabled={aiBusy}
                   style={{
                     flex: 1,
                     padding: "8px 12px",
@@ -2571,22 +2677,25 @@ export function PublicBooking() {
                     color: dark,
                     outline: "none",
                     fontFamily: "'DM Sans', sans-serif",
+                    opacity: aiBusy ? 0.7 : 1,
                   }}
                 />
                 <button
                   onClick={() => sendMessage()}
+                  disabled={aiBusy}
                   style={{
                     width: 34,
                     height: 34,
                     borderRadius: 10,
                     border: "none",
                     backgroundColor: brandPrimary,
-                    cursor: "pointer",
+                    cursor: aiBusy ? "default" : "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     flexShrink: 0,
                     transition: "background-color 0.15s",
+                    opacity: aiBusy ? 0.6 : 1,
                   }}
                   onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent)}
                   onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary)}

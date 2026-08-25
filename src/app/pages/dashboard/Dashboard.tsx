@@ -3,11 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import {
-  DollarSign,
-  TrendingUp,
-  Clock,
   Plus,
-  Sparkles,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +13,7 @@ import { BrandLoader } from "../../components/brand/BrandLoader";
 import { DashboardHomeHeader } from "../../components/dashboard-home/DashboardHomeHeader";
 import { DashboardMiniCalendar } from "../../components/dashboard-home/DashboardMiniCalendar";
 import { DashboardStatsRow } from "../../components/dashboard-home/DashboardStatsRow";
+import { DashboardInsights } from "../../components/dashboard-home/DashboardInsights";
 import { api, bookingClientLabel } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
@@ -227,58 +224,7 @@ export function Dashboard() {
         <DashboardMiniCalendar bookings={bookings} />
       </div>
 
-      {/* AI Insights */}
-      <Card className="bg-gradient-to-br from-primary/5 via-background to-accent/10 border-primary/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-            AI-Generated Insights
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="p-4 bg-card rounded-lg border border-primary/10">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center mt-0.5">
-                <TrendingUp className="w-3 h-3 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium mb-1">Peak Performance Day</h4>
-                <p className="text-sm text-muted-foreground">
-                  Booking trends update from your own data. Use weekly chart patterns to tune pricing and availability.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 bg-card rounded-lg border border-primary/10">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-accent/25 flex items-center justify-center mt-0.5">
-                <Clock className="w-3 h-3 text-accent-foreground" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium mb-1">Optimize Your Schedule</h4>
-                <p className="text-sm text-muted-foreground">
-                  Open low-demand slots with promo offers to improve occupancy and reduce idle hours.
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 bg-card rounded-lg border border-primary/10">
-            <div className="flex items-start gap-3">
-              <div className="w-6 h-6 rounded-full bg-accent/25 flex items-center justify-center mt-0.5">
-                <DollarSign className="w-3 h-3 text-accent-foreground" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium mb-1">Revenue Opportunity</h4>
-                <p className="text-sm text-muted-foreground">
-                  Deposit conversion and average booking value are now driven from live tenant transactions.
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <DashboardInsights homeStats={homeStats} />
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
