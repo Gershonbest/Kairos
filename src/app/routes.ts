@@ -11,6 +11,7 @@ import { Dashboard } from "./pages/dashboard/Dashboard";
 import { BookingCalendar } from "./pages/dashboard/BookingCalendar";
 import { ServicesManagement } from "./pages/dashboard/ServicesManagement";
 import { ClientManagement } from "./pages/dashboard/ClientManagement";
+import { ClientDetailPage } from "./pages/dashboard/ClientDetailPage";
 import { PaymentsDashboard } from "./pages/dashboard/PaymentsDashboard";
 import { ChoosePlan } from "./pages/dashboard/ChoosePlan";
 import { AvailabilitySettings } from "./pages/dashboard/AvailabilitySettings";
@@ -83,10 +84,12 @@ export const router = createBrowserRouter([
       { path: "products", Component: ListingsManagement },
       { path: "listings", Component: ListingsManagement },
       { path: "clients", Component: ClientManagement },
+      { path: "clients/:clientId", Component: ClientDetailPage },
       { path: "payments", Component: PaymentsDashboard },
       { path: "booking-links", Component: BookingLinksManagement },
       { path: "settings", Component: AccountSettings },
       { path: "ai-assistant", Component: AIAssistant },
+      { path: "orion", Component: AIAssistant },
     ],
   },
   {

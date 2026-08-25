@@ -108,7 +108,19 @@ class BookingOut(BaseModel):
     receipt_download_path: str | None = None
     paid_at: datetime | None = None
     payment_currency: str | None = None
+    online_meeting_link: str | None = None
 
 
 class UpdateBookingStatusRequest(BaseModel):
     status: Literal["completed", "no_show", "cancelled", "confirmed"]
+
+
+class RecordBalancePaymentRequest(BaseModel):
+    amount: float = Field(gt=0)
+    method: Literal["cash", "bank_transfer", "pos", "other"]
+    paid_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class RescheduleBookingRequest(BaseModel):
+    start_at: datetime

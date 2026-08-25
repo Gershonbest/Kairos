@@ -42,6 +42,7 @@ async def lifespan(_app: FastAPI):
             await poller
         except asyncio.CancelledError:
             pass
+        await engine.dispose()
 
 
 app = FastAPI(title=settings.app_name, debug=settings.app_debug, lifespan=lifespan)

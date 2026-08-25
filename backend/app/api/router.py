@@ -18,7 +18,6 @@ from app.modules.services.router import router as services_router
 from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.tenants.router import router as tenants_router
 from app.modules.uploads.router import router as uploads_router
-
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(public_router, tags=["public"])

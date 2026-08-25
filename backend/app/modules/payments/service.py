@@ -20,6 +20,14 @@ settings = get_settings()
 PAYSTACK_SUCCESS_STATUSES = frozenset({"success"})
 PAYSTACK_FAILED_STATUSES = frozenset({"failed", "abandoned", "reversed", "cancelled"})
 
+BOOKING_CHARGE_PURPOSES = frozenset({"booking", "deposit"})
+BOOKING_LEDGER_PURPOSES = frozenset({"booking", "deposit", "balance"})
+BALANCE_PAYMENT_METHODS = frozenset({"cash", "bank_transfer", "pos", "other"})
+
+
+class BookingPaymentError(ValueError):
+    pass
+
 
 def classify_paystack_status(status: str | None) -> str:
     """Return success, failed, or pending for a Paystack transaction status."""
@@ -38,10 +46,164 @@ def booking_payment_amount(service: Service) -> float:
     return float(service.price_amount)
 
 
-def platform_fee_percent_for_tenant(tenant: Tenant) -> float:
-    if tenant.platform_fee_percent is not None:
-        return float(tenant.platform_fee_percent)
-    return float(settings.paystack_platform_fee_percent)
+def service_total_amount(service: Service) -> float:
+    return float(service.price_amount or 0)
+
+
+def is_partial_deposit_service(service: Service) -> bool:
+    deposit = float(service.deposit_amount or 0)
+    total = service_total_amount(service)
+    return deposit > 0 and deposit < total - 0.009
+
+
+def initial_booking_payment_purpose(service: Service) -> str:
+    return "deposit" if is_partial_deposit_service(service) else "booking"
+
+
+async def booking_payment_transactions(
+    session: AsyncSession,
+    *,
+    booking_id: str,
+    succeeded_only: bool = False,
+) -> list[PaymentTransaction]:
+    query = select(PaymentTransaction).where(
+        PaymentTransaction.booking_id == booking_id,
+        PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)),
+    )
+    if succeeded_only:
+        query = query.where(PaymentTransaction.status == PaymentStatus.succeeded)
+    rows = (await session.execute(query.order_by(PaymentTransaction.created_at.asc()))).scalars().all()
+    return list(rows)
+
+
+async def collected_for_booking(session: AsyncSession, booking_id: str) -> float:
+    txs = await booking_payment_transactions(session, booking_id=booking_id, succeeded_only=True)
+    return round(sum(float(tx.amount) for tx in txs), 2)
+
+
+def compute_balance_due(*, service: Service, booking: Booking, collected: float) -> float:
+    if booking.balance_waived:
+        return 0.0
+    if booking.status == BookingStatus.no_show:
+        return 0.0
+    total = service_total_amount(service)
+    return round(max(0.0, total - collected), 2)
+
+
+def compute_payment_state(*, service: Service, booking: Booking, collected: float) -> str:
+    total = service_total_amount(service)
+    if booking.balance_waived:
+        return "waived"
+    if collected >= total - 0.009:
+        return "fully_paid"
+    if booking.status == BookingStatus.no_show and collected > 0 and collected < total - 0.009:
+        return "forfeited"
+    if collected > 0:
+        return "deposit_paid"
+    return "unpaid"
+
+
+async def booking_payment_summary(
+    session: AsyncSession,
+    *,
+    booking: Booking,
+    service: Service,
+) -> dict[str, float | bool | str]:
+    collected = await collected_for_booking(session, booking.id)
+    total = service_total_amount(service)
+    deposit = float(service.deposit_amount or 0)
+    balance_due = compute_balance_due(service=service, booking=booking, collected=collected)
+    return {
+        "service_price": total,
+        "deposit_amount": deposit,
+        "collected_total": collected,
+        "balance_due": balance_due,
+        "balance_waived": bool(booking.balance_waived),
+        "payment_state": compute_payment_state(service=service, booking=booking, collected=collected),
+    }
+
+
+async def record_balance_payment(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    booking: Booking,
+    service: Service,
+    amount: float,
+    method: str,
+    paid_at: datetime | None = None,
+    notes: str | None = None,
+) -> PaymentTransaction:
+    if booking.tenant_id != tenant_id:
+        raise BookingPaymentError("Booking not found")
+    if booking.status not in {BookingStatus.confirmed, BookingStatus.completed}:
+        raise BookingPaymentError("Balance can only be recorded for confirmed or completed appointments")
+    if booking.balance_waived:
+        raise BookingPaymentError("Balance was waived for this booking")
+
+    normalized_method = (method or "").strip().lower()
+    if normalized_method not in BALANCE_PAYMENT_METHODS:
+        raise BookingPaymentError("Invalid payment method")
+
+    collected = await collected_for_booking(session, booking.id)
+    balance_due = compute_balance_due(service=service, booking=booking, collected=collected)
+    if balance_due <= 0:
+        raise BookingPaymentError("No balance is due for this booking")
+
+    normalized_amount = round(float(amount), 2)
+    if normalized_amount <= 0:
+        raise BookingPaymentError("Amount must be greater than zero")
+    if normalized_amount > balance_due + 0.009:
+        raise BookingPaymentError(f"Amount exceeds remaining balance ({balance_due:.2f})")
+
+    when = paid_at or datetime.now(UTC)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    else:
+        when = when.astimezone(UTC)
+
+    reference_suffix = uuid.uuid4().hex[:8]
+    tx = PaymentTransaction(
+        tenant_id=tenant_id,
+        booking_id=booking.id,
+        provider=normalized_method,
+        provider_reference=f"balance-{booking.id[:8]}-{reference_suffix}",
+        status=PaymentStatus.succeeded,
+        amount=normalized_amount,
+        currency="NGN",
+        platform_fee_amount=None,
+        tenant_settlement_amount=None,
+        purpose="balance",
+        idempotency_key=f"balance-{booking.id}-{reference_suffix}",
+        paid_at=when,
+    )
+    session.add(tx)
+    await session.flush()
+    return tx
+
+
+async def waive_booking_balance(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    booking: Booking,
+    service: Service,
+) -> Booking:
+    if booking.tenant_id != tenant_id:
+        raise BookingPaymentError("Booking not found")
+    collected = await collected_for_booking(session, booking.id)
+    balance_due = compute_balance_due(service=service, booking=booking, collected=collected)
+    if balance_due <= 0:
+        raise BookingPaymentError("No outstanding balance to waive")
+    booking.balance_waived = True
+    await session.flush()
+    return booking
+
+
+def platform_fee_percent_for_tenant(tenant: Tenant | None = None) -> float:
+    """Active merchant fee from server config (PAYSTACK_PLATFORM_FEE_PERCENT)."""
+    _ = tenant
+    return float(get_settings().paystack_platform_fee_percent)
 
 
 def split_amounts(gross: float, fee_percent: float) -> tuple[float, float]:
@@ -127,6 +289,7 @@ async def ensure_booking_payment(
             select(PaymentTransaction).where(
                 PaymentTransaction.tenant_id == booking.tenant_id,
                 PaymentTransaction.booking_id == booking.id,
+                PaymentTransaction.purpose.in_(tuple(BOOKING_CHARGE_PURPOSES)),
             )
         )
     ).scalar_one_or_none()
@@ -136,7 +299,7 @@ async def ensure_booking_payment(
     payments_enabled = bool(tenant and tenant.payments_enabled and tenant.payment_account_id)
     provider = "paystack" if payments_enabled else "orheo"
     status = PaymentStatus.pending if payments_enabled else PaymentStatus.succeeded
-    fee_percent = platform_fee_percent_for_tenant(tenant) if tenant else float(settings.paystack_platform_fee_percent)
+    fee_percent = platform_fee_percent_for_tenant(tenant)
     fee_amount, settlement_amount = split_amounts(amount, fee_percent) if payments_enabled else (None, None)
 
     tx = PaymentTransaction(
@@ -149,7 +312,7 @@ async def ensure_booking_payment(
         currency="NGN",
         platform_fee_amount=fee_amount,
         tenant_settlement_amount=settlement_amount,
-        purpose="booking",
+        purpose=initial_booking_payment_purpose(service),
         idempotency_key=f"pay-{idempotency_key}",
         paid_at=datetime.now(UTC) if status == PaymentStatus.succeeded else None,
     )
@@ -183,7 +346,6 @@ async def initialize_booking_paystack(
     tx.platform_fee_amount = fee_amount
     tx.tenant_settlement_amount = settlement_amount
     tx.currency = "NGN"
-    tx.purpose = "booking"
     tx.provider = "paystack"
 
     tenant_key = business_key or tenant.public_slug or tenant.id
@@ -229,6 +391,7 @@ async def confirm_booking_payment(
             select(PaymentTransaction).where(
                 PaymentTransaction.tenant_id == booking.tenant_id,
                 PaymentTransaction.booking_id == booking.id,
+                PaymentTransaction.purpose.in_(tuple(BOOKING_CHARGE_PURPOSES)),
             )
         )
     ).scalar_one_or_none()
@@ -288,7 +451,7 @@ async def mark_failed_paystack_payment(
     tx.authorization_url = None
     tx.access_code = None
 
-    if tx.purpose == "booking" and tx.booking_id:
+    if tx.purpose in BOOKING_CHARGE_PURPOSES and tx.booking_id:
         booking = (
             await session.execute(select(Booking).where(Booking.id == tx.booking_id))
         ).scalar_one_or_none()
@@ -336,7 +499,7 @@ async def expire_stale_pending_booking_payments(
             .join(Booking, Booking.id == PaymentTransaction.booking_id)
             .where(
                 PaymentTransaction.tenant_id == tenant_id,
-                PaymentTransaction.purpose == "booking",
+                PaymentTransaction.purpose.in_(tuple(BOOKING_CHARGE_PURPOSES)),
                 PaymentTransaction.status == PaymentStatus.pending,
                 PaymentTransaction.created_at <= cutoff,
                 Booking.status == BookingStatus.pending,
@@ -376,7 +539,7 @@ async def apply_successful_paystack_payment(
     tx.status = PaymentStatus.succeeded
     tx.paid_at = paid_at or datetime.now(UTC)
 
-    if tx.purpose == "booking" and tx.booking_id:
+    if tx.purpose in BOOKING_CHARGE_PURPOSES and tx.booking_id:
         booking = (
             await session.execute(select(Booking).where(Booking.id == tx.booking_id))
         ).scalar_one_or_none()

@@ -30,6 +30,7 @@ import {
   type SubscriptionStatus,
 } from "../../../lib/api/client";
 import { BrandLoader } from "../brand/BrandLoader";
+import { OrionFloatingWidget } from "../orion/OrionFloatingWidget";
 import { useSessionGuard } from "../../../lib/auth/useSessionGuard";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 import { queryKeys } from "../../../lib/queryClient";
@@ -165,7 +166,7 @@ export function DashboardLayout() {
     { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
     { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },
     { path: "/dashboard/settings", icon: Settings, label: "Settings" },
-    { path: "/dashboard/ai-assistant", icon: Bot, label: "AI Assistant" },
+    { path: "/dashboard/orion", icon: Bot, label: "Orion" },
   ];
 
   // Child pages fetch on mount, so an admin (or expired) session must not
@@ -296,6 +297,7 @@ export function DashboardLayout() {
           )}
           <Outlet />
         </main>
+        <OrionFloatingWidget />
       </div>
     </div>
   );

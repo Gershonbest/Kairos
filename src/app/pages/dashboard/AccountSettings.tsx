@@ -1,8 +1,8 @@
 // Tabbed settings hub: account, business, public page, payments, notifications, billing, danger zone.
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -90,9 +90,11 @@ function createBranch(countryCode: string, dialCode: string): TenantBranchPayloa
 
 export function AccountSettings() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const hydratedForUserRef = useRef<string | null>(null);
-  const [tab, setTab] = useState("account");
+  const initialTab = searchParams.get("tab") || "account";
+  const [tab, setTab] = useState(initialTab);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -131,6 +133,8 @@ export function AccountSettings() {
   const [publicDescription, setPublicDescription] = useState("");
   const [publicLogoUrl, setPublicLogoUrl] = useState("");
   const [publicSlug, setPublicSlug] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState("");
+  const [bookingPolicies, setBookingPolicies] = useState("");
 
   // Payments
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
@@ -189,15 +193,16 @@ export function AccountSettings() {
   } = useQuery({
     queryKey: queryKeys.settingsBundle,
     queryFn: async () => {
-      const [profile, tenant, payment, prefs, sub, bankRows] = await Promise.all([
+      const [profile, tenant, payment, paymentConfig, prefs, sub, bankRows] = await Promise.all([
         api.me(),
         api.myTenant().catch(() => null),
         api.getPaymentProvider().catch(() => null),
+        api.getPaymentConfig().catch(() => null),
         api.getNotificationPreferences().catch(() => null),
         api.getSubscriptionStatus().catch(() => null),
         api.listPaystackBanks().catch(() => [] as Array<{ name: string; code: string }>),
       ]);
-      return { profile, tenant, payment, prefs, sub, bankRows };
+      return { profile, tenant, payment, paymentConfig, prefs, sub, bankRows };
     },
   });
 
@@ -209,7 +214,7 @@ export function AccountSettings() {
     if (!settings || hydratedForUserRef.current === settings.profile.id) return;
     hydratedForUserRef.current = settings.profile.id;
 
-    const { profile, tenant, payment, prefs, sub, bankRows } = settings;
+    const { profile, tenant, payment, paymentConfig, prefs, sub, bankRows } = settings;
     setFullName(profile.full_name);
     setEmail(profile.email);
     setNewEmail(profile.email);
@@ -236,6 +241,8 @@ export function AccountSettings() {
       );
       setPublicTagline(tenant.public_tagline || "");
       setPublicDescription(tenant.public_description || "");
+      setCancellationPolicy(tenant.cancellation_policy || "");
+      setBookingPolicies(tenant.booking_policies || "");
       setPublicLogoUrl(tenant.public_logo_url || "");
       setPublicSlug(tenant.public_slug || "");
       setReconnectBusinessName(tenant.name || "");
@@ -249,8 +256,12 @@ export function AccountSettings() {
       setSettlementAccountName(payment.settlement_account_name || "");
       setSettlementAccountNumber(payment.settlement_account_number || "");
       setSettlementLast4(payment.settlement_account_last4 || "");
-      setPlatformFee(Number(payment.platform_fee_percent ?? 5));
       setReconnectBank(payment.settlement_bank_code || "");
+    }
+    if (paymentConfig?.platform_fee_percent != null) {
+      setPlatformFee(Number(paymentConfig.platform_fee_percent));
+    } else if (payment?.platform_fee_percent != null) {
+      setPlatformFee(Number(payment.platform_fee_percent));
     }
 
     if (prefs) {
@@ -446,6 +457,8 @@ export function AccountSettings() {
         public_description: publicDescription.trim() || undefined,
         public_logo_url: publicLogoUrl || undefined,
         public_slug: publicSlug.trim() || undefined,
+        cancellation_policy: cancellationPolicy.trim() || undefined,
+        booking_policies: bookingPolicies.trim() || undefined,
       });
       flash("Public booking page saved.");
       await invalidateRelatedCaches();
@@ -616,7 +629,20 @@ export function AccountSettings() {
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => { setTab(v); setError(""); setSuccess(""); }}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v);
+          setError("");
+          setSuccess("");
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            if (v === "account") next.delete("tab");
+            else next.set("tab", v);
+            return next;
+          });
+        }}
+      >
         <TabsList className="flex flex-wrap h-auto gap-1 w-full justify-start">
           <TabsTrigger value="account">Account</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
@@ -952,6 +978,28 @@ export function AccountSettings() {
                 disabled={saving}
               />
             </div>
+            <div>
+              <Label htmlFor="cancellationPolicy">Cancellation policy</Label>
+              <textarea
+                id="cancellationPolicy"
+                value={cancellationPolicy}
+                onChange={(e) => setCancellationPolicy(e.target.value)}
+                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-lg bg-background"
+                disabled={saving}
+                placeholder="e.g. Cancel or reschedule at least 24 hours before your appointment."
+              />
+            </div>
+            <div>
+              <Label htmlFor="bookingPolicies">Booking policies</Label>
+              <textarea
+                id="bookingPolicies"
+                value={bookingPolicies}
+                onChange={(e) => setBookingPolicies(e.target.value)}
+                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-lg bg-background"
+                disabled={saving}
+                placeholder="e.g. Arrive 10 minutes early. Late arrivals may be shortened."
+              />
+            </div>
             <p className="text-sm text-muted-foreground">
               Manage booking links and QR codes on{" "}
               <Link to="/dashboard/booking-links" className="text-primary hover:underline">Booking Links</Link>.
@@ -988,10 +1036,15 @@ export function AccountSettings() {
                     </dd>
                   </div>
                   <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Platform fee</dt>
+                    <dt className="text-muted-foreground">Merchant fee</dt>
                     <dd className="font-medium text-right">{platformFee}%</dd>
                   </div>
                 </dl>
+              )}
+              {paymentsEnabled && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  Applies only to booking deposits collected through Orheo.
+                </p>
               )}
               <Link to="/dashboard/payments" className="text-sm text-primary hover:underline mt-2 inline-block">
                 Open payments dashboard

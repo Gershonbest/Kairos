@@ -22,18 +22,42 @@ from app.infra.models import (
     ListingStatus,
     PaymentStatus,
     PaymentTransaction,
-    SchedulingMode,
     Service,
     ServiceBookingType,
     Tenant,
 )
+from app.modules.bookings.service import (
+    BookingServiceError,
+    cancel_booking as cancel_booking_service,
+    normalize_booking_window,
+    reschedule_booking as reschedule_booking_service,
+)
 from app.modules.clients.names import compose_full_name, profile_display_name, split_person_name, visit_display_name
-from app.modules.notifications.outbound import schedule_booking_reminders, sync_booking_reminders
+from app.modules.notifications.outbound import (
+    queue_booking_confirmations,
+    schedule_booking_reminders,
+    sync_booking_reminders,
+)
 from app.modules.notifications.service import send_booking_confirmation_email
-from app.modules.payments.service import booking_payment_amount
+from app.modules.payments.service import (
+    BookingPaymentError,
+    BOOKING_LEDGER_PURPOSES,
+    booking_payment_amount,
+    booking_payment_summary,
+    compute_balance_due,
+    compute_payment_state,
+    record_balance_payment,
+    service_total_amount,
+    waive_booking_balance,
+)
 from app.modules.scheduling.service import booking_blocks_slot, generate_slots
 from app.modules.services.helpers import resolve_appointment_format, resolve_service_location
-from app.schemas.bookings import ManualBookingCreateRequest, UpdateBookingStatusRequest
+from app.schemas.bookings import (
+    ManualBookingCreateRequest,
+    RecordBalancePaymentRequest,
+    RescheduleBookingRequest,
+    UpdateBookingStatusRequest,
+)
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
 
@@ -44,14 +68,37 @@ OUTCOME_STATUSES = {
     BookingStatus.confirmed,
 }
 
-BOOKINGS_CACHE = "bookings:list"
+BOOKINGS_CACHE = "bookings:list:v2"
 CLIENTS_CACHE = "clients:list"
 
 
-def _serialize_booking(
-    booking: Booking, client: Client, service: Service, tenant: Tenant, listing: Listing | None
+def _payment_summary_sync(
+    booking: Booking, service: Service, transactions: list[PaymentTransaction]
 ) -> dict:
+    collected = round(
+        sum(float(tx.amount) for tx in transactions if tx.status == PaymentStatus.succeeded),
+        2,
+    )
     return {
+        "service_price": service_total_amount(service),
+        "deposit_amount": float(service.deposit_amount or 0),
+        "collected_total": collected,
+        "balance_due": compute_balance_due(service=service, booking=booking, collected=collected),
+        "balance_waived": bool(booking.balance_waived),
+        "payment_state": compute_payment_state(service=service, booking=booking, collected=collected),
+    }
+
+
+def _serialize_booking(
+    booking: Booking,
+    client: Client,
+    service: Service,
+    tenant: Tenant,
+    listing: Listing | None,
+    *,
+    payment: dict | None = None,
+) -> dict:
+    payload = {
         "id": booking.id,
         "status": booking.status.value,
         "start_at": booking.start_at.isoformat() if booking.start_at else None,
@@ -81,16 +128,15 @@ def _serialize_booking(
             tenant,
             booking.appointment_format or AppointmentFormat.onsite,
         ),
+        "online_meeting_link": service.online_meeting_link,
     }
+    if payment is not None:
+        payload["payment"] = payment
+    return payload
 
 
 def _normalize_booking_window(service: Service, requested_start: datetime) -> tuple[datetime, datetime, bool]:
-    start = requested_start if requested_start.tzinfo else requested_start.replace(tzinfo=UTC)
-    start = start.astimezone(UTC)
-    if service.scheduling_mode == SchedulingMode.all_day:
-        day_start = datetime.combine(start.date(), time.min, tzinfo=UTC)
-        return day_start, day_start + timedelta(days=1), True
-    return start, start + timedelta(minutes=service.duration_minutes), False
+    return normalize_booking_window(service, requested_start)
 
 
 async def _resolve_listing(
@@ -388,6 +434,10 @@ async def create_manual_booking(
     await schedule_booking_reminders(
         session, tenant=tenant, booking=booking, client=client, service=service
     )
+    if payload.send_confirmation:
+        await queue_booking_confirmations(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
 
     try:
         await session.commit()
@@ -418,11 +468,7 @@ async def create_manual_booking(
             host_title=service.host_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
-            online_meeting_link=(
-                service.online_meeting_link
-                if appointment_format == AppointmentFormat.online
-                else None
-            ),
+            online_meeting_link=service.online_meeting_link,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
             business_logo_url=tenant.public_logo_url,
@@ -471,8 +517,29 @@ async def list_bookings(
             .order_by(Booking.start_at.asc())
         )
     ).all()
+    booking_ids = [booking.id for booking, _, _, _ in rows]
+    tx_map: dict[str, list[PaymentTransaction]] = {booking_id: [] for booking_id in booking_ids}
+    if booking_ids:
+        tx_rows = (
+            await session.execute(
+                select(PaymentTransaction).where(
+                    PaymentTransaction.booking_id.in_(booking_ids),
+                    PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)),
+                )
+            )
+        ).scalars().all()
+        for tx in tx_rows:
+            if tx.booking_id:
+                tx_map.setdefault(tx.booking_id, []).append(tx)
     payload = [
-        _serialize_booking(booking, client, service, tenant, listing)
+        _serialize_booking(
+            booking,
+            client,
+            service,
+            tenant,
+            listing,
+            payment=_payment_summary_sync(booking, service, tx_map.get(booking.id, [])),
+        )
         for booking, client, service, listing in rows
     ]
     await redis_cache.set_json(cache_key, payload)
@@ -514,13 +581,165 @@ async def update_booking_status(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     booking, client, service, listing = row
+    payment = await booking_payment_summary(session, booking=booking, service=service)
     if booking.status == next_status:
-        return _serialize_booking(booking, client, service, tenant, listing)
+        return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
 
-    booking.status = next_status
-    booking.version = int(booking.version or 1) + 1
-    await sync_booking_reminders(session, booking)
+    if next_status == BookingStatus.cancelled:
+        try:
+            booking = await cancel_booking_service(
+                session,
+                tenant_id=current_user.tenant_id,
+                booking_id=booking_id,
+            )
+        except BookingServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        booking.version = int(booking.version or 1) + 1
+    else:
+        booking.status = next_status
+        booking.version = int(booking.version or 1) + 1
+        await sync_booking_reminders(session, booking)
+
     await session.commit()
     await session.refresh(booking)
     await redis_cache.invalidate_tenant(current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary")
-    return _serialize_booking(booking, client, service, tenant, listing)
+    payment = await booking_payment_summary(session, booking=booking, service=service)
+    return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
+
+
+@router.post("/{booking_id}/record-balance")
+async def record_booking_balance(
+    booking_id: str,
+    payload: RecordBalancePaymentRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    row = (
+        await session.execute(
+            select(Booking, Client, Service, Listing, Tenant)
+            .join(Client, Booking.client_id == Client.id)
+            .join(Service, Booking.service_id == Service.id)
+            .join(Tenant, Booking.tenant_id == Tenant.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
+            .where(Booking.id == booking_id, Booking.tenant_id == current_user.tenant_id)
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    booking, client, service, listing, tenant = row
+    try:
+        await record_balance_payment(
+            session,
+            tenant_id=current_user.tenant_id,
+            booking=booking,
+            service=service,
+            amount=payload.amount,
+            method=payload.method,
+            paid_at=payload.paid_at,
+            notes=payload.notes,
+        )
+        if booking.status == BookingStatus.confirmed:
+            booking.status = BookingStatus.completed
+        await session.commit()
+    except BookingPaymentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.refresh(booking)
+    await redis_cache.invalidate_tenant(
+        current_user.tenant_id,
+        BOOKINGS_CACHE,
+        CLIENTS_CACHE,
+        "transactions:list",
+        "dashboard:summary",
+    )
+    payment = await booking_payment_summary(session, booking=booking, service=service)
+    return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
+
+
+@router.post("/{booking_id}/waive-balance")
+async def waive_booking_balance_endpoint(
+    booking_id: str,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    row = (
+        await session.execute(
+            select(Booking, Client, Service, Listing, Tenant)
+            .join(Client, Booking.client_id == Client.id)
+            .join(Service, Booking.service_id == Service.id)
+            .join(Tenant, Booking.tenant_id == Tenant.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
+            .where(Booking.id == booking_id, Booking.tenant_id == current_user.tenant_id)
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    booking, client, service, listing, tenant = row
+    try:
+        await waive_booking_balance(
+            session,
+            tenant_id=current_user.tenant_id,
+            booking=booking,
+            service=service,
+        )
+        await session.commit()
+    except BookingPaymentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await session.refresh(booking)
+    await redis_cache.invalidate_tenant(
+        current_user.tenant_id,
+        BOOKINGS_CACHE,
+        CLIENTS_CACHE,
+        "transactions:list",
+        "dashboard:summary",
+    )
+    payment = await booking_payment_summary(session, booking=booking, service=service)
+    return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
+
+
+@router.post("/{booking_id}/reschedule")
+async def reschedule_booking(
+    booking_id: str,
+    payload: RescheduleBookingRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    tenant = (
+        await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one()
+    try:
+        booking = await reschedule_booking_service(
+            session,
+            tenant=tenant,
+            booking_id=booking_id,
+            new_start_at=payload.start_at,
+        )
+        service = (
+            await session.execute(select(Service).where(Service.id == booking.service_id))
+        ).scalar_one()
+        client = (
+            await session.execute(select(Client).where(Client.id == booking.client_id))
+        ).scalar_one()
+    except BookingServiceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await session.commit()
+    row = (
+        await session.execute(
+            select(Booking, Client, Service, Listing)
+            .join(Client, Booking.client_id == Client.id)
+            .join(Service, Booking.service_id == Service.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
+            .where(Booking.id == booking.id)
+        )
+    ).one()
+    booking, client, service, listing = row
+    await redis_cache.invalidate_tenant(
+        current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary"
+    )
+    payment = await booking_payment_summary(session, booking=booking, service=service)
+    return _serialize_booking(booking, client, service, tenant, listing, payment=payment)

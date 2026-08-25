@@ -98,6 +98,7 @@ class OutboundChannel(str, enum.Enum):
 
 class OutboundPurpose(str, enum.Enum):
     booking_reminder = "booking_reminder"
+    booking_confirmation = "booking_confirmation"
 
 
 class OutboundMessageStatus(str, enum.Enum):
@@ -145,6 +146,8 @@ class Tenant(Base):
     longitude: Mapped[float | None] = mapped_column(Numeric(10, 7))
     branches: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    cancellation_policy: Mapped[str | None] = mapped_column(Text)
+    booking_policies: Mapped[str | None] = mapped_column(Text)
     payment_provider: Mapped[str | None] = mapped_column(String(40))
     payment_account_id: Mapped[str | None] = mapped_column(String(120))
     payments_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -340,6 +343,7 @@ class Booking(Base):
     booking_source: Mapped[str] = mapped_column(String(20), default="public", nullable=False)
     created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
     appointment_format: Mapped[AppointmentFormat | None] = mapped_column(Enum(AppointmentFormat))
+    balance_waived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(120), nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -517,3 +521,103 @@ class AuditEvent(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
     user_agent: Mapped[str | None] = mapped_column(String(400))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class TenantFaq(Base):
+    __tablename__ = "tenant_faqs"
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    question: Mapped[str] = mapped_column(String(500), nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class KnowledgeDocumentStatus(str, enum.Enum):
+    pending = "pending"
+    ready = "ready"
+    failed = "failed"
+
+
+class ClientCommunication(Base):
+    """Manual outreach log for tenant-to-client emails and calls."""
+
+    __tablename__ = "client_communications"
+    __table_args__ = (Index("ix_client_communications_client_created", "client_id", "created_at"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), nullable=False, index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="sent", nullable=False)
+    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str | None] = mapped_column(String(200))
+    summary: Mapped[str | None] = mapped_column(String(500))
+    template_id: Mapped[str | None] = mapped_column(String(80))
+    template_name: Mapped[str | None] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClientEmailTemplate(Base):
+    """Reusable email templates for tenant-to-client outreach."""
+
+    __tablename__ = "client_email_templates"
+    __table_args__ = (Index("ix_client_email_templates_tenant", "tenant_id"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TenantKnowledgeDocument(Base):
+    """Owner-uploaded business documents used for AI RAG."""
+
+    __tablename__ = "tenant_knowledge_documents"
+    __table_args__ = (Index("ix_tenant_knowledge_documents_tenant", "tenant_id"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    storage_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    extracted_text: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[KnowledgeDocumentStatus] = mapped_column(
+        Enum(KnowledgeDocumentStatus, native_enum=False, length=20),
+        default=KnowledgeDocumentStatus.pending,
+        nullable=False,
+    )
+    error_message: Mapped[str | None] = mapped_column(String(500))
+    byte_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AiKnowledgeChunk(Base):
+    """Tenant-scoped RAG chunks. embedding uses pgvector when available."""
+
+    __tablename__ = "ai_knowledge_chunks"
+    __table_args__ = (Index("ix_ai_knowledge_chunks_tenant_source", "tenant_id", "source"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding_json: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -14,7 +14,14 @@ from app.core.config import get_settings
 logger = structlog.get_logger()
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_KNOWLEDGE_TYPES = {
+    "application/pdf",
+    "text/plain",
+    "text/markdown",
+    "text/x-markdown",
+}
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_KNOWLEDGE_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 class ObjectStorage:
@@ -111,6 +118,73 @@ class ObjectStorage:
 
         logger.info("storage.local_upload", key=key)
         return self._upload_to_local(key=key, data=data)
+
+    def _guess_knowledge_type(self, file: UploadFile) -> str:
+        content_type = (file.content_type or "").lower().strip()
+        filename = (file.filename or "").lower()
+        if content_type in ALLOWED_KNOWLEDGE_TYPES:
+            return content_type
+        if filename.endswith(".pdf"):
+            return "application/pdf"
+        if filename.endswith(".md") or filename.endswith(".markdown"):
+            return "text/markdown"
+        if filename.endswith(".txt"):
+            return "text/plain"
+        return content_type
+
+    def _extension_for_knowledge(self, content_type: str, filename: str = "") -> str:
+        name = (filename or "").lower()
+        if name.endswith(".pdf") or content_type == "application/pdf":
+            return ".pdf"
+        if name.endswith(".md") or name.endswith(".markdown") or "markdown" in content_type:
+            return ".md"
+        if name.endswith(".txt") or content_type == "text/plain":
+            return ".txt"
+        return mimetypes.guess_extension(content_type) or ".bin"
+
+    async def upload_tenant_knowledge_file(
+        self, *, tenant_id: str, file: UploadFile
+    ) -> tuple[str, bytes, str, int]:
+        """Store a knowledge document. Returns (url, raw_bytes, content_type, byte_size)."""
+        content_type = self._guess_knowledge_type(file)
+        if content_type not in ALLOWED_KNOWLEDGE_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported file type. Upload PDF, TXT, or Markdown.",
+            )
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
+        if len(data) > MAX_KNOWLEDGE_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File must be 10MB or smaller",
+            )
+        extension = self._extension_for_knowledge(content_type, file.filename or "")
+        key = f"tenants/{tenant_id}/knowledge/{uuid.uuid4().hex}{extension}"
+        settings = get_settings()
+
+        if settings.s3_bucket_name:
+            try:
+                url = self._upload_to_s3(key=key, data=data, content_type=content_type)
+                logger.info("storage.s3_knowledge_upload", key=key)
+                return url, data, content_type, len(data)
+            except Exception as exc:
+                logger.exception("storage.s3_knowledge_upload_failed", key=key)
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Unable to upload document to storage",
+                ) from exc
+
+        if settings.app_env == "production":
+            logger.error("storage.s3_not_configured")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Object storage is not configured",
+            )
+
+        logger.info("storage.local_knowledge_upload", key=key)
+        return self._upload_to_local(key=key, data=data), data, content_type, len(data)
 
 
 object_storage = ObjectStorage()

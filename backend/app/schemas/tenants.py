@@ -116,6 +116,8 @@ class TenantPublicProfileUpdate(BaseModel):
     public_description: str | None = None
     public_logo_url: str | None = Field(default=None, max_length=500)
     public_slug: str | None = Field(default=None, min_length=3, max_length=180)
+    cancellation_policy: str | None = None
+    booking_policies: str | None = None
 
     @field_validator("public_slug", mode="before")
     @classmethod
@@ -133,6 +135,11 @@ class TenantPublicProfileUpdate(BaseModel):
         if not _SLUG_RE.match(value):
             raise ValueError("Slug must be lowercase letters, numbers, and hyphens only")
         return value
+
+    @field_validator("cancellation_policy", "booking_policies", mode="before")
+    @classmethod
+    def normalize_policy_text(cls, value: str | None) -> str | None:
+        return _optional_text(value)
 
 
 class ChannelReminderOffsets(BaseModel):
