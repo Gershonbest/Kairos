@@ -22,6 +22,7 @@ import {
   PageHeader,
   PageShell,
 } from "../../components/dashboard-ui";
+import { resolveMediaUrl } from "../../../lib/media";
 
 type ListingForm = {
   name: string;
@@ -397,8 +398,12 @@ export function ListingsManagement() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {listing.image_urls[0] && (
-                    <div className="h-32 overflow-hidden rounded-lg border border-border">
-                      <img src={listing.image_urls[0]} alt={listing.name} className="h-full w-full object-cover" />
+                    <div className="h-36 overflow-hidden rounded-lg border border-border bg-muted/20 p-2">
+                      <img
+                        src={resolveMediaUrl(listing.image_urls[0])}
+                        alt={listing.name}
+                        className="h-full w-full rounded-md object-contain"
+                      />
                     </div>
                   )}
                   <div className="flex flex-wrap gap-2 text-xs">
