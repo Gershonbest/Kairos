@@ -235,6 +235,7 @@ def plan_reminder_jobs(
                         "body": body,
                         "subject": subject,
                         "template_key": TEMPLATE_KEY,
+                        "business_logo_url": tenant.public_logo_url,
                     },
                 )
             )
@@ -457,6 +458,7 @@ async def queue_booking_confirmations(
             "body": body,
             "subject": subject,
             "template_key": TEMPLATE_KEY_CONFIRMATION,
+            "business_logo_url": tenant.public_logo_url,
         }
         row = existing.get(channel.value)
         if row is None:

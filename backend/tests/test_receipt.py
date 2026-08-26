@@ -48,6 +48,7 @@ def test_receipt_html_download_document_includes_print_hint() -> None:
     assert "Alpha Consultancy" in html
     assert "ps_abc_123" in html
     assert "Save as PDF" in html
+    assert "orheo-logo.png" in html
 
 
 def test_subscription_receipt_contains_payment_details(monkeypatch) -> None:
@@ -78,3 +79,4 @@ def test_subscription_receipt_contains_payment_details(monkeypatch) -> None:
     assert sent["subject"] == "Payment receipt — Premium plan"
     assert "₦25,000.00" in sent["text_body"]
     assert "sub_premium_abc123" in sent["html_body"]
+    assert "orheo-logo.png" in sent["html_body"]

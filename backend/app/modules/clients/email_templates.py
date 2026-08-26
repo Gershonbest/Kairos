@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from html import escape
 
 from app.core.config import get_settings
 from app.infra.models import Client, Tenant
+from app.modules.notifications.email_layout import plain_text_to_html, wrap_email_html
 
 SYSTEM_TEMPLATE_PREFIX = "system:"
 
@@ -118,21 +118,14 @@ def render_template_text(template: str, context: dict[str, str]) -> str:
     return rendered
 
 
-def plain_text_to_html(body: str) -> str:
-    blocks: list[str] = []
-    for block in body.split("\n\n"):
-        block = block.strip()
-        if not block:
-            continue
-        inner = "<br>".join(escape(line) for line in block.split("\n"))
-        blocks.append(f'<p style="margin:0 0 14px;line-height:1.55;color:#1c1917;">{inner}</p>')
-    return "\n".join(blocks)
-
-
-def wrap_client_email_html(*, business_name: str, body: str) -> str:
-    return f"""
-    <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;">
-      {plain_text_to_html(body)}
-      <p style="margin:24px 0 0;color:#78716c;font-size:13px;">— {escape(business_name)}</p>
-    </div>
-    """
+def wrap_client_email_html(
+    *,
+    business_name: str,
+    body: str,
+    business_logo_url: str | None = None,
+) -> str:
+    return wrap_email_html(
+        inner_html=plain_text_to_html(body),
+        preheader=business_name,
+        business_logo_url=business_logo_url,
+    )

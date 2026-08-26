@@ -32,6 +32,7 @@ from app.modules.notifications.receipt import (
     build_receipt_html,
     build_receipt_plain_text,
 )
+from app.modules.notifications.email_layout import email_button, email_h1, email_p, wrap_email_html
 
 logger = structlog.get_logger()
 
@@ -54,22 +55,22 @@ def send_subscription_payment_receipt_email(
     paid_at_label = paid_at.strftime("%Y-%m-%d %H:%M UTC") if paid_at else "—"
     paid_until_label = paid_until.strftime("%Y-%m-%d") if paid_until else "—"
     subject = f"Payment receipt — {plan_name} plan"
-    html = f"""
-    <h1 style="font-size:22px;color:#1c1917;">Payment receipt</h1>
-    <p>Hi {escape(customer_name)},</p>
-    <p>Your Orheo Bookings subscription payment was successful.</p>
-    <table style="width:100%;max-width:520px;border-collapse:collapse;">
-      <tr><td style="padding:8px 0;color:#78716c;">Business</td><td style="text-align:right;font-weight:600;">{escape(business_name)}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Plan</td><td style="text-align:right;font-weight:600;">{escape(plan_name)}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Amount paid</td><td style="text-align:right;font-weight:600;">{escape(amount_label)}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Payment reference</td><td style="text-align:right;font-weight:600;">{escape(payment_reference)}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Paid at</td><td style="text-align:right;font-weight:600;">{paid_at_label}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Access paid until</td><td style="text-align:right;font-weight:600;">{paid_until_label}</td></tr>
-      <tr><td style="padding:8px 0;color:#78716c;">Status</td><td style="text-align:right;font-weight:600;">Succeeded</td></tr>
+    inner = f"""
+    {email_h1("Payment receipt")}
+    {email_p(f"Hi {customer_name},")}
+    {email_p("Your Orheo Bookings subscription payment was successful.")}
+    <table style="width:100%;border-collapse:collapse;">
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Business</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(business_name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Plan</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(plan_name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Amount paid</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(amount_label)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Payment reference</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(payment_reference)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Paid at</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{paid_at_label}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Access paid until</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{paid_until_label}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Status</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">Succeeded</td></tr>
     </table>
-    <p style="color:#78716c;font-size:13px;">Keep this receipt for your records.</p>
-    <p>— Orheo Bookings</p>
+    {email_p("Keep this receipt for your records.", muted=True)}
     """
+    html = wrap_email_html(inner_html=inner, preheader=subject)
     text = (
         f"Payment receipt\n\nHi {customer_name},\n\n"
         "Your Orheo Bookings subscription payment was successful.\n\n"
@@ -131,15 +132,16 @@ async def send_subscription_payment_receipt_once(
 
 def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) -> None:
     subject = "Confirm your Orheo Bookings account"
-    html = f"""
-    <p>Hi {full_name},</p>
-    <p>Thanks for signing up for Orheo Bookings. Please confirm your email address to activate your account.</p>
-    <p><a href="{verify_url}">Confirm email address</a></p>
-    <p>If the button does not work, copy and paste this link into your browser:</p>
-    <p>{verify_url}</p>
-    <p>This link expires in 24 hours.</p>
-    <p>— Orheo Bookings</p>
+    inner = f"""
+    {email_h1("Confirm your email")}
+    {email_p(f"Hi {full_name},")}
+    {email_p("Thanks for signing up for Orheo Bookings. Please confirm your email address to activate your account.")}
+    {email_button(verify_url, "Confirm email address")}
+    {email_p("If the button does not work, copy and paste this link into your browser:", muted=True)}
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;word-break:break-all;">{escape(verify_url)}</p>
+    {email_p("This link expires in 24 hours.", muted=True)}
     """
+    html = wrap_email_html(inner_html=inner, preheader=subject)
     text = (
         f"Hi {full_name},\n\n"
         "Thanks for signing up for Orheo Bookings. Confirm your email to activate your account:\n"
@@ -156,15 +158,18 @@ def send_tenant_verification_email(*, to: str, full_name: str, verify_url: str) 
 def send_password_reset_email(*, to: str, full_name: str, reset_url: str, expire_hours: int = 1) -> None:
     subject = "Reset your Orheo Bookings password"
     hour_label = "1 hour" if expire_hours == 1 else f"{expire_hours} hours"
-    html = f"""
-    <p>Hi {full_name},</p>
-    <p>We received a request to reset the password for your Orheo Bookings account.</p>
-    <p><a href="{reset_url}">Reset password</a></p>
-    <p>If the button does not work, copy and paste this link into your browser:</p>
-    <p>{reset_url}</p>
-    <p>This link expires in {hour_label}. If you did not request a reset, you can ignore this email.</p>
-    <p>— Orheo Bookings</p>
-    """
+    html = wrap_email_html(
+        inner_html=f"""
+    {email_h1("Reset your password")}
+    {email_p(f"Hi {full_name},")}
+    {email_p("We received a request to reset the password for your Orheo Bookings account.")}
+    {email_button(reset_url, "Reset password")}
+    {email_p("If the button does not work, copy and paste this link into your browser:", muted=True)}
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;word-break:break-all;">{escape(reset_url)}</p>
+    {email_p(f"This link expires in {hour_label}. If you did not request a reset, you can ignore this email.", muted=True)}
+    """,
+        preheader=subject,
+    )
     text = (
         f"Hi {full_name},\n\n"
         "We received a request to reset the password for your Orheo Bookings account.\n"
@@ -183,14 +188,17 @@ def send_password_reset_google_hint_email(*, to: str, full_name: str) -> None:
     subject = "Sign in to Orheo Bookings with Google"
     frontend = get_settings().frontend_base_url.rstrip("/")
     login_url = f"{frontend}/auth/login"
-    html = f"""
-    <p>Hi {full_name},</p>
-    <p>We received a password reset request for this email, but your Orheo Bookings account uses Google sign-in.</p>
-    <p>There is no password to reset. Please sign in with Google instead:</p>
-    <p><a href="{login_url}">Go to sign in</a></p>
-    <p>If you did not request this, you can ignore this email.</p>
-    <p>— Orheo Bookings</p>
-    """
+    html = wrap_email_html(
+        inner_html=f"""
+    {email_h1("Sign in with Google")}
+    {email_p(f"Hi {full_name},")}
+    {email_p("We received a password reset request for this email, but your Orheo Bookings account uses Google sign-in.")}
+    {email_p("There is no password to reset. Please sign in with Google instead.")}
+    {email_button(login_url, "Go to sign in")}
+    {email_p("If you did not request this, you can ignore this email.", muted=True)}
+    """,
+        preheader=subject,
+    )
     text = (
         f"Hi {full_name},\n\n"
         "We received a password reset request for this email, but your Orheo Bookings account uses Google sign-in.\n"
@@ -347,11 +355,16 @@ def send_booking_confirmation_email(
 
     receipt_body = build_receipt_html(receipt, for_email=True)
     subject = f"Receipt & booking confirmed — {service_name} with {business_name}"
-    html = f"""
+    inner = f"""
     {receipt_body}
-    <p style="font-size:14px;margin-top:18px;"><a href="{google_calendar_url}">Add to Google Calendar</a></p>
-    <p style="font-size:13px;color:#78716c;">A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.</p>
+    {email_button(google_calendar_url, "Add to Google Calendar")}
+    {email_p("A calendar invite is attached for Apple Calendar, Outlook, and other calendar apps.", muted=True)}
     """
+    html = wrap_email_html(
+        inner_html=inner,
+        preheader=subject,
+        business_logo_url=business_logo_url,
+    )
     text = (
         build_receipt_plain_text(receipt)
         + f"\n\nAdd to Google Calendar: {google_calendar_url}\n"
@@ -397,16 +410,19 @@ def send_new_booking_owner_email(
     until = end_at.strftime("%I:%M %p UTC")
     format_label = "Online" if appointment_format == "online" else "In person"
     subject = f"New booking — {service_name}"
-    html = f"""
-    <p>Hi {owner_name},</p>
-    <p>You have a new booking for <strong>{business_name}</strong>.</p>
-    <p><strong>Client:</strong> {client_name} ({client_email})</p>
-    <p><strong>Service:</strong> {service_name}</p>
-    <p><strong>Format:</strong> {format_label}</p>
-    <p><strong>When:</strong> {when} – {until}</p>
-    <p><strong>Reference:</strong> {booking_id}</p>
-    <p>— Orheo Bookings</p>
+    inner = f"""
+    {email_h1("New booking")}
+    {email_p(f"Hi {owner_name},")}
+    {email_p(f"You have a new booking for {business_name}.")}
+    <table style="width:100%;border-collapse:collapse;">
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Client</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(client_name)} ({escape(client_email)})</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Service</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(service_name)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Format</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(format_label)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">When</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(when)} – {escape(until)}</td></tr>
+      <tr><td style="padding:8px 0;color:#78716c;font-size:13px;">Reference</td><td style="padding:8px 0;text-align:right;font-size:13px;font-weight:600;color:#1c1917;">{escape(booking_id)}</td></tr>
+    </table>
     """
+    html = wrap_email_html(inner_html=inner, preheader=subject)
     text = (
         f"Hi {owner_name},\n\n"
         f"You have a new booking for {business_name}.\n\n"
@@ -474,15 +490,16 @@ def send_trial_ending_email(
 ) -> None:
     day_label = "day" if days_remaining == 1 else "days"
     subject = f"Your Orheo trial ends in {days_remaining} {day_label}"
-    html = f"""
-    <p>Hi {full_name},</p>
-    <p>Your free trial for <strong>{business_name}</strong> ends in <strong>{days_remaining} {day_label}</strong>.</p>
-    <p>Choose a plan now to keep your bookings, clients, and dashboard access without interruption.</p>
-    <p><a href="{choose_plan_url}">Choose a plan</a></p>
-    <p>If the button does not work, copy and paste this link into your browser:</p>
-    <p>{choose_plan_url}</p>
-    <p>— Orheo Bookings</p>
+    inner = f"""
+    {email_h1("Your trial is ending")}
+    {email_p(f"Hi {full_name},")}
+    {email_p(f"Your free trial for {business_name} ends in {days_remaining} {day_label}.")}
+    {email_p("Choose a plan now to keep your bookings, clients, and dashboard access without interruption.")}
+    {email_button(choose_plan_url, "Choose a plan")}
+    {email_p("If the button does not work, copy and paste this link into your browser:", muted=True)}
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;word-break:break-all;">{escape(choose_plan_url)}</p>
     """
+    html = wrap_email_html(inner_html=inner, preheader=subject)
     text = (
         f"Hi {full_name},\n\n"
         f"Your free trial for {business_name} ends in {days_remaining} {day_label}.\n"

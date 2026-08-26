@@ -5,12 +5,27 @@ import { Link } from "react-router";
 import { ArrowLeft, Ban, CheckCircle, Download, Search, Trash2 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
 import {
   AdminHeader,
   adminGhostLinkClass,
   adminInputClass,
   adminNavLinkClass,
 } from "../../components/layouts/AdminHeader";
+
+function deleteConfirmationPhrase(tenantName: string): string {
+  return `delete ${tenantName}`;
+}
 
 type TenantRow = {
   id: string;
@@ -39,7 +54,16 @@ export function SubscriberManagement() {
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [planUpdatingId, setPlanUpdatingId] = useState<string | null>(null);
+  const [tenantPendingDelete, setTenantPendingDelete] = useState<TenantRow | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const isRowBusy = statusUpdatingId !== null || deletingId !== null || planUpdatingId !== null;
+  const requiredDeletePhrase = tenantPendingDelete
+    ? deleteConfirmationPhrase(tenantPendingDelete.name)
+    : "";
+  const canConfirmDelete =
+    Boolean(tenantPendingDelete) &&
+    deleteConfirmText.trim() === requiredDeletePhrase &&
+    deletingId === null;
 
   const load = async () => {
     try {
@@ -102,15 +126,28 @@ export function SubscriberManagement() {
     }
   };
 
-  const handleDelete = async (subscriberId: string) => {
-    if (!window.confirm("Delete this tenant and all related data?")) return;
-    setDeletingId(subscriberId);
+  const openDeleteDialog = (subscriber: TenantRow) => {
+    setTenantPendingDelete(subscriber);
+    setDeleteConfirmText("");
+  };
+
+  const closeDeleteDialog = () => {
+    if (deletingId) return;
+    setTenantPendingDelete(null);
+    setDeleteConfirmText("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!tenantPendingDelete || !canConfirmDelete) return;
+    setDeletingId(tenantPendingDelete.id);
     try {
-      await api.deleteSubscriber(subscriberId);
+      await api.deleteSubscriber(tenantPendingDelete.id);
+      setTenantPendingDelete(null);
+      setDeleteConfirmText("");
       await load();
       setError("");
-    } catch {
-      setError("Unable to delete tenant.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete tenant.");
     } finally {
       setDeletingId(null);
     }
@@ -373,7 +410,7 @@ export function SubscriberManagement() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => void handleDelete(subscriber.id)}
+                          onClick={() => openDeleteDialog(subscriber)}
                           loading={deletingId === subscriber.id}
                           disabled={isRowBusy}
                           className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10"
@@ -419,6 +456,67 @@ export function SubscriberManagement() {
           </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={tenantPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) closeDeleteDialog();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">Delete this business permanently?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  This permanently deletes{" "}
+                  <span className="font-semibold text-foreground">{tenantPendingDelete?.name}</span>
+                  {tenantPendingDelete?.owner_email ? (
+                    <>
+                      {" "}
+                      (<span className="text-foreground">{tenantPendingDelete.owner_email}</span>)
+                    </>
+                  ) : null}{" "}
+                  and all related data: bookings, clients, services, products, payments, knowledge, and users.
+                </p>
+                <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
+                  This cannot be undone.
+                </p>
+                <div className="space-y-2 pt-1 text-left">
+                  <Label htmlFor="admin-delete-confirm" className="text-foreground">
+                    Type{" "}
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                      {requiredDeletePhrase}
+                    </code>{" "}
+                    to confirm
+                  </Label>
+                  <Input
+                    id="admin-delete-confirm"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder={requiredDeletePhrase}
+                    autoComplete="off"
+                    disabled={deletingId !== null}
+                    className="font-mono text-sm"
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingId !== null}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={!canConfirmDelete}
+              loading={deletingId !== null}
+              loadingLabel="Deleting..."
+              onClick={() => void handleConfirmDelete()}
+            >
+              Delete permanently
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
