@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from html import escape
 from typing import Protocol
 
 import httpx
@@ -13,6 +12,7 @@ import structlog
 from app.core.config import get_settings
 from app.infra.email import EmailDeliveryError, email_service
 from app.infra.models import OutboundChannel
+from app.modules.notifications.email_layout import plain_text_to_html, wrap_email_html
 
 logger = structlog.get_logger()
 
@@ -87,7 +87,12 @@ class EmailAdapter:
 
     def send(self, *, to: str, body: str, metadata: dict) -> ProviderResult:
         subject = str(metadata.get("subject") or "Booking reminder")
-        html = f"<p>{escape(body)}</p>"
+        business_logo_url = metadata.get("business_logo_url")
+        html = wrap_email_html(
+            inner_html=plain_text_to_html(body),
+            preheader=subject,
+            business_logo_url=str(business_logo_url) if business_logo_url else None,
+        )
         try:
             if not email_service.is_configured():
                 settings = get_settings()

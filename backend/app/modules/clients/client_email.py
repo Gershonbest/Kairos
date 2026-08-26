@@ -115,7 +115,11 @@ async def send_client_email(
     context = build_template_context(tenant=tenant, client=client)
     rendered_subject = render_template_text(subject, context)
     rendered_body = render_template_text(body, context)
-    html_body = wrap_client_email_html(business_name=tenant.name, body=rendered_body)
+    html_body = wrap_client_email_html(
+        business_name=tenant.name,
+        body=rendered_body,
+        business_logo_url=tenant.public_logo_url,
+    )
 
     try:
         email_service.send(
