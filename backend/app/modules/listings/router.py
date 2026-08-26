@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, get_current_user, require_active_subscription, require_permission
+from app.core.permissions import SERVICES_WRITE
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Listing, ListingStatus, Service, ServiceBookingType
@@ -94,7 +95,7 @@ async def list_listings(
 @router.post("", response_model=ListingOut)
 async def create_listing(
     payload: ListingCreate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ListingOut:
     if not current_user.tenant_id:
@@ -122,7 +123,7 @@ async def create_listing(
 async def update_listing(
     listing_id: str,
     payload: ListingUpdate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ListingOut:
     if not current_user.tenant_id:
@@ -156,7 +157,7 @@ async def update_listing(
 @router.delete("/{listing_id}")
 async def delete_listing(
     listing_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, bool]:
     if not current_user.tenant_id:

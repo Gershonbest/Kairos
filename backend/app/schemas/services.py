@@ -40,6 +40,7 @@ class ServiceBase(BaseModel):
 class ServiceCreate(ServiceBase):
     active: bool = True
     listing_ids: list[str] = Field(default_factory=list)
+    staff_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_product_links(self) -> "ServiceCreate":
@@ -53,6 +54,7 @@ class ServiceCreate(ServiceBase):
 class ServiceUpdate(ServiceBase):
     active: bool = True
     listing_ids: list[str] = Field(default_factory=list)
+    staff_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_product_links(self) -> "ServiceUpdate":
@@ -83,3 +85,4 @@ class ServiceOut(BaseModel):
     image_url: str | None
     active: bool
     listing_ids: list[str] = Field(default_factory=list)
+    staff_ids: list[str] = Field(default_factory=list)

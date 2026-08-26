@@ -5,7 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, get_current_user, require_active_subscription, require_permission
+from app.core.permissions import SERVICES_WRITE
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
@@ -15,7 +16,10 @@ from app.infra.models import (
     Service,
     ServiceBookingType,
     Tenant,
+    User,
+    UserRole,
 )
+from app.modules.team.staff import set_service_staff
 from app.schemas.services import ServiceCreate, ServiceOut, ServiceUpdate
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
@@ -45,6 +49,7 @@ def _to_service_out(service: Service) -> ServiceOut:
         image_url=service.image_url,
         active=service.active,
         listing_ids=[listing.id for listing in service.listings],
+        staff_ids=[member.id for member in getattr(service, "staff", [])],
     )
 
 
@@ -94,7 +99,7 @@ async def _load_service_with_listings(
     return (
         await session.execute(
             select(Service)
-            .options(selectinload(Service.listings))
+            .options(selectinload(Service.listings), selectinload(Service.staff))
             .where(Service.tenant_id == tenant_id, Service.id == service_id)
         )
     ).scalar_one_or_none()
@@ -116,7 +121,7 @@ async def list_services(
     rows = (
         await session.execute(
             select(Service)
-            .options(selectinload(Service.listings))
+            .options(selectinload(Service.listings), selectinload(Service.staff))
             .where(Service.tenant_id == current_user.tenant_id)
         )
     ).scalars()
@@ -128,7 +133,7 @@ async def list_services(
 @router.post("", response_model=ServiceOut)
 async def create_service(
     payload: ServiceCreate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ServiceOut:
     if not current_user.tenant_id:
@@ -143,6 +148,26 @@ async def create_service(
         raise HTTPException(status_code=400, detail="Listing-based services must be linked to at least one listing")
     service.listings = linked_listings
     session.add(service)
+    await session.flush()
+    staff_ids = list(payload.staff_ids)
+    if not staff_ids:
+        owner = (
+            await session.execute(
+                select(User).where(
+                    User.tenant_id == current_user.tenant_id,
+                    User.role == UserRole.tenant_admin,
+                    User.is_active.is_(True),
+                )
+            )
+        ).scalars().first()
+        if owner:
+            staff_ids = [owner.id]
+    try:
+        await set_service_staff(
+            session, tenant_id=current_user.tenant_id, service=service, user_ids=staff_ids
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     service_with_links = await _load_service_with_listings(session, current_user.tenant_id, service.id)
     if not service_with_links:
@@ -156,7 +181,7 @@ async def create_service(
 async def update_service(
     service_id: str,
     payload: ServiceUpdate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ServiceOut:
     if not current_user.tenant_id:
@@ -164,7 +189,7 @@ async def update_service(
     service = (
         await session.execute(
             select(Service)
-            .options(selectinload(Service.listings))
+            .options(selectinload(Service.listings), selectinload(Service.staff))
             .where(Service.id == service_id, Service.tenant_id == current_user.tenant_id)
         )
     ).scalar_one_or_none()
@@ -175,6 +200,15 @@ async def update_service(
     if service.booking_type == ServiceBookingType.listing and not linked_listings:
         raise HTTPException(status_code=400, detail="Listing-based services must be linked to at least one listing")
     service.listings = linked_listings
+    try:
+        await set_service_staff(
+            session,
+            tenant_id=current_user.tenant_id,
+            service=service,
+            user_ids=payload.staff_ids or [member.id for member in service.staff],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     service_with_links = await _load_service_with_listings(session, current_user.tenant_id, service.id)
     if not service_with_links:
@@ -189,7 +223,7 @@ async def update_service(
 @router.delete("/{service_id}")
 async def delete_service(
     service_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SERVICES_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, bool]:
     service = (

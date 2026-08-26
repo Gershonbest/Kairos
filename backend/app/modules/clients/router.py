@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, get_current_user, require_active_subscription, require_permission
+from app.core.permissions import CLIENTS_ASSIGNED, CLIENTS_READ, CLIENTS_WRITE
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import Booking, Client, ClientEmailTemplate, PaymentStatus, PaymentTransaction, User
@@ -97,14 +98,29 @@ async def list_clients(
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
 
-    cache_key = redis_cache.tenant_key(current_user.tenant_id, CLIENTS_CACHE)
+    assigned_only = CLIENTS_ASSIGNED in current_user.permissions and CLIENTS_READ not in current_user.permissions
+    cache_key = redis_cache.tenant_key(
+        current_user.tenant_id,
+        f"{CLIENTS_CACHE}:user:{current_user.id}" if assigned_only else CLIENTS_CACHE,
+    )
     cached = await redis_cache.get_json(cache_key)
     if isinstance(cached, list):
         return [ClientOut.model_validate(item) for item in cached]
 
-    rows = (
-        await session.execute(select(Client).where(Client.tenant_id == current_user.tenant_id).order_by(Client.full_name))
-    ).scalars().all()
+    query = select(Client).where(Client.tenant_id == current_user.tenant_id).order_by(Client.full_name)
+    if assigned_only:
+        assigned_ids = (
+            await session.execute(
+                select(Booking.client_id)
+                .where(
+                    Booking.tenant_id == current_user.tenant_id,
+                    Booking.assigned_user_id == current_user.id,
+                )
+                .distinct()
+            )
+        ).scalars().all()
+        query = query.where(Client.id.in_(assigned_ids or ["__none__"]))
+    rows = (await session.execute(query)).scalars().all()
     stats = await _client_stats(session, current_user.tenant_id, [row.id for row in rows])
     payload = [_client_out(row, stats) for row in rows]
     await redis_cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload])
@@ -391,7 +407,7 @@ async def log_client_communication(
 @router.post("", response_model=ClientOut, status_code=201)
 async def create_client(
     payload: ClientCreate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(CLIENTS_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ClientOut:
     if not current_user.tenant_id:
@@ -424,7 +440,7 @@ async def create_client(
 async def update_client(
     client_id: str,
     payload: ClientUpdate,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(CLIENTS_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> ClientOut:
     if not current_user.tenant_id:
@@ -468,7 +484,7 @@ async def update_client(
 @router.delete("/{client_id}")
 async def delete_client(
     client_id: str,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(CLIENTS_WRITE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, bool]:
     if not current_user.tenant_id:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.infra.models import Base, KnowledgeDocumentStatus, Service, Tenant, TenantFaq, TenantKnowledgeDocument
+from app.infra.models import Base, KnowledgeDocumentStatus, Service, Tenant, TenantFaq, TenantKnowledgeDocument, User, UserRole
 from app.modules.ai.knowledge.documents import build_tenant_documents
 from app.modules.ai.knowledge.indexer import reindex_tenant_knowledge
 from app.modules.ai.vector.base import KnowledgeDocument
@@ -102,6 +102,17 @@ async def test_booking_service_create_cancel_reschedule(monkeypatch: pytest.Monk
             active=True,
         )
         session.add(service)
+        await session.flush()
+        session.add(
+            User(
+                tenant_id=tenant.id,
+                full_name="Ada Owner",
+                email="owner-bliss@example.com",
+                role=UserRole.tenant_admin,
+                is_active=True,
+                is_bookable=True,
+            )
+        )
         await session.flush()
         client = await get_or_create_client(
             session,

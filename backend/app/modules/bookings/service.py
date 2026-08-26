@@ -19,11 +19,17 @@ from app.infra.models import (
     Service,
     ServiceBookingType,
     Tenant,
+    User,
 )
 from app.modules.clients.names import compose_full_name, split_person_name
 from app.modules.notifications.outbound import schedule_booking_reminders, sync_booking_reminders
-from app.modules.scheduling.service import booking_blocks_slot
 from app.modules.services.helpers import resolve_appointment_format
+from app.modules.team.staff import (
+    assignee_snapshot,
+    assert_staff_slot_available,
+    first_available_staff,
+    resolve_assignable_user,
+)
 
 
 class BookingServiceError(ValueError):
@@ -92,6 +98,7 @@ async def assert_slot_available(
     end_at: datetime,
     listing_id: str | None = None,
     ignore_booking_id: str | None = None,
+    assigned_user: User | None = None,
 ) -> None:
     calendar_block = (
         await session.execute(
@@ -105,25 +112,26 @@ async def assert_slot_available(
     if calendar_block:
         raise BookingServiceError("The business is unavailable on this date")
 
-    buffer_minutes = service.buffer_minutes or 0
-    nearby = (
-        await session.execute(
-            select(Booking).where(
-                Booking.tenant_id == tenant.id,
-                Booking.service_id == service.id,
-                Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-                Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
-                Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
+    if assigned_user is None:
+        try:
+            assigned_user = await resolve_assignable_user(
+                session, tenant_id=tenant.id, service=service, assigned_user_id=None
             )
+        except ValueError as exc:
+            raise BookingServiceError(str(exc)) from exc
+    try:
+        await assert_staff_slot_available(
+            session,
+            tenant_id=tenant.id,
+            service=service,
+            user=assigned_user,
+            start_at=start_at,
+            end_at=end_at,
+            listing_id=listing_id,
+            ignore_booking_id=ignore_booking_id,
         )
-    ).scalars().all()
-    for row in nearby:
-        if ignore_booking_id and row.id == ignore_booking_id:
-            continue
-        if listing_id and row.listing_id and row.listing_id != listing_id:
-            continue
-        if booking_blocks_slot(row, start_at, end_at, buffer_minutes):
-            raise BookingServiceError("Slot already booked")
+    except ValueError as exc:
+        raise BookingServiceError(str(exc)) from exc
 
 
 async def create_confirmed_booking(
@@ -140,6 +148,7 @@ async def create_confirmed_booking(
     guest_last_name: str | None = None,
     idempotency_key: str | None = None,
     booking_source: str = "ai",
+    assigned_user_id: str | None = None,
 ) -> Booking:
     fmt = resolve_appointment_format(service, appointment_format)
     start, end, is_all_day = normalize_booking_window(service, start_at)
@@ -162,20 +171,50 @@ async def create_confirmed_booking(
     elif listing_id:
         raise BookingServiceError("Listing is not supported for this service")
 
+    listing_pk = listing.id if listing else None
+    if assigned_user_id:
+        try:
+            assignee = await resolve_assignable_user(
+                session, tenant_id=tenant.id, service=service, assigned_user_id=assigned_user_id
+            )
+        except ValueError as exc:
+            raise BookingServiceError(str(exc)) from exc
+    else:
+        assignee = await first_available_staff(
+            session,
+            tenant_id=tenant.id,
+            service=service,
+            start_at=start,
+            end_at=end,
+            listing_id=listing_pk,
+        )
+        if not assignee:
+            try:
+                assignee = await resolve_assignable_user(
+                    session, tenant_id=tenant.id, service=service, assigned_user_id=None
+                )
+            except ValueError as exc:
+                raise BookingServiceError(str(exc)) from exc
+
     await assert_slot_available(
         session,
         tenant=tenant,
         service=service,
         start_at=start,
         end_at=end,
-        listing_id=listing.id if listing else None,
+        listing_id=listing_pk,
+        assigned_user=assignee,
     )
+    assigned_name, assigned_title = assignee_snapshot(assignee)
 
     booking = Booking(
         tenant_id=tenant.id,
         client_id=client.id,
         service_id=service.id,
-        listing_id=listing.id if listing else None,
+        listing_id=listing_pk,
+        assigned_user_id=assignee.id,
+        assigned_name=assigned_name,
+        assigned_title=assigned_title,
         start_at=start,
         end_at=end,
         is_all_day=is_all_day,
@@ -248,6 +287,11 @@ async def reschedule_booking(
         await session.execute(select(Service).where(Service.id == booking.service_id))
     ).scalar_one()
     start, end, is_all_day = normalize_booking_window(service, new_start_at)
+    assigned_user = None
+    if booking.assigned_user_id:
+        assigned_user = (
+            await session.execute(select(User).where(User.id == booking.assigned_user_id))
+        ).scalar_one_or_none()
     await assert_slot_available(
         session,
         tenant=tenant,
@@ -256,6 +300,7 @@ async def reschedule_booking(
         end_at=end,
         listing_id=booking.listing_id,
         ignore_booking_id=booking.id,
+        assigned_user=assigned_user,
     )
     booking.start_at = start
     booking.end_at = end

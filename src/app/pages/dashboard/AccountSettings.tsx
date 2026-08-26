@@ -215,6 +215,21 @@ export function AccountSettings() {
   });
 
   const isLoading = isPending && !settings;
+  const permissions = settings?.profile?.permissions ?? [];
+  const canPayments = permissions.includes("payments:manage");
+  const canBilling = permissions.includes("settings:billing");
+  const canDanger = permissions.includes("settings:danger");
+
+  useEffect(() => {
+    if (!settings) return;
+    if (
+      (tab === "payments" && !canPayments) ||
+      (tab === "billing" && !canBilling) ||
+      (tab === "danger" && !canDanger)
+    ) {
+      setTab("account");
+    }
+  }, [settings, tab, canPayments, canBilling, canDanger]);
 
   useLayoutEffect(() => {
     // Re-hydrate whenever the signed-in account changes so one user never
@@ -621,10 +636,14 @@ export function AccountSettings() {
             <Link to="/dashboard/availability" className="text-primary font-medium hover:underline">
               Availability
             </Link>
-            {", and "}
-            <Link to="/dashboard/payments" className="text-primary font-medium hover:underline">
-              Payments
-            </Link>
+            {canPayments ? (
+              <>
+                {", and "}
+                <Link to="/dashboard/payments" className="text-primary font-medium hover:underline">
+                  Payments
+                </Link>
+              </>
+            ) : null}
             .
           </p>
         </div>
@@ -667,18 +686,24 @@ export function AccountSettings() {
           <TabsTrigger value="public" className={SETTINGS_TAB_TRIGGER_CLASS}>
             Public page
           </TabsTrigger>
-          <TabsTrigger value="payments" className={SETTINGS_TAB_TRIGGER_CLASS}>
-            Payments
-          </TabsTrigger>
+          {canPayments && (
+            <TabsTrigger value="payments" className={SETTINGS_TAB_TRIGGER_CLASS}>
+              Payments
+            </TabsTrigger>
+          )}
           <TabsTrigger value="notifications" className={SETTINGS_TAB_TRIGGER_CLASS}>
             Notifications
           </TabsTrigger>
-          <TabsTrigger value="billing" className={SETTINGS_TAB_TRIGGER_CLASS}>
-            Billing
-          </TabsTrigger>
-          <TabsTrigger value="danger" className={SETTINGS_TAB_TRIGGER_CLASS}>
-            Danger zone
-          </TabsTrigger>
+          {canBilling && (
+            <TabsTrigger value="billing" className={SETTINGS_TAB_TRIGGER_CLASS}>
+              Billing
+            </TabsTrigger>
+          )}
+          {canDanger && (
+            <TabsTrigger value="danger" className={SETTINGS_TAB_TRIGGER_CLASS}>
+              Danger zone
+            </TabsTrigger>
+          )}
         </TabsList>
         <div className="min-w-0 flex-1 space-y-4">
 
@@ -1038,6 +1063,7 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
+        {canPayments && (
         <TabsContent value="payments" className="mt-0">
           <div className="workspace-panel space-y-5 p-6">
             <div className="rounded-lg border border-border p-4 bg-muted/30">
@@ -1122,6 +1148,7 @@ export function AccountSettings() {
             </form>
           </div>
         </TabsContent>
+        )}
 
         <TabsContent value="notifications" className="mt-0">
           <form onSubmit={handleSaveNotifications} className="workspace-panel space-y-6 p-6">
@@ -1229,6 +1256,7 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
+        {canBilling && (
         <TabsContent value="billing" className="mt-0">
           <div className="workspace-panel space-y-4 p-6">
             <div>
@@ -1272,7 +1300,9 @@ export function AccountSettings() {
             </Button>
           </div>
         </TabsContent>
+        )}
 
+        {canDanger && (
         <TabsContent value="danger" className="mt-0">
           <SectionCard
             tone="danger"
@@ -1298,6 +1328,7 @@ export function AccountSettings() {
             </div>
           </SectionCard>
         </TabsContent>
+        )}
         </div>
       </Tabs>
     </PageShell>

@@ -102,7 +102,9 @@ function hadStoredSession(): boolean {
 }
 
 function shouldHandleUnauthorized(path: string): boolean {
-  return !AUTH_PATHS_WITHOUT_SESSION.has(path);
+  if (AUTH_PATHS_WITHOUT_SESSION.has(path)) return false;
+  if (path.startsWith("/auth/invite/")) return false;
+  return true;
 }
 
 function redirectToLogin() {
@@ -406,6 +408,9 @@ export interface PublicBookingResponse {
   service_duration_minutes?: number | null;
   host_name?: string | null;
   host_title?: string | null;
+  assigned_user_id?: string | null;
+  assigned_name?: string | null;
+  assigned_title?: string | null;
   appointment_format?: "online" | "onsite" | null;
   location?: string | null;
   business_name?: string | null;
@@ -439,6 +444,9 @@ export interface BookingListItem {
   appointment_format?: "online" | "onsite" | null;
   host_name?: string | null;
   host_title?: string | null;
+  assigned_user_id?: string | null;
+  assigned_name?: string | null;
+  assigned_title?: string | null;
   location?: string | null;
   payment?: {
     service_price: number;
@@ -496,6 +504,13 @@ export interface ServicePayload {
   duration_minutes: number;
   booking_type?: BookingType;
   listing_ids?: string[];
+  staff_ids?: string[];
+  staff?: Array<{
+    id: string;
+    full_name: string;
+    job_title?: string | null;
+    is_bookable?: boolean;
+  }>;
   scheduling_mode?: SchedulingMode;
   price_amount: number;
   deposit_amount?: number;
@@ -545,6 +560,48 @@ export interface CalendarBlockRecord {
   reason?: string | null;
   created_at?: string | null;
 }
+
+export type AdminPlanCapability = {
+  key: string;
+  label: string;
+  kind: "flag" | "limit" | string;
+};
+
+export type AdminPlanRow = {
+  id: string;
+  code: string;
+  name: string;
+  monthly_price: number;
+  contact_admin?: boolean;
+  description: string;
+  features: string[];
+  entitlements: Record<string, unknown>;
+  self_serve: boolean;
+  is_active: boolean;
+  is_featured: boolean;
+  sort_order: number;
+  flags: Record<string, boolean>;
+  bookings_per_month: number | null;
+  team_members: number | null;
+};
+
+export type AdminPlanUpdate = {
+  code: string;
+  name: string;
+  description: string;
+  monthly_price: number;
+  self_serve: boolean;
+  is_featured: boolean;
+  is_active: boolean;
+  bookings_per_month: number | null;
+  team_members: number | null;
+  flags: Record<string, boolean>;
+};
+
+export type AdminPlanCatalog = {
+  capabilities: AdminPlanCapability[];
+  plans: AdminPlanRow[];
+};
 
 export const api = {
   signup: (payload: { first_name: string; last_name: string; business_name: string; email: string; password: string }) =>
@@ -607,6 +664,11 @@ export const api = {
       email: string;
       tenant_id?: string;
       role: string;
+      staff_role?: "manager" | "staff" | "front_desk" | null;
+      is_owner?: boolean;
+      job_title?: string | null;
+      is_bookable?: boolean;
+      permissions?: string[];
       email_verified?: boolean;
       has_password?: boolean;
       onboarding_completed?: boolean;
@@ -622,6 +684,75 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  getInvite: (token: string) =>
+    request<{
+      email: string;
+      full_name: string;
+      staff_role: "manager" | "staff" | "front_desk";
+      business_name: string;
+      expires_at: string;
+    }>(`/auth/invite/${token}`),
+  acceptInvite: (token: string, password: string) =>
+    request<{ access_token: string; refresh_token: string }>(`/auth/invite/${token}/accept`, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+  getTeam: () =>
+    request<{
+      members: Array<{
+        id: string;
+        full_name: string;
+        email: string;
+        job_title?: string | null;
+        staff_role: "manager" | "staff" | "front_desk" | null;
+        is_owner: boolean;
+        is_bookable: boolean;
+        is_active: boolean;
+        invite_status?: string;
+      }>;
+      invites: Array<{
+        id: string;
+        email: string;
+        full_name: string;
+        staff_role: "manager" | "staff" | "front_desk";
+        expires_at: string;
+        created_at?: string | null;
+        status: string;
+      }>;
+      seats: { used: number; limit: number | null; plan_code: string; can_invite: boolean };
+    }>("/team"),
+  inviteTeamMember: (payload: {
+    email: string;
+    full_name: string;
+    staff_role: "manager" | "staff" | "front_desk";
+  }) =>
+    request<{ id: string; email: string; full_name: string; staff_role: string; expires_at: string; status: string }>(
+      "/team/invites",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  resendTeamInvite: (inviteId: string) =>
+    request<{ id: string; email: string; status: string }>(`/team/invites/${inviteId}/resend`, { method: "POST" }),
+  revokeTeamInvite: (inviteId: string) =>
+    request<{ ok: boolean }>(`/team/invites/${inviteId}`, { method: "DELETE" }),
+  updateTeamMember: (
+    memberId: string,
+    payload: {
+      staff_role?: "manager" | "staff" | "front_desk";
+      job_title?: string | null;
+      is_bookable?: boolean;
+      is_active?: boolean;
+    }
+  ) =>
+    request<{
+      id: string;
+      full_name: string;
+      email: string;
+      job_title?: string | null;
+      staff_role: "manager" | "staff" | "front_desk" | null;
+      is_owner: boolean;
+      is_bookable: boolean;
+      is_active: boolean;
+    }>(`/team/members/${memberId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   completeOnboarding: (payload: OnboardingPayload) =>
     request<{ ok: boolean }>("/tenants/me/onboarding", { method: "PUT", body: JSON.stringify(payload) }),
   uploadLogo: (file: File) => uploadMultipart("/uploads/logo", file),
@@ -732,6 +863,15 @@ export const api = {
     request<Array<{ id: string; day_of_week: number; start_time: string; end_time: string; is_enabled: boolean }>>(
       "/availability"
     ),
+  listStaffAvailability: (userId: string) =>
+    request<Array<{ id: string; user_id: string; day_of_week: number; start_time: string; end_time: string; is_enabled: boolean }>>(
+      `/availability/staff/${userId}`
+    ),
+  replaceStaffAvailability: (userId: string, payload: { rules: AvailabilityRulePayload[] }) =>
+    request<{ ok: boolean }>(`/availability/staff/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
   listCalendarBlocks: () => request<CalendarBlockRecord[]>("/availability/blocks"),
   createCalendarBlock: (payload: { start_date: string; end_date: string; reason?: string }) =>
     request<CalendarBlockRecord>("/availability/blocks", {
@@ -752,6 +892,10 @@ export const api = {
         entitlements: Record<string, unknown>;
         self_serve: boolean;
         is_featured: boolean;
+        contact_admin?: boolean;
+        flags?: Record<string, boolean>;
+        bookings_per_month?: number | null;
+        team_members?: number | null;
       }>
     >("/subscriptions/plans"),
   getSubscriptionStatus: () => request<SubscriptionStatus>("/subscriptions/status"),
@@ -965,14 +1109,15 @@ export const api = {
     serviceId: string,
     fromIso: string,
     toIso: string,
-    listingId?: string
+    listingId?: string,
+    assignedUserId?: string
   ) =>
     request<{ slots: string[] }>(
       `/bookings/availability?service_id=${encodeURIComponent(serviceId)}&from_iso=${encodeURIComponent(
         fromIso
       )}&to_iso=${encodeURIComponent(toIso)}${
         listingId ? `&listing_id=${encodeURIComponent(listingId)}` : ""
-      }`
+      }${assignedUserId ? `&assigned_user_id=${encodeURIComponent(assignedUserId)}` : ""}`
     ),
   createManualBooking: (payload: {
     client_id?: string;
@@ -990,6 +1135,7 @@ export const api = {
     send_confirmation: boolean;
     payment_status: "unpaid" | "paid_external";
     override_availability: boolean;
+    assigned_user_id: string;
   }) =>
     request<BookingListItem>("/bookings", {
       method: "POST",
@@ -999,6 +1145,11 @@ export const api = {
     request<BookingListItem>(`/bookings/${bookingId}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+  reassignBooking: (bookingId: string, assignedUserId: string) =>
+    request<BookingListItem>(`/bookings/${bookingId}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify({ assigned_user_id: assignedUserId }),
     }),
   recordBookingBalance: (
     bookingId: string,
@@ -1245,6 +1396,7 @@ export const api = {
         client_instructions?: string;
         buffer_minutes: number;
         image_url?: string;
+        staff?: Array<{ id: string; full_name: string; job_title?: string | null; is_bookable?: boolean }>;
       }>
     >(`/public/businesses/${businessId}/services`),
   listPublicServiceListings: (businessId: string, serviceId: string) =>
@@ -1269,12 +1421,13 @@ export const api = {
     serviceId: string,
     fromIso: string,
     toIso: string,
-    listingId?: string
+    listingId?: string,
+    assignedUserId?: string
   ) =>
     request<{ slots: string[] }>(
       `/public/businesses/${businessId}/availability?service_id=${encodeURIComponent(serviceId)}&from_iso=${encodeURIComponent(fromIso)}&to_iso=${encodeURIComponent(toIso)}${
         listingId ? `&listing_id=${encodeURIComponent(listingId)}` : ""
-      }`
+      }${assignedUserId ? `&assigned_user_id=${encodeURIComponent(assignedUserId)}` : ""}`
     ),
   lookupPublicClient: (businessId: string, email: string) =>
     request<
@@ -1294,6 +1447,7 @@ export const api = {
       notes?: string;
       appointment_format?: "online" | "onsite";
       idempotency_key: string;
+      assigned_user_id?: string | null;
     }
   ) =>
     request<PublicBookingResponse>(`/public/businesses/${businessId}/bookings`, {
@@ -1575,22 +1729,21 @@ export const api = {
         processed?: boolean;
       }>;
     }>(`/admin/payments/${transactionId}`),
-  adminPlans: () =>
-    request<
-      Array<{
-        id: string;
-        code: string;
-        name: string;
-        monthly_price: number;
-        description: string;
-        features: string[];
-        entitlements: Record<string, unknown>;
-        self_serve: boolean;
-        is_active: boolean;
-        is_featured: boolean;
-        sort_order: number;
-      }>
-    >("/admin/plans"),
+  adminPlanCatalog: () =>
+    request<AdminPlanCatalog>("/admin/plans").then((data) =>
+      Array.isArray(data)
+        ? { capabilities: [] as AdminPlanCapability[], plans: data }
+        : data
+    ),
+  adminPlans: async () => {
+    const catalog = await request<AdminPlanCatalog | AdminPlanRow[]>("/admin/plans");
+    return Array.isArray(catalog) ? catalog : catalog.plans;
+  },
+  updateAdminPlans: (payload: { plans: AdminPlanUpdate[] }) =>
+    request<AdminPlanCatalog>("/admin/plans", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 };
 
 export function hasAccessToken(): boolean {

@@ -56,7 +56,16 @@ from app.modules.services.helpers import (
     resolve_service_location,
     service_to_dict,
 )
-from app.modules.scheduling.service import booking_blocks_slot, generate_slots
+from app.modules.team.staff import (
+    assignee_snapshot,
+    assert_staff_slot_available,
+    bookable_staff_for_service,
+    booking_host_name,
+    booking_host_title,
+    first_available_staff,
+    resolve_assignable_user,
+    union_slots_for_service,
+)
 from app.modules.tenants.helpers import tenant_display_location
 
 from app.schemas.bookings import BookingOut, PublicBookingCreateRequest
@@ -73,8 +82,8 @@ def _calendar_event_args(booking: Booking, service: Service, tenant: Tenant) -> 
         "start_at": booking.start_at,
         "end_at": booking.end_at,
         "location": resolve_service_location(service, tenant, appointment_format),
-        "host_name": service.host_name,
-        "host_title": service.host_title,
+        "host_name": booking_host_name(booking, service),
+        "host_title": booking_host_title(booking, service),
         "appointment_format": appointment_format.value,
         "client_instructions": service.client_instructions,
         "online_meeting_link": (
@@ -157,8 +166,11 @@ def _booking_response(
         service_deposit=float(service.deposit_amount or 0),
         service_image_url=service.image_url,
         service_duration_minutes=service.duration_minutes,
-        host_name=service.host_name,
-        host_title=service.host_title,
+        host_name=booking_host_name(booking, service),
+        host_title=booking_host_title(booking, service),
+        assigned_user_id=booking.assigned_user_id,
+        assigned_name=booking.assigned_name,
+        assigned_title=booking.assigned_title,
         appointment_format=appointment_format.value,
         location=resolve_service_location(service, tenant, appointment_format),
         business_name=tenant.name,
@@ -311,7 +323,7 @@ async def get_public_services(business_id: str, session: AsyncSession = Depends(
     services = (
         await session.execute(
             select(Service)
-            .options(selectinload(Service.listings))
+            .options(selectinload(Service.listings), selectinload(Service.staff))
             .where(Service.tenant_id == tenant.id, Service.active.is_(True))
         )
     ).scalars()
@@ -372,6 +384,7 @@ async def get_public_availability(
     business_id: str,
     service_id: str = Query(...),
     listing_id: str | None = Query(default=None),
+    assigned_user_id: str | None = Query(default=None),
     from_iso: str = Query(...),
     to_iso: str = Query(...),
     session: AsyncSession = Depends(get_db_session),
@@ -421,53 +434,14 @@ async def get_public_availability(
     if to_dt.tzinfo is None:
         to_dt = to_dt.replace(tzinfo=UTC)
 
-    rules = list(
-        (
-            await session.execute(
-                select(AvailabilityRule).where(
-                    AvailabilityRule.tenant_id == tenant.id,
-                    AvailabilityRule.is_enabled.is_(True),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-    booking_filters = [
-        Booking.tenant_id == tenant.id,
-        Booking.service_id == service.id,
-        Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-        Booking.start_at >= from_dt,
-        Booking.start_at <= to_dt + timedelta(days=1),
-    ]
-    if listing:
-        booking_filters.append(Booking.listing_id == listing.id)
-    else:
-        booking_filters.append(Booking.listing_id.is_(None))
-
-    existing_bookings = list(
-        (await session.execute(select(Booking).where(*booking_filters))).scalars().all()
-    )
-    calendar_blocks = list(
-        (
-            await session.execute(
-                select(CalendarBlock).where(
-                    CalendarBlock.tenant_id == tenant.id,
-                    CalendarBlock.end_date >= from_dt.date(),
-                    CalendarBlock.start_date <= to_dt.date(),
-                )
-            )
-        ).scalars().all()
-    )
-
-    slots = generate_slots(
+    slots = await union_slots_for_service(
+        session,
+        tenant_id=tenant.id,
+        service=service,
         from_dt=from_dt,
         to_dt=to_dt,
-        service=service,
-        rules=rules,
-        existing_bookings=existing_bookings,
-        calendar_blocks=calendar_blocks,
+        listing_id=listing.id if listing else None,
+        assigned_user_id=assigned_user_id,
     )
 
     return {"business_id": business_id, "service_id": service_id, "from": from_iso, "to": to_iso, "slots": slots}
@@ -565,6 +539,26 @@ async def create_public_booking(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     start_at, end_at, is_all_day = _normalize_booking_window(service, payload.start_at)
+    listing_pk = listing.id if listing else None
+    if payload.assigned_user_id:
+        try:
+            assignee = await resolve_assignable_user(
+                session, tenant_id=tenant.id, service=service, assigned_user_id=payload.assigned_user_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    else:
+        assignee = await first_available_staff(
+            session,
+            tenant_id=tenant.id,
+            service=service,
+            start_at=start_at,
+            end_at=end_at,
+            listing_id=listing_pk,
+        )
+        if not assignee:
+            raise HTTPException(status_code=409, detail="Slot already booked")
+
     calendar_block = (
         await session.execute(
             select(CalendarBlock).where(
@@ -579,7 +573,7 @@ async def create_public_booking(
     buffer_minutes = service.buffer_minutes or 0
 
     slot_scope = listing.id if listing else "general"
-    lock_key = f"slot-lock:{tenant.id}:{payload.service_id}:{slot_scope}:{start_at.isoformat()}"
+    lock_key = f"slot-lock:{tenant.id}:{assignee.id}:{slot_scope}:{start_at.isoformat()}"
     locked = await redis.set(lock_key, payload.idempotency_key, ex=30, nx=True)
     if not locked:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slot is currently being booked")
@@ -624,25 +618,20 @@ async def create_public_booking(
             session, existing, service, tenant, payment_tx, listing=existing_listing
         )
 
-    slot_filters = [
-        Booking.tenant_id == tenant.id,
-        Booking.service_id == service.id,
-        Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-        Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
-        Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
-    ]
-    nearby = (await session.execute(select(Booking).where(and_(*slot_filters)))).scalars().all()
-    if any(
-        _matches_booking_scope(
+    try:
+        await assert_staff_slot_available(
+            session,
+            tenant_id=tenant.id,
             service=service,
-            booking=row,
-            selected_listing_id=listing.id if listing else None,
+            user=assignee,
+            start_at=start_at,
+            end_at=end_at,
+            listing_id=listing_pk,
         )
-        and booking_blocks_slot(row, start_at, end_at, buffer_minutes)
-        for row in nearby
-    ):
-        raise HTTPException(status_code=409, detail="Slot already booked")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail="Slot already booked") from exc
 
+    assigned_name, assigned_title = assignee_snapshot(assignee)
     client_email = payload.client_email.strip().lower()
     guest_first = (payload.client_first_name or "").strip()[:60]
     guest_last = (payload.client_last_name or "").strip()[:60]
@@ -678,6 +667,9 @@ async def create_public_booking(
         client_id=client.id,
         service_id=service.id,
         listing_id=listing.id if listing else None,
+        assigned_user_id=assignee.id,
+        assigned_name=assigned_name,
+        assigned_title=assigned_title,
         start_at=start_at,
         end_at=end_at,
         is_all_day=is_all_day,
@@ -719,8 +711,8 @@ async def create_public_booking(
             start_at=booking.start_at,
             end_at=booking.end_at,
             location=appointment_location,
-            host_name=service.host_name,
-            host_title=service.host_title,
+            host_name=booking.assigned_name,
+            host_title=booking.assigned_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
             online_meeting_link=service.online_meeting_link,
@@ -882,8 +874,8 @@ async def confirm_public_booking_payment(
             start_at=booking.start_at,
             end_at=booking.end_at,
             location=appointment_location,
-            host_name=service.host_name,
-            host_title=service.host_title,
+            host_name=booking.assigned_name,
+            host_title=booking.assigned_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
             online_meeting_link=service.online_meeting_link,

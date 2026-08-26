@@ -72,6 +72,7 @@ export function ManualBookingDialog({
   const [notes, setNotes] = useState("");
   const [sendConfirmation, setSendConfirmation] = useState(true);
   const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "paid_external">("unpaid");
+  const [assignedUserId, setAssignedUserId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -113,19 +114,31 @@ export function ManualBookingDialog({
     [listings, serviceId]
   );
   const listingRequired = selectedService?.booking_type === "listing";
+  const { data: team } = useQuery({
+    queryKey: queryKeys.team,
+    queryFn: () => api.getTeam(),
+    enabled: open,
+  });
+  const assignableStaff = useMemo(() => {
+    const linked = selectedService?.staff_ids ?? [];
+    const members = (team?.members ?? []).filter((member) => member.is_active && member.is_bookable);
+    if (linked.length === 0) return members;
+    return members.filter((member) => linked.includes(member.id) || member.is_owner);
+  }, [team, selectedService]);
   const canLoadSlots = Boolean(
     open && serviceId && date && (!listingRequired || listingId) && !overrideAvailability
   );
   const dateStart = date ? new Date(`${date}T00:00:00`) : null;
   const dateEnd = date ? new Date(`${date}T23:59:59`) : null;
   const { data: availability, isFetching: slotsLoading } = useQuery({
-    queryKey: ["manual-booking-availability", serviceId, listingId, date],
+    queryKey: ["manual-booking-availability", serviceId, listingId, date, assignedUserId],
     queryFn: () =>
       api.listManualBookingAvailability(
         serviceId,
         dateStart!.toISOString(),
         dateEnd!.toISOString(),
-        listingId || undefined
+        listingId || undefined,
+        assignedUserId || undefined
       ),
     enabled: canLoadSlots,
     retry: false,
@@ -147,6 +160,8 @@ export function ManualBookingDialog({
     setNotes("");
     setSendConfirmation(true);
     setPaymentStatus("unpaid");
+    setAssignedUserId("");
+    setError("");
     setError("");
   }, [open, initialClientId, initialStart]);
 
@@ -168,10 +183,18 @@ export function ManualBookingDialog({
     else setAppointmentFormat("");
   }, [serviceId, selectedService]);
 
+  useEffect(() => {
+    if (!assignableStaff.length) return;
+    if (!assignedUserId || !assignableStaff.some((member) => member.id === assignedUserId)) {
+      setAssignedUserId(assignableStaff[0].id);
+    }
+  }, [assignableStaff, assignedUserId]);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     if (!serviceId) return setError("Choose a service.");
+    if (!assignedUserId) return setError("Assign this booking to a team member.");
     if (listingRequired && !listingId) return setError("Choose a product.");
     if (selectedService?.appointment_type === "hybrid" && !appointmentFormat) {
       return setError("Choose online or in-person.");
@@ -216,6 +239,7 @@ export function ManualBookingDialog({
         send_confirmation: sendConfirmation,
         payment_status: paymentStatus,
         override_availability: overrideAvailability,
+        assigned_user_id: assignedUserId,
       });
       onCreated?.(created);
       onOpenChange(false);
@@ -327,6 +351,25 @@ export function ManualBookingDialog({
                       {service.name} · {service.duration_minutes} min
                     </option>
                   ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Assign to</Label>
+              <select
+                className="h-10 w-full rounded-md border border-input bg-input-background px-3 text-sm"
+                value={assignedUserId}
+                onChange={(event) => {
+                  setAssignedUserId(event.target.value);
+                  setSelectedSlot("");
+                }}
+              >
+                <option value="">Choose who they’ll see…</option>
+                {assignableStaff.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.full_name}
+                    {member.job_title ? ` · ${member.job_title}` : ""}
+                  </option>
+                ))}
               </select>
             </div>
             {listingRequired && (
