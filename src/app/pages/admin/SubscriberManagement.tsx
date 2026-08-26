@@ -109,8 +109,8 @@ export function SubscriberManagement() {
       await api.deleteSubscriber(subscriberId);
       await load();
       setError("");
-    } catch {
-      setError("Unable to delete tenant.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to delete tenant.");
     } finally {
       setDeletingId(null);
     }

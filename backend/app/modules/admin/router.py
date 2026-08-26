@@ -3,6 +3,7 @@
 from datetime import datetime
 from hashlib import sha1
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import String, and_, case, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,23 +14,36 @@ from app.core.plans import plan_code_value
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
+    AiKnowledgeChunk,
     AvailabilityRule,
     Booking,
+    CalendarBlock,
     Client,
+    ClientCommunication,
+    ClientEmailTemplate,
     EmailVerificationToken,
+    Listing,
+    Notification,
+    NotificationPreference,
+    OutboundMessage,
     PasswordResetToken,
     PaymentStatus,
     PaymentTransaction,
     RefreshToken,
     Service,
     Tenant,
+    TenantFaq,
+    TenantKnowledgeDocument,
     User,
     UserRole,
     WebhookEvent,
+    service_listings,
 )
+from app.modules.ai.vector.factory import get_vector_store
 from app.modules.audit.service import record_audit_event
 from app.modules.subscriptions.service import grant_plan_to_tenant, list_admin_plans
 
+logger = structlog.get_logger()
 router = APIRouter()
 
 
@@ -300,7 +314,7 @@ async def delete_subscriber(
 ) -> dict:
     tenant = (await session.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one_or_none()
     if not tenant:
-        return {"ok": False}
+        raise HTTPException(status_code=404, detail="Tenant not found")
 
     await record_audit_event(
         session,
@@ -321,18 +335,52 @@ async def delete_subscriber(
     user_ids = (
         await session.execute(select(User.id).where(User.tenant_id == tenant_id))
     ).scalars().all()
+    listing_ids = (
+        await session.execute(select(Listing.id).where(Listing.tenant_id == tenant_id))
+    ).scalars().all()
+    service_ids = (
+        await session.execute(select(Service.id).where(Service.tenant_id == tenant_id))
+    ).scalars().all()
+
+    await session.execute(delete(OutboundMessage).where(OutboundMessage.tenant_id == tenant_id))
+    await session.execute(delete(Notification).where(Notification.tenant_id == tenant_id))
+    await session.execute(delete(ClientCommunication).where(ClientCommunication.tenant_id == tenant_id))
+    await session.execute(delete(PaymentTransaction).where(PaymentTransaction.tenant_id == tenant_id))
+    await session.execute(delete(Booking).where(Booking.tenant_id == tenant_id))
+    if listing_ids:
+        await session.execute(delete(service_listings).where(service_listings.c.listing_id.in_(listing_ids)))
+    if service_ids:
+        await session.execute(delete(service_listings).where(service_listings.c.service_id.in_(service_ids)))
+    await session.execute(delete(Listing).where(Listing.tenant_id == tenant_id))
+    await session.execute(delete(ClientEmailTemplate).where(ClientEmailTemplate.tenant_id == tenant_id))
+    await session.execute(delete(TenantFaq).where(TenantFaq.tenant_id == tenant_id))
+    await session.execute(delete(TenantKnowledgeDocument).where(TenantKnowledgeDocument.tenant_id == tenant_id))
+    await session.execute(delete(AiKnowledgeChunk).where(AiKnowledgeChunk.tenant_id == tenant_id))
+    await session.execute(delete(CalendarBlock).where(CalendarBlock.tenant_id == tenant_id))
+    await session.execute(delete(NotificationPreference).where(NotificationPreference.tenant_id == tenant_id))
+    await session.execute(delete(Client).where(Client.tenant_id == tenant_id))
+    await session.execute(delete(Service).where(Service.tenant_id == tenant_id))
+    await session.execute(delete(AvailabilityRule).where(AvailabilityRule.tenant_id == tenant_id))
     if user_ids:
         await session.execute(delete(EmailVerificationToken).where(EmailVerificationToken.user_id.in_(user_ids)))
         await session.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id.in_(user_ids)))
         await session.execute(delete(RefreshToken).where(RefreshToken.user_id.in_(user_ids)))
-    await session.execute(delete(PaymentTransaction).where(PaymentTransaction.tenant_id == tenant_id))
-    await session.execute(delete(Booking).where(Booking.tenant_id == tenant_id))
-    await session.execute(delete(Client).where(Client.tenant_id == tenant_id))
-    await session.execute(delete(Service).where(Service.tenant_id == tenant_id))
-    await session.execute(delete(AvailabilityRule).where(AvailabilityRule.tenant_id == tenant_id))
     await session.execute(delete(User).where(User.tenant_id == tenant_id))
     await session.execute(delete(Tenant).where(Tenant.id == tenant_id))
     await session.commit()
+
+    try:
+        await get_vector_store().delete_tenant(tenant_id)
+    except Exception:
+        logger.exception("admin.tenant_vector_cleanup_failed", tenant_id=tenant_id)
+
+    await redis_cache.invalidate_tenant(
+        tenant_id,
+        "tenant:me",
+        "booking-links",
+        "payment-provider",
+        "dashboard:summary",
+    )
     await redis_cache.invalidate_admin_overview()
     await redis_cache.invalidate_admin_payments()
     return {"ok": True}

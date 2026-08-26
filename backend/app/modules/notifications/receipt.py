@@ -160,23 +160,16 @@ def build_receipt_html(data: BookingReceiptData, *, for_email: bool = False) -> 
 
     booking_table = "".join(row_html(label, value) for label, value in rows)
     payment_table = "".join(row_html(label, value) for label, value in payment_rows)
-    logo_html = ""
-    if data.business_logo_url:
-        logo_html = (
-            f'<img src="{escape(data.business_logo_url)}" alt="" '
-            'style="width:56px;height:56px;border-radius:12px;object-fit:cover;margin-bottom:12px;" />'
-        )
     contact_html = (
         f'<p style="font-size:13px;color:#78716c;">Questions? Contact '
         f"<strong>{escape(data.business_name)}</strong> at "
-        f'<a href="mailto:{escape(data.business_contact_email)}">{escape(data.business_contact_email)}</a>.</p>'
+        f'<a href="mailto:{escape(data.business_contact_email)}" style="color:#1c1917;">{escape(data.business_contact_email)}</a>.</p>'
         if data.business_contact_email
         else f'<p style="font-size:13px;color:#78716c;">Questions? Contact '
         f"<strong>{escape(data.business_name)}</strong> directly.</p>"
     )
 
     body = f"""
-    {logo_html}
     <h1 style="font-size:22px;margin:0 0 6px;color:#1c1917;">Payment receipt</h1>
     <p style="margin:0 0 18px;color:#78716c;font-size:14px;">Booking confirmed with {escape(data.business_name)}</p>
     <p style="font-size:14px;color:#1c1917;">Hi {escape(data.client_name)},</p>
@@ -190,34 +183,19 @@ def build_receipt_html(data: BookingReceiptData, *, for_email: bool = False) -> 
       Paystack confirmation email you may also receive.
     </p>
     {contact_html}
-    <p style="font-size:12px;color:#a8a29e;margin-top:16px;">— Powered by Orheo Bookings</p>
     """
 
     if for_email:
         return body.strip()
 
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Receipt — {escape(data.business_name)}</title>
-  <style>
-    body {{ font-family: Georgia, 'Times New Roman', serif; background:#f5f5f4; margin:0; padding:32px 16px; color:#1c1917; }}
-    .card {{ max-width:560px; margin:0 auto; background:#fff; border:1px solid #e7e5e4; border-radius:16px; padding:28px; }}
-    @media print {{
-      body {{ background:#fff; padding:0; }}
-      .card {{ border:none; box-shadow:none; }}
-      .no-print {{ display:none; }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="card">
-    {body}
-    <p class="no-print" style="font-size:12px;color:#a8a29e;margin-top:24px;">
-      Tip: use your browser’s Print → Save as PDF to keep a PDF copy.
-    </p>
-  </div>
-</body>
-</html>
-"""
+    from app.modules.notifications.email_layout import wrap_email_html
+
+    print_hint = (
+        '<p class="no-print" style="font-size:12px;color:#a8a29e;margin-top:8px;">'
+        "Tip: use your browser’s Print → Save as PDF to keep a PDF copy.</p>"
+    )
+    return wrap_email_html(
+        inner_html=f"{body.strip()}\n{print_hint}",
+        preheader=f"Payment receipt — {data.business_name}",
+        business_logo_url=data.business_logo_url,
+    )
