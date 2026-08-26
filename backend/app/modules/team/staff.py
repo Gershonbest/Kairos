@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import delete, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -459,5 +459,11 @@ async def set_service_staff(
     for user in users:
         if not is_bookable_user(user) and user.role != UserRole.tenant_admin:
             raise ValueError(f"{user.full_name} is not bookable")
-    service.staff = users
+    # Replace assignments via the junction table directly so we never trigger
+    # implicit lazy-loads on service.staff in async contexts.
+    await session.execute(delete(service_staff).where(service_staff.c.service_id == service.id))
+    await session.execute(
+        insert(service_staff),
+        [{"service_id": service.id, "user_id": user_id} for user_id in unique_ids],
+    )
     await session.flush()
