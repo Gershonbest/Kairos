@@ -41,17 +41,18 @@ import { BrandLoader } from "../../components/brand/BrandLoader";
 import { CallClientDialog } from "../../components/clients/CallClientDialog";
 import { ClientCommunicationsList } from "../../components/clients/ClientCommunicationsList";
 import { SendClientEmailDialog } from "../../components/clients/SendClientEmailDialog";
+import {
+  BrandAvatar,
+  EmptyState,
+  ErrorNote,
+  ListRow,
+  PageHeader,
+  PageShell,
+  StatCard,
+  StatusBadge,
+} from "../../components/dashboard-ui";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
-
-function clientInitials(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("")
-    .slice(0, 2);
-}
 
 function formatLastVisit(value?: string | null): string {
   if (!value) return "Never";
@@ -185,23 +186,23 @@ export function ClientDetailPage() {
 
   if (loadingClient) {
     return (
-      <div className="p-6">
+      <PageShell>
         <BrandLoader label="Loading client" />
-      </div>
+      </PageShell>
     );
   }
 
   if (clientFailed || !client) {
     return (
-      <div className="p-6 space-y-4">
+      <PageShell>
         <Button variant="ghost" asChild>
           <Link to="/dashboard/clients">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to clients
           </Link>
         </Button>
-        <p className="text-sm text-red-600">Client not found or unable to load.</p>
-      </div>
+        <ErrorNote>Client not found or unable to load.</ErrorNote>
+      </PageShell>
     );
   }
 
@@ -210,7 +211,7 @@ export function ClientDetailPage() {
   const canDelete = client.total_bookings === 0;
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
           <Link to="/dashboard/clients">
@@ -220,26 +221,24 @@ export function ClientDetailPage() {
         </Button>
       </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-semibold text-xl shrink-0">
-            {clientInitials(client.full_name)}
-          </div>
+          <BrandAvatar name={client.full_name} size="lg" />
           <div>
-            <h1 className="text-3xl font-semibold">{client.full_name}</h1>
+            <PageHeader
+              className="sm:flex-col sm:items-start"
+              title={client.full_name}
+              description={client.email}
+            />
             <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <p className="flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                {client.email}
-              </p>
               {client.phone && (
                 <p className="flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
+                  <Phone className="h-4 w-4" />
                   {client.phone}
                 </p>
               )}
               <p className="flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
+                <Calendar className="h-4 w-4" />
                 Last visit: {formatLastVisit(client.last_visit_at)}
               </p>
             </div>
@@ -269,7 +268,7 @@ export function ClientDetailPage() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" className="text-red-600 hover:text-red-700" disabled={!canDelete}>
+              <Button variant="outline" className="text-destructive hover:text-destructive" disabled={!canDelete}>
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
               </Button>
@@ -287,7 +286,7 @@ export function ClientDetailPage() {
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 {canDelete && (
                   <AlertDialogAction
-                    className="bg-red-600 hover:bg-red-700"
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     disabled={isDeleting}
                     onClick={(event) => {
                       event.preventDefault();
@@ -310,36 +309,12 @@ export function ClientDetailPage() {
         </p>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <ErrorNote>{error}</ErrorNote>}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <Calendar className="w-8 h-8 text-primary" />
-            <div>
-              <p className="text-sm text-muted-foreground">Total bookings</p>
-              <p className="text-2xl font-semibold">{client.total_bookings}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <DollarSign className="w-8 h-8 text-accent" />
-            <div>
-              <p className="text-sm text-muted-foreground">Total spent</p>
-              <p className="text-2xl font-semibold">₦{client.total_spent.toFixed(0)}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 flex items-center gap-3">
-            <MessageSquare className="w-8 h-8 text-primary" />
-            <div>
-              <p className="text-sm text-muted-foreground">Upcoming / recent</p>
-              <p className="text-2xl font-semibold">{clientBookings.length}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard label="Total bookings" value={client.total_bookings} icon={Calendar} />
+        <StatCard label="Total spent" value={`₦${client.total_spent.toFixed(0)}`} icon={DollarSign} />
+        <StatCard label="Upcoming / recent" value={clientBookings.length} icon={MessageSquare} />
       </div>
 
       <Tabs defaultValue="bookings">
@@ -356,11 +331,8 @@ export function ClientDetailPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {clientBookings.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="flex items-center justify-between p-3 border border-border rounded-lg"
-                >
-                  <div>
+                <ListRow key={booking.id} to={`/dashboard/calendar?booking=${booking.id}`}>
+                  <div className="min-w-0 flex-1">
                     <p className="font-medium">{booking.service_name}</p>
                     <p className="text-sm text-muted-foreground">
                       {new Date(booking.start_at).toLocaleString("en-US", {
@@ -373,21 +345,18 @@ export function ClientDetailPage() {
                       })}
                     </p>
                     {booking.client_name && booking.client_name !== client.full_name && (
-                      <p className="text-xs text-muted-foreground mt-1">Booked as {booking.client_name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Booked as {booking.client_name}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-1 rounded-full bg-accent/10 text-accent capitalize">
-                      {booking.status}
-                    </span>
-                    <Button variant="link" size="sm" asChild>
-                      <Link to="/dashboard/calendar">View</Link>
-                    </Button>
-                  </div>
-                </div>
+                  <StatusBadge status={booking.status} />
+                </ListRow>
               ))}
               {clientBookings.length === 0 && (
-                <p className="text-sm text-muted-foreground">No bookings yet for this client.</p>
+                <EmptyState
+                  icon={Calendar}
+                  title="No bookings yet"
+                  description="Book an appointment for this client to start their history."
+                />
               )}
             </CardContent>
           </Card>
@@ -492,6 +461,6 @@ export function ClientDetailPage() {
           onLogged={() => void refetchCommunications()}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

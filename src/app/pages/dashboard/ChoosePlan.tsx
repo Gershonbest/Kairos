@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-import { AlertTriangle, ArrowLeft, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { BrandLoader } from "../../components/brand/BrandLoader";
+import { ErrorNote, PageHeader, PageShell } from "../../components/dashboard-ui";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
@@ -180,33 +181,30 @@ export function ChoosePlan() {
 
   if (isDeactivated) {
     return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <div className="text-center space-y-3 rounded-xl border border-destructive/30 bg-destructive/10 p-8">
-          <h1 className="text-2xl font-semibold text-destructive">Business deactivated</h1>
-          <p className="text-sm">
-            {status?.warning_message || "This business has been deactivated."}
-          </p>
-          <p className="text-sm">
-            Contact{" "}
+      <PageShell width="narrow">
+        <ErrorNote>
+          <p className="font-semibold">Business deactivated</p>
+          <p className="mt-1">
+            {status?.warning_message || "This business has been deactivated."} Contact{" "}
             <a className="underline" href="mailto:support@orheobookings.com">
               support@orheobookings.com
             </a>{" "}
             to restore it.
           </p>
-        </div>
-      </div>
+        </ErrorNote>
+      </PageShell>
     );
   }
 
   const verifyingPayment = searchParams.get("payment") === "1" && isActivating && !paymentVerified;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <PageShell>
       {!lockedOut && (
         <div>
-          <Button variant="ghost" size="sm" asChild className="gap-2 -ml-2 text-muted-foreground">
+          <Button variant="ghost" size="sm" asChild className="-ml-2 gap-2 text-muted-foreground">
             <Link to="/dashboard">
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft className="h-4 w-4" />
               Back to dashboard
             </Link>
           </Button>
@@ -214,45 +212,38 @@ export function ChoosePlan() {
       )}
 
       {isSuspended && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-destructive mt-0.5 shrink-0" />
-          <div className="space-y-1">
-            <p className="font-medium text-destructive">Your account is suspended</p>
-            <p className="text-sm text-muted-foreground">
-              {status?.warning_message ||
-                "Your account is suspended. Please contact support."}{" "}
-              Dashboard, bookings, and your public booking page stay locked until a plan payment
-              clears. If you have already paid, contact{" "}
-              <a className="underline" href="mailto:support@orheobookings.com">
-                support@orheobookings.com
-              </a>
-              .
-            </p>
-          </div>
-        </div>
+        <ErrorNote>
+          <p className="font-medium">Your account is suspended</p>
+          <p className="mt-1 text-muted-foreground">
+            {status?.warning_message || "Your account is suspended. Please contact support."}{" "}
+            Dashboard, bookings, and your public booking page stay locked until a plan payment
+            clears. If you have already paid, contact{" "}
+            <a className="underline" href="mailto:support@orheobookings.com">
+              support@orheobookings.com
+            </a>
+            .
+          </p>
+        </ErrorNote>
       )}
 
-      <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1 text-sm text-primary dark:text-primary-foreground">
-          <Sparkles className="w-4 h-4" />
-          {isSuspended ? "Account suspended" : trialExpired ? "Trial ended" : "Choose your plan"}
-        </div>
-        <h1 className="text-3xl font-semibold">
-          {isSuspended
+      <PageHeader
+        className="sm:items-center sm:text-center"
+        title={
+          isSuspended
             ? "Reactivate your account"
             : trialExpired
               ? "Continue with Orheo"
-              : "Upgrade before your trial ends"}
-        </h1>
-        <p className="text-muted-foreground max-w-2xl mx-auto">
-          {isSuspended
+              : "Upgrade before your trial ends"
+        }
+        description={
+          isSuspended
             ? "Choose a plan and complete payment to restore access to your dashboard, bookings, and clients."
             : trialExpired
               ? "Your 7-day free trial has ended. Select a plan to restore full access to your dashboard, bookings, and clients."
               : status?.warning_message ||
-                "Pick the plan that fits your business. You can change plans later as you grow."}
-        </p>
-      </div>
+                "Pick the plan that fits your business. You can change plans later as you grow."
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {plans.map((plan) => {
@@ -269,7 +260,7 @@ export function ChoosePlan() {
                 <CardTitle className="flex items-center justify-between">
                   <span>{plan.name}</span>
                   {plan.is_featured && (
-                    <span className="text-xs font-medium bg-primary text-white px-2 py-1 rounded-full">
+                    <span className="rounded-full bg-primary px-2 py-1 text-xs font-medium text-primary-foreground">
                       Popular
                     </span>
                   )}
@@ -317,17 +308,17 @@ export function ChoosePlan() {
       </Card>
 
       {verifyingPayment && (
-        <p className="text-sm text-muted-foreground text-center">Verifying your payment…</p>
+        <p className="text-center text-sm text-muted-foreground">Verifying your payment…</p>
       )}
-      {error && <p className="text-sm text-red-600 text-center">{error}</p>}
+      {error && <ErrorNote className="mx-auto max-w-xl">{error}</ErrorNote>}
       {success && (
         <div className="flex flex-col items-center gap-3">
-          <p className="text-sm text-accent text-center">{success}</p>
-          <Button className="bg-primary hover:bg-primary/90" onClick={goToDashboard}>
+          <ErrorNote tone="success">{success}</ErrorNote>
+          <Button onClick={goToDashboard}>
             Go to dashboard
           </Button>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

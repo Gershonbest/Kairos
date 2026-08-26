@@ -13,6 +13,15 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Textarea } from "../../components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Checkbox } from "../../components/ui/checkbox";
+import {
+  CardGridSkeleton,
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  PageShell,
+} from "../../components/dashboard-ui";
 
 type ListingForm = {
   name: string;
@@ -51,7 +60,7 @@ export function ListingsManagement() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [form, setForm] = useState<ListingForm>(EMPTY_FORM);
 
-  const { data: listings = [] } = useQuery({
+  const { data: listings = [], isPending: listingsLoading } = useQuery({
     queryKey: queryKeys.listings,
     queryFn: () => api.listListings(),
   });
@@ -176,22 +185,20 @@ export function ListingsManagement() {
   }, [inspectionFilter, listingInspectionRows]);
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold">Products</h1>
-          <p className="mt-1 text-muted-foreground">
-            Create inspectable product listings (property, vehicle, inventory) and link each one to bookable
-            services.
-          </p>
-        </div>
-        <Button onClick={openCreateTab}>
-          <PackagePlus className="mr-2 h-4 w-4" />
-          Create Product
-        </Button>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Catalogue"
+        title="Products"
+        description="Create inspectable product listings and link each one to bookable services."
+        actions={
+          <Button onClick={openCreateTab}>
+            <PackagePlus className="mr-2 h-4 w-4" />
+            Create product
+          </Button>
+        }
+      />
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <ErrorNote>{error}</ErrorNote>}
 
       <Card className="border-dashed">
         <CardContent className="pt-6 text-sm text-muted-foreground">
@@ -241,25 +248,27 @@ export function ListingsManagement() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <Label htmlFor="listing_status">Product Status</Label>
-                    <select
-                      id="listing_status"
-                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    <Select
                       value={form.status}
-                      onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value as ListingStatus }))}
+                      onValueChange={(value) => setForm((prev) => ({ ...prev, status: value as ListingStatus }))}
                       disabled={isSubmitting}
                     >
-                      {Object.entries(LISTING_STATUS_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger id="listing_status" className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(LISTING_STATUS_LABELS).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <label className="mt-6 flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={form.active}
-                      onChange={(e) => setForm((prev) => ({ ...prev, active: e.target.checked }))}
+                      onCheckedChange={(next) => setForm((prev) => ({ ...prev, active: Boolean(next) }))}
                       disabled={isSubmitting}
                     />
                     Product is active for booking
@@ -282,13 +291,12 @@ export function ListingsManagement() {
                     ) : (
                       serviceOptions.map((service) => (
                         <label key={service.id} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={form.serviceIds.includes(service.id)}
-                            onChange={(e) =>
+                            onCheckedChange={(next) =>
                               setForm((prev) => ({
                                 ...prev,
-                                serviceIds: e.target.checked
+                                serviceIds: next
                                   ? [...prev.serviceIds, service.id]
                                   : prev.serviceIds.filter((id) => id !== service.id),
                               }))
@@ -325,31 +333,41 @@ export function ListingsManagement() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <select
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                <Select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as "all" | ListingStatus)}
+                  onValueChange={(value) => setStatusFilter(value as "all" | ListingStatus)}
                 >
-                  <option value="all">All statuses</option>
-                  {Object.entries(LISTING_STATUS_LABELS).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {Object.entries(LISTING_STATUS_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button type="button" variant="outline" onClick={() => { setSearchQuery(""); setStatusFilter("all"); }}>
                   Reset filters
                 </Button>
               </div>
             </CardContent>
           </Card>
-          {filteredListings.length === 0 && (
-            <Card>
-              <CardContent className="pt-6 text-sm text-muted-foreground">
-                No products found for your current filters. Try clearing filters or create a new product.
-              </CardContent>
-            </Card>
-          )}
+          {listingsLoading ? (
+            <CardGridSkeleton />
+          ) : filteredListings.length === 0 ? (
+            <EmptyState
+              icon={Box}
+              title={listings.length === 0 ? "No products yet" : "No products found"}
+              description={
+                listings.length === 0
+                  ? "Add your first product so clients can book a specific property, vehicle, or item."
+                  : "Try clearing filters or create a new product."
+              }
+            />
+          ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {filteredListings.map((listing) => (
               <Card key={listing.id}>
@@ -373,7 +391,7 @@ export function ListingsManagement() {
                       onClick={() => handleDelete(listing.id)}
                       loading={deletingId === listing.id}
                     >
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
                 </CardHeader>
@@ -398,6 +416,7 @@ export function ListingsManagement() {
               </Card>
             ))}
           </div>
+          )}
         </TabsContent>
 
         <TabsContent value="inspection">
@@ -431,22 +450,22 @@ export function ListingsManagement() {
               </div>
             </CardContent>
           </Card>
-          {filteredInspectionRows.length === 0 && (
-            <Card>
-              <CardContent className="pt-6 text-sm text-muted-foreground">
-                No products match this inspection filter.
-              </CardContent>
-            </Card>
-          )}
+          {filteredInspectionRows.length === 0 ? (
+            <EmptyState
+              icon={Box}
+              title="No products match this inspection filter"
+              description="Clear the filter or finish product details so listings can go public."
+            />
+          ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {filteredInspectionRows.map((row) => (
               <Card key={row.listing.id}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     {row.readyForPublic ? (
-                      <BadgeCheck className="h-5 w-5 text-green-600" />
+                      <BadgeCheck className="h-5 w-5 text-primary" />
                     ) : (
-                      <AlertTriangle className="h-5 w-5 text-amber-600" />
+                      <AlertTriangle className="h-5 w-5 text-[var(--warning-on-surface)]" />
                     )}
                     {row.listing.name}
                   </CardTitle>
@@ -459,25 +478,25 @@ export function ListingsManagement() {
                   <div className="space-y-2">
                     <p className="flex items-center gap-2">
                       {row.hasImage ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertTriangle className="h-4 w-4 text-[var(--warning-on-surface)]" />
                       )}
                       Product image uploaded
                     </p>
                     <p className="flex items-center gap-2">
                       {row.hasDescription ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertTriangle className="h-4 w-4 text-[var(--warning-on-surface)]" />
                       )}
                       Description/inspection notes completed
                     </p>
                     <p className="flex items-center gap-2">
                       {row.linkedServices.length > 0 ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 text-primary" />
                       ) : (
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertTriangle className="h-4 w-4 text-[var(--warning-on-surface)]" />
                       )}
                       Linked to at least one service
                     </p>
@@ -510,8 +529,9 @@ export function ListingsManagement() {
               </Card>
             ))}
           </div>
+          )}
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

@@ -1,12 +1,12 @@
 // Sidebar navigation layout for tenant dashboard pages.
 
 import { Outlet, NavLink, useLocation, useNavigate, useSearchParams } from "react-router";
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  Briefcase, 
-  Users, 
-  DollarSign, 
+import {
+  LayoutDashboard,
+  Calendar,
+  Briefcase,
+  Users,
+  DollarSign,
   Link as LinkIcon,
   Bot,
   LogOut,
@@ -14,8 +14,12 @@ import {
   Settings,
   Clock,
   Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { CommandPalette, openCommandPalette } from "../dashboard-ui/CommandPalette";
 import { TrialBanner } from "../billing/TrialBanner";
 import { NotificationBell } from "../notifications/NotificationBell";
 import { ThemeToggle } from "../theme/ThemeToggle";
@@ -36,6 +40,72 @@ import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 import { queryKeys } from "../../../lib/queryClient";
 import { readPlatformPaymentReference } from "../../../lib/payments/platformReturn";
 
+const SIDEBAR_COLLAPSED_KEY = "orheo_sidebar_collapsed";
+
+const NAV_GROUPS: Array<{
+  label: string;
+  items: Array<{ path: string; icon: typeof Calendar; label: string }>;
+}> = [
+  {
+    label: "Overview",
+    items: [{ path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" }],
+  },
+  {
+    label: "Schedule",
+    items: [
+      { path: "/dashboard/calendar", icon: Calendar, label: "Calendar" },
+      { path: "/dashboard/availability", icon: Clock, label: "Availability" },
+    ],
+  },
+  {
+    label: "Catalogue",
+    items: [
+      { path: "/dashboard/services", icon: Briefcase, label: "Services" },
+      { path: "/dashboard/products", icon: Package, label: "Products" },
+    ],
+  },
+  {
+    label: "Customers",
+    items: [
+      { path: "/dashboard/clients", icon: Users, label: "Clients" },
+      { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
+      { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },
+    ],
+  },
+  {
+    label: "Assistant",
+    items: [{ path: "/dashboard/orion", icon: Bot, label: "Orion" }],
+  },
+  {
+    label: "Settings",
+    items: [{ path: "/dashboard/settings", icon: Settings, label: "Settings" }],
+  },
+];
+
+const PAGE_TITLES: Array<{ match: string; title: string }> = [
+  { match: "/dashboard/calendar", title: "Calendar" },
+  { match: "/dashboard/availability", title: "Availability" },
+  { match: "/dashboard/services", title: "Services" },
+  { match: "/dashboard/products", title: "Products" },
+  { match: "/dashboard/listings", title: "Products" },
+  { match: "/dashboard/clients", title: "Clients" },
+  { match: "/dashboard/payments", title: "Payments" },
+  { match: "/dashboard/booking-links", title: "Booking Links" },
+  { match: "/dashboard/settings", title: "Settings" },
+  { match: "/dashboard/orion", title: "Orion" },
+  { match: "/dashboard/ai-assistant", title: "Orion" },
+  { match: "/dashboard/choose-plan", title: "Choose a plan" },
+];
+
+function pageTitleFor(pathname: string): string {
+  return PAGE_TITLES.find((entry) => pathname.startsWith(entry.match))?.title ?? "Dashboard";
+}
+
+function readCollapsedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+}
+
 export function DashboardLayout() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,8 +113,13 @@ export function DashboardLayout() {
   const queryClient = useQueryClient();
   const paymentReference = readPlatformPaymentReference(searchParams);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsedPreference);
   const [user, setUser] = useState<{ full_name: string; email: string } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  }, [collapsed]);
 
   const handleLogout = () => {
     setUser(null);
@@ -156,19 +231,6 @@ export function DashboardLayout() {
         .slice(0, 2)
     : "KB";
 
-  const navItems = [
-    { path: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-    { path: "/dashboard/calendar", icon: Calendar, label: "Calendar" },
-    { path: "/dashboard/availability", icon: Clock, label: "Availability" },
-    { path: "/dashboard/services", icon: Briefcase, label: "Services" },
-    { path: "/dashboard/products", icon: Package, label: "Products" },
-    { path: "/dashboard/clients", icon: Users, label: "Clients" },
-    { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
-    { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },
-    { path: "/dashboard/settings", icon: Settings, label: "Settings" },
-    { path: "/dashboard/orion", icon: Bot, label: "Orion" },
-  ];
-
   // Child pages fetch on mount, so an admin (or expired) session must not
   // reach them even for the frame before the guard redirects.
   if (paymentReference) {
@@ -181,107 +243,149 @@ export function DashboardLayout() {
 
   if (!hasLiveSession() || isPlatformAdminSession()) return null;
 
+  const pageTitle = pageTitleFor(location.pathname);
+
   return (
     <div className="flex h-screen bg-background text-foreground">
-      {/* Sidebar */}
-      <aside className={`
-        fixed lg:static inset-y-0 left-0 z-50 w-64 bg-card border-r border-border
-        transform transition-transform duration-200 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-      `}>
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="h-16 flex items-center px-6 border-b border-border">
-            <div className="flex items-center gap-3">
-              <img src={orheoLogo} alt="Orheo logo" className="h-8 w-auto rounded-md bg-black p-1" />
-              <span className="font-semibold text-lg text-primary">Orheo</span>
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground
+          border-r border-sidebar-border transition-[transform,width] duration-200 ease-in-out
+          lg:static lg:translate-x-0
+          ${collapsed ? "w-64 lg:w-[76px]" : "w-64"}
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+        `}
+      >
+        <div
+          className={`flex h-16 shrink-0 items-center border-b border-sidebar-border ${
+            collapsed ? "lg:justify-center lg:px-0" : ""
+          } px-5`}
+        >
+          <div className="flex items-center gap-2.5">
+            <img src={orheoLogo} alt="Orheo" className="h-8 w-8 shrink-0 rounded-lg object-contain" />
+            <span
+              className={`text-lg font-semibold tracking-tight text-sidebar-foreground ${
+                collapsed ? "lg:hidden" : ""
+              }`}
+            >
+              Orheo
+            </span>
+          </div>
+        </div>
+
+        <nav className="workspace-scroll flex-1 overflow-y-auto px-3 py-4">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="mb-5 last:mb-0">
+              <p className={`workspace-nav-group-label ${collapsed ? "lg:hidden" : ""}`}>
+                {group.label}
+              </p>
+              <div className="space-y-1">
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.path === "/dashboard"}
+                    onClick={() => setSidebarOpen(false)}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) => `
+                      flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors
+                      ${collapsed ? "lg:justify-center lg:px-0" : ""}
+                      ${
+                        isActive
+                          ? "bg-sidebar-primary/15 font-medium text-sidebar-primary"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }
+                    `}
+                  >
+                    <item.icon className="h-[18px] w-[18px] shrink-0" />
+                    <span className={collapsed ? "lg:hidden" : ""}>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        <div className="shrink-0 border-t border-sidebar-border p-3">
+          <div className={`flex items-center gap-3 px-2 py-2 ${collapsed ? "lg:justify-center lg:px-0" : ""}`}>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
+              {initials}
+            </div>
+            <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
+              <p className="truncate text-sm font-medium text-sidebar-foreground">
+                {user?.full_name ?? "Business User"}
+              </p>
+              <p className="truncate text-xs text-sidebar-foreground/60">{user?.email ?? ""}</p>
             </div>
           </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === "/dashboard"}
-                onClick={() => setSidebarOpen(false)}
-                className={({ isActive }) => `
-                  flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                  ${isActive 
-                    ? 'bg-primary text-primary-foreground' 
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  }
-                `}
-              >
-                <item.icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* User section */}
-          <div className="p-4 border-t border-border">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-                {initials}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{user?.full_name ?? "Business User"}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
-              </div>
-            </div>
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-2 mb-2"
-              onClick={() => navigate("/dashboard/settings")}
-            >
-              <Settings className="w-4 h-4" />
-              Account settings
-            </Button>
-            <Button 
-              variant="outline" 
-              className="w-full justify-start gap-2"
-              onClick={handleLogout}
-            >
-              <LogOut className="w-4 h-4" />
-              Logout
-            </Button>
-          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            title={collapsed ? "Log out" : undefined}
+            className={`mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+              collapsed ? "lg:justify-center lg:px-0" : ""
+            }`}
+          >
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            <span className={collapsed ? "lg:hidden" : ""}>Log out</span>
+          </button>
         </div>
       </aside>
 
-      {/* Mobile overlay */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 shrink-0">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4">
+          <div className="flex min-w-0 items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
               className="lg:hidden"
               onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
             >
-              <Menu className="w-6 h-6" />
+              <Menu className="h-5 w-5" />
             </Button>
-            <span className="font-semibold lg:hidden">Orheo</span>
-            <span className="hidden lg:inline text-sm text-muted-foreground">Dashboard</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden lg:inline-flex"
+              onClick={() => setCollapsed((current) => !current)}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-5 w-5" />
+              ) : (
+                <PanelLeftClose className="h-5 w-5" />
+              )}
+            </Button>
+            <span className="truncate text-sm font-semibold tracking-tight text-foreground">
+              {pageTitle}
+            </span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openCommandPalette}
+              className="hidden items-center gap-2 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground sm:flex"
+            >
+              <Search className="h-3.5 w-3.5" />
+              Search
+              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-sans text-[10px] font-medium">
+                ⌘K
+              </kbd>
+            </button>
             <ThemeToggle compact />
             <NotificationBell />
           </div>
         </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="workspace-scroll flex-1 overflow-y-auto">
           {subscription?.warning_level === "ending_soon" && subscription.warning_message && (
             <TrialBanner
               message={subscription.warning_message}
@@ -298,6 +402,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
         <OrionFloatingWidget />
+        <CommandPalette />
       </div>
     </div>
   );

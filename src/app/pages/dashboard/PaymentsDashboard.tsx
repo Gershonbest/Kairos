@@ -8,7 +8,6 @@ import {
   TrendingUp,
   CreditCard,
   Download,
-  ArrowUpRight,
   CheckCircle,
   Clock,
   XCircle,
@@ -32,6 +31,19 @@ import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { RecordBalanceDialog } from "../../components/payments/RecordBalanceDialog";
+import {
+  BrandAvatar,
+  ChartSkeleton,
+  EmptyState,
+  ErrorNote,
+  ListRow,
+  PageHeader,
+  PageShell,
+  SectionCard,
+  StatCard,
+  StatusBadge,
+} from "../../components/dashboard-ui";
+import { useChartTheme } from "../../../lib/charts/useChartTheme";
 
 type Transaction = {
   id: string;
@@ -71,6 +83,7 @@ function MetricTitleWithTooltip({ title, hint }: { title: string; hint: string }
 
 export function PaymentsDashboard() {
   const queryClient = useQueryClient();
+  const chart = useChartTheme();
   const [balanceTarget, setBalanceTarget] = useState<{
     bookingId: string;
     clientName: string;
@@ -94,6 +107,7 @@ export function PaymentsDashboard() {
   const {
     data: transactionRows = [],
     isError: transactionsFailed,
+    isPending: transactionsLoading,
   } = useQuery({
     queryKey: queryKeys.transactions,
     queryFn: () => api.listTransactions(),
@@ -182,9 +196,6 @@ export function PaymentsDashboard() {
   const balancesRecorded = completedTransactions
     .filter((tx) => tx.purpose === "balance")
     .reduce((sum, tx) => sum + tx.collectedAmount, 0);
-  const totalDepositsCollected = completedTransactions
-    .filter((tx) => tx.purpose !== "balance" && isLikelyDepositCollection(tx))
-    .reduce((sum, tx) => sum + tx.collectedAmount, 0);
   const pendingCheckoutTotal = pendingTransactions.reduce((sum, tx) => sum + tx.collectedAmount, 0);
   const averageCollected =
     completedTransactions.length > 0 ? totalCollected / completedTransactions.length : 0;
@@ -205,161 +216,144 @@ export function PaymentsDashboard() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "completed":
-        return <CheckCircle className="w-4 h-4 text-accent" />;
+        return <CheckCircle className="w-4 h-4 text-primary" />;
       case "pending":
-        return <Clock className="w-4 h-4 text-yellow-500" />;
+        return <Clock className="w-4 h-4 text-[var(--warning-on-surface)]" />;
       case "failed":
-        return <XCircle className="w-4 h-4 text-red-500" />;
+        return <XCircle className="w-4 h-4 text-destructive" />;
       default:
         return null;
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-accent/10 text-accent";
-      case "pending":
-        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-100";
-      case "failed":
-        return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-100";
-      case "partial":
-        return "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-100";
-      default:
-        return "bg-muted text-muted-foreground";
-    }
+  const exportReport = () => {
+    const header = ["Date", "Client", "Service", "Collected", "Service total", "Status", "Method"];
+    const lines = [
+      header,
+      ...recentTransactions.map((tx) => [
+        new Date(tx.date).toISOString(),
+        tx.client,
+        tx.service,
+        tx.collectedAmount.toFixed(2),
+        tx.serviceTotal.toFixed(2),
+        tx.status,
+        tx.method,
+      ]),
+    ];
+    const csv = lines
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `orheo-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold">Payments Dashboard</h1>
-          <p className="text-muted-foreground mt-1">Track your revenue, deposits, and transactions</p>
-        </div>
-        <Button variant="outline">
-          <Download className="w-4 h-4 mr-2" />
-          Export Report
-        </Button>
-      </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+    <PageShell>
+      <PageHeader
+        eyebrow="Customers"
+        title="Payments"
+        description="Track revenue, deposits, and transactions."
+        actions={
+          <Button variant="outline" onClick={exportReport} disabled={recentTransactions.length === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            Export report
+          </Button>
+        }
+      />
+      {error && <ErrorNote>{error}</ErrorNote>}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-accent/5 to-card border-accent/20">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <MetricTitleWithTooltip
-                title="Revenue Collected"
-                hint="Deposits via Orheo plus balance payments you record after appointments."
-              />
-            </CardTitle>
-            <DollarSign className="w-4 h-4 text-accent" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{totalCollected.toFixed(2)}</div>
-            <p className="text-xs text-accent flex items-center gap-1 mt-2">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>
-                Orheo deposits ₦{orheoDepositsCollected.toFixed(2)} · Balances ₦{balancesRecorded.toFixed(2)}
-              </span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <MetricTitleWithTooltip
-                title="Deposits via Orheo"
-                hint="Upfront deposits collected through Orheo/Paystack. Merchant fee applies to these only."
-              />
-            </CardTitle>
-            <CreditCard className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{orheoDepositsCollected.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Outstanding balances: ₦{outstandingBalanceTotal.toFixed(2)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <MetricTitleWithTooltip
-                title="Pending Checkouts"
-                hint="Checkout attempts that started but are not yet completed."
-              />
-            </CardTitle>
-            <Clock className="w-4 h-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{pendingCheckoutTotal.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground mt-2">{pendingTransactions.length} awaiting payment completion</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              <MetricTitleWithTooltip
-                title="Avg. Collected"
-                hint="Average collected amount per completed payment transaction."
-              />
-            </CardTitle>
-            <TrendingUp className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-semibold">₦{averageCollected.toFixed(2)}</div>
-            <p className="text-xs text-accent flex items-center gap-1 mt-2">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>Completed transactions only</span>
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label={
+            <MetricTitleWithTooltip
+              title="Revenue collected"
+              hint="Deposits via Orheo plus balance payments you record after appointments."
+            />
+          }
+          value={`₦${totalCollected.toFixed(2)}`}
+          hint={`Orheo deposits ₦${orheoDepositsCollected.toFixed(2)} · Balances ₦${balancesRecorded.toFixed(2)}`}
+          icon={DollarSign}
+          loading={transactionsLoading}
+        />
+        <StatCard
+          label={
+            <MetricTitleWithTooltip
+              title="Deposits via Orheo"
+              hint="Upfront deposits collected through Orheo/Paystack. Merchant fee applies to these only."
+            />
+          }
+          value={`₦${orheoDepositsCollected.toFixed(2)}`}
+          hint={`Outstanding balances: ₦${outstandingBalanceTotal.toFixed(2)}`}
+          icon={CreditCard}
+          loading={transactionsLoading}
+        />
+        <StatCard
+          label={
+            <MetricTitleWithTooltip
+              title="Pending checkouts"
+              hint="Checkout attempts that started but are not yet completed."
+            />
+          }
+          value={`₦${pendingCheckoutTotal.toFixed(2)}`}
+          hint={`${pendingTransactions.length} awaiting payment completion`}
+          icon={Clock}
+          emphasis={pendingTransactions.length > 0}
+          loading={transactionsLoading}
+        />
+        <StatCard
+          label={
+            <MetricTitleWithTooltip
+              title="Avg. collected"
+              hint="Average collected amount per completed payment transaction."
+            />
+          }
+          value={`₦${averageCollected.toFixed(2)}`}
+          hint="Completed transactions only"
+          icon={TrendingUp}
+          loading={transactionsLoading}
+        />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Collected Revenue vs Deposits</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <SectionCard
+          className="lg:col-span-2"
+          title="Collected revenue vs deposits"
+        >
+          {transactionsLoading ? (
+            <ChartSkeleton height={300} />
+          ) : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={revenueData}>
-                <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis key="x" dataKey="month" stroke="#888888" />
-                <YAxis key="y" stroke="#888888" />
+                <CartesianGrid key="grid" strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis key="x" dataKey="month" stroke={chart.axis} fontSize={12} />
+                <YAxis key="y" stroke={chart.axis} fontSize={12} />
                 <RechartsTooltip
                   key="tooltip"
-                  contentStyle={{
-                    backgroundColor: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
-                  }}
+                  contentStyle={chart.tooltipStyle}
+                  itemStyle={chart.tooltipItemStyle}
+                  labelStyle={chart.tooltipLabelStyle}
                 />
-                <Bar key="collected" dataKey="collected" fill="var(--color-primary)" radius={[8, 8, 0, 0]} />
-                <Bar key="deposits" dataKey="deposits" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
-                <Bar key="balances" dataKey="balances" fill="#64748b" radius={[8, 8, 0, 0]} />
+                <Bar key="collected" dataKey="collected" fill="var(--color-chart-1)" radius={[8, 8, 0, 0]} />
+                <Bar key="deposits" dataKey="deposits" fill="var(--color-chart-2)" radius={[8, 8, 0, 0]} />
+                <Bar key="balances" dataKey="balances" fill="var(--color-chart-5)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          )}
+        </SectionCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Paystack settlement split</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              {paymentsEnabled
-                ? `${platformFeePercent}% merchant fee on deposits collected through Orheo; the rest settles to you.`
-                : "Connect Paystack to enable live settlement splits"}
-            </p>
-          </CardHeader>
-          <CardContent>
+        <SectionCard
+          title="Paystack settlement split"
+          description={
+            paymentsEnabled
+              ? `${platformFeePercent}% merchant fee on deposits collected through Orheo; the rest settles to you.`
+              : "Connect Paystack to enable live settlement splits"
+          }
+        >
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie
@@ -375,15 +369,19 @@ export function PaymentsDashboard() {
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <RechartsTooltip />
+                <RechartsTooltip
+                  contentStyle={chart.tooltipStyle}
+                  itemStyle={chart.tooltipItemStyle}
+                  labelStyle={chart.tooltipLabelStyle}
+                />
               </PieChart>
             </ResponsiveContainer>
-            <div className="space-y-2 mt-4">
+            <div className="mt-4 space-y-2">
               {settlementSplit.map((method) => (
                 <div key={method.name} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div
-                      className="w-3 h-3 rounded-full"
+                      className="h-3 w-3 rounded-full"
                       style={{ backgroundColor: method.color }}
                     />
                     <span className="text-sm">{method.name}</span>
@@ -392,12 +390,11 @@ export function PaymentsDashboard() {
                 </div>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="mt-3 text-xs text-muted-foreground">
               This split applies only to booking deposits that pass through Orheo. Payments you collect outside Orheo
               are not subject to the merchant fee.
             </p>
-          </CardContent>
-        </Card>
+        </SectionCard>
       </div>
 
       {/* Tabs */}
@@ -415,49 +412,39 @@ export function PaymentsDashboard() {
             <CardContent>
               <div className="space-y-3">
                 {recentTransactions.map((transaction) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center text-white font-medium">
-                        {transaction.client.split(" ").map((n) => n[0]).join("")}
+                  <ListRow key={transaction.id}>
+                    <BrandAvatar name={transaction.client} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <h4 className="truncate font-medium">{transaction.client}</h4>
+                        {getStatusIcon(transaction.status)}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium">{transaction.client}</h4>
-                          {getStatusIcon(transaction.status)}
-                        </div>
-                        <p className="text-sm text-muted-foreground">{transaction.service}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(transaction.date).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </span>
-                          <span className="text-xs text-muted-foreground">via {transaction.method}</span>
-                        </div>
+                      <p className="text-sm text-muted-foreground">{transaction.service}</p>
+                      <div className="mt-1 flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(transaction.date).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                        <span className="text-xs text-muted-foreground">via {transaction.method}</span>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold text-lg">₦{transaction.collectedAmount.toFixed(2)}</p>
-                      <p className="text-xs text-muted-foreground">Service total: ₦{transaction.serviceTotal.toFixed(2)}</p>
+                    <div className="shrink-0 text-right">
+                      <p className="text-lg font-semibold tabular-nums">₦{transaction.collectedAmount.toFixed(2)}</p>
                       <p className="text-xs text-muted-foreground">
-                        {isLikelyDepositCollection(transaction) ? "Deposit payment" : "Full/other payment"}
+                        Service total: ₦{transaction.serviceTotal.toFixed(2)}
                       </p>
-                      <span
-                        className={`inline-block mt-1 px-2 py-1 text-xs rounded-full ${getStatusColor(
-                          transaction.status
-                        )}`}
-                      >
-                        {transaction.status}
-                      </span>
+                      <StatusBadge status={transaction.status} className="mt-1" />
                     </div>
-                  </div>
+                  </ListRow>
                 ))}
                 {recentTransactions.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No payment transactions yet.</p>
+                  <EmptyState
+                    icon={CreditCard}
+                    title="No payment transactions yet"
+                    description="Once clients pay deposits or you record balances, they appear here."
+                  />
                 )}
               </div>
             </CardContent>
@@ -484,21 +471,15 @@ export function PaymentsDashboard() {
                         <h4 className="font-medium">{row.client_name}</h4>
                         <p className="text-sm text-muted-foreground">{row.service_name}</p>
                       </div>
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full shrink-0 ${getStatusColor(
+                      <StatusBadge
+                        status={
                           row.payment_state === "forfeited"
                             ? "failed"
                             : row.payment_state === "deposit_paid"
                               ? "partial"
-                              : "completed",
-                        )}`}
-                      >
-                        {row.payment_state === "forfeited"
-                          ? "No-show · deposit only"
-                          : row.payment_state === "deposit_paid"
-                            ? "Balance due"
-                            : row.payment_state}
-                      </span>
+                              : row.payment_state
+                        }
+                      />
                     </div>
                     <div className="grid grid-cols-3 gap-4 mb-3">
                       <div>
@@ -552,7 +533,10 @@ export function PaymentsDashboard() {
                   </div>
                 ))}
                 {balanceRows.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No outstanding deposit balances.</p>
+                  <EmptyState
+                    title="No outstanding deposit balances"
+                    description="Balances appear here after a client pays a deposit and still owes the rest."
+                  />
                 )}
               </div>
             </CardContent>
@@ -575,6 +559,6 @@ export function PaymentsDashboard() {
           await refreshPaymentData();
         }}
       />
-    </div>
+    </PageShell>
   );
 }

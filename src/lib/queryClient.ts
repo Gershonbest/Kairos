@@ -25,6 +25,8 @@ export const queryKeys = {
   subscriptionPlans: ["subscription-plans"] as const,
   paystackBanks: ["paystack-banks"] as const,
   settingsBundle: ["settings-bundle"] as const,
+  knowledgeDocuments: ["knowledge-documents"] as const,
+  knowledgeFaqs: ["knowledge-faqs"] as const,
 };
 
 export const queryClient = new QueryClient({

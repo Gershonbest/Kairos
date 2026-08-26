@@ -7,8 +7,13 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Textarea } from "../../components/ui/textarea";
+import { Checkbox } from "../../components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { cn } from "../../components/ui/utils";
 import { BrandLoader } from "../../components/brand/BrandLoader";
+import { ErrorNote, PageHeader, PageShell, SectionCard } from "../../components/dashboard-ui";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import { LocationFields } from "../../components/forms/LocationFields";
 import { PhoneInput } from "../../components/forms/PhoneInput";
@@ -63,6 +68,9 @@ function toggleReminderOffset(offsets: number[], minutes: number): number[] {
   }
   return [...offsets, minutes].sort((a, b) => b - a);
 }
+
+const SETTINGS_TAB_TRIGGER_CLASS =
+  "h-auto flex-none justify-start rounded-lg px-3 py-2 shadow-none data-[state=active]:shadow-none dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-muted lg:w-full";
 
 const TIMEZONES = [
   "Africa/Lagos",
@@ -596,11 +604,11 @@ export function AccountSettings() {
   }
 
   return (
-    <div className="p-6 max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your account, business, payments, and preferences.</p>
-      </div>
+    <PageShell className="max-w-5xl">
+      <PageHeader
+        title="Settings"
+        description="Manage your account, business, payments, and preferences."
+      />
 
       {!onboardingCompleted && (
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -623,9 +631,9 @@ export function AccountSettings() {
       )}
 
       {(error || success) && (
-        <div className="space-y-1">
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          {success && <p className="text-sm text-accent">{success}</p>}
+        <div className="space-y-2">
+          {error && <ErrorNote>{error}</ErrorNote>}
+          {success && <ErrorNote tone="success">{success}</ErrorNote>}
         </div>
       )}
 
@@ -642,19 +650,40 @@ export function AccountSettings() {
             return next;
           });
         }}
+        className="gap-4 lg:flex-row lg:items-start lg:gap-8"
       >
-        <TabsList className="flex flex-wrap h-auto gap-1 w-full justify-start">
-          <TabsTrigger value="account">Account</TabsTrigger>
-          <TabsTrigger value="business">Business</TabsTrigger>
-          <TabsTrigger value="public">Public page</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="billing">Billing</TabsTrigger>
-          <TabsTrigger value="danger">Danger zone</TabsTrigger>
+        <TabsList
+          className={cn(
+            "workspace-scroll h-auto w-full max-w-full justify-start gap-1 overflow-x-auto",
+            "lg:sticky lg:top-6 lg:w-52 lg:shrink-0 lg:flex-col lg:items-stretch lg:overflow-visible lg:bg-transparent lg:p-0",
+          )}
+        >
+          <TabsTrigger value="account" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Account
+          </TabsTrigger>
+          <TabsTrigger value="business" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Business
+          </TabsTrigger>
+          <TabsTrigger value="public" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Public page
+          </TabsTrigger>
+          <TabsTrigger value="payments" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Payments
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Notifications
+          </TabsTrigger>
+          <TabsTrigger value="billing" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Billing
+          </TabsTrigger>
+          <TabsTrigger value="danger" className={SETTINGS_TAB_TRIGGER_CLASS}>
+            Danger zone
+          </TabsTrigger>
         </TabsList>
+        <div className="min-w-0 flex-1 space-y-4">
 
-        <TabsContent value="account" className="mt-4 space-y-4">
-          <form onSubmit={handleSaveProfile} className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <TabsContent value="account" className="mt-0 space-y-4">
+          <form onSubmit={handleSaveProfile} className="workspace-panel space-y-4 p-6">
             <div>
               <h2 className="text-lg font-medium">Profile</h2>
               <p className="text-sm text-muted-foreground">The name shown to your team and on emails you send.</p>
@@ -680,7 +709,7 @@ export function AccountSettings() {
             </Button>
           </form>
 
-          <form onSubmit={handleChangeEmail} className="bg-card border border-border rounded-xl p-6 space-y-4">
+          <form onSubmit={handleChangeEmail} className="workspace-panel space-y-4 p-6">
             <div>
               <h2 className="text-lg font-medium">Login email</h2>
               <p className="text-sm text-muted-foreground">
@@ -697,7 +726,7 @@ export function AccountSettings() {
                 <span className="text-xs font-medium rounded-full bg-accent/15 text-accent px-2 py-1">Verified</span>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium rounded-full bg-amber-100 text-amber-800 px-2 py-1">
+                  <span className="rounded-full bg-[var(--warning-surface)] px-2 py-1 text-xs font-medium text-[var(--warning-on-surface)]">
                     Unverified
                   </span>
                   <Button
@@ -760,7 +789,7 @@ export function AccountSettings() {
             )}
           </form>
 
-          <form onSubmit={handleChangePassword} className="bg-card border border-border rounded-xl p-6 space-y-4">
+          <form onSubmit={handleChangePassword} className="workspace-panel space-y-4 p-6">
             <div>
               <h2 className="text-lg font-medium">Password</h2>
               <p className="text-sm text-muted-foreground">Use at least 8 characters.</p>
@@ -825,8 +854,8 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
-        <TabsContent value="business" className="mt-4">
-          <form onSubmit={handleSaveBusiness} className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <TabsContent value="business" className="mt-0">
+          <form onSubmit={handleSaveBusiness} className="workspace-panel space-y-5 p-6">
             <ImageUpload label="Company logo" value={logoUrl} onChange={setLogoUrl} uploadKind="logo" disabled={saving} />
             <div>
               <Label htmlFor="businessName">Business name</Label>
@@ -834,21 +863,19 @@ export function AccountSettings() {
             </div>
             <div>
               <Label htmlFor="businessType">Business type</Label>
-              <select
-                id="businessType"
-                value={businessType}
-                onChange={(e) => setBusinessType(e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-input rounded-lg bg-background"
-                disabled={saving}
-              >
-                <option value="">Select a type</option>
-                <option value="consultant">Consultant</option>
-                <option value="clinic">Medical Clinic</option>
-                <option value="coach">Coach/Trainer</option>
-                <option value="salon">Salon/Spa</option>
-                <option value="legal">Legal Services</option>
-                <option value="other">Other Professional Services</option>
-              </select>
+              <Select value={businessType || undefined} onValueChange={setBusinessType} disabled={saving}>
+                <SelectTrigger id="businessType" className="mt-1">
+                  <SelectValue placeholder="Select a type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="consultant">Consultant</SelectItem>
+                  <SelectItem value="clinic">Medical Clinic</SelectItem>
+                  <SelectItem value="coach">Coach/Trainer</SelectItem>
+                  <SelectItem value="salon">Salon/Spa</SelectItem>
+                  <SelectItem value="legal">Legal Services</SelectItem>
+                  <SelectItem value="other">Other Professional Services</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="helpEmail">Help / support email</Label>
@@ -856,17 +883,18 @@ export function AccountSettings() {
             </div>
             <div>
               <Label htmlFor="timezone">Timezone</Label>
-              <select
-                id="timezone"
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="mt-1 w-full px-3 py-2 border border-input rounded-lg bg-background"
-                disabled={saving}
-              >
-                {TIMEZONES.map((tz) => (
-                  <option key={tz} value={tz}>{tz}</option>
-                ))}
-              </select>
+              <Select value={timezone} onValueChange={setTimezone} disabled={saving}>
+                <SelectTrigger id="timezone" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <PhoneInput
               countryCode={countryCode}
@@ -956,8 +984,8 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
-        <TabsContent value="public" className="mt-4">
-          <form onSubmit={handleSavePublic} className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <TabsContent value="public" className="mt-0">
+          <form onSubmit={handleSavePublic} className="workspace-panel space-y-5 p-6">
             <ImageUpload label="Public logo" value={publicLogoUrl} onChange={setPublicLogoUrl} uploadKind="logo" disabled={saving} />
             <div>
               <Label htmlFor="publicSlug">Public booking URL slug</Label>
@@ -970,32 +998,32 @@ export function AccountSettings() {
             </div>
             <div>
               <Label htmlFor="description">Description</Label>
-              <textarea
+              <Textarea
                 id="description"
                 value={publicDescription}
                 onChange={(e) => setPublicDescription(e.target.value)}
-                className="mt-1 w-full min-h-[100px] px-3 py-2 border border-input rounded-lg bg-background"
+                className="mt-1 min-h-[100px]"
                 disabled={saving}
               />
             </div>
             <div>
               <Label htmlFor="cancellationPolicy">Cancellation policy</Label>
-              <textarea
+              <Textarea
                 id="cancellationPolicy"
                 value={cancellationPolicy}
                 onChange={(e) => setCancellationPolicy(e.target.value)}
-                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-lg bg-background"
+                className="mt-1 min-h-[80px]"
                 disabled={saving}
                 placeholder="e.g. Cancel or reschedule at least 24 hours before your appointment."
               />
             </div>
             <div>
               <Label htmlFor="bookingPolicies">Booking policies</Label>
-              <textarea
+              <Textarea
                 id="bookingPolicies"
                 value={bookingPolicies}
                 onChange={(e) => setBookingPolicies(e.target.value)}
-                className="mt-1 w-full min-h-[80px] px-3 py-2 border border-input rounded-lg bg-background"
+                className="mt-1 min-h-[80px]"
                 disabled={saving}
                 placeholder="e.g. Arrive 10 minutes early. Late arrivals may be shortened."
               />
@@ -1010,8 +1038,8 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
-        <TabsContent value="payments" className="mt-4">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+        <TabsContent value="payments" className="mt-0">
+          <div className="workspace-panel space-y-5 p-6">
             <div className="rounded-lg border border-border p-4 bg-muted/30">
               <p className="text-sm">
                 Status:{" "}
@@ -1095,8 +1123,8 @@ export function AccountSettings() {
           </div>
         </TabsContent>
 
-        <TabsContent value="notifications" className="mt-4">
-          <form onSubmit={handleSaveNotifications} className="bg-card border border-border rounded-xl p-6 space-y-6">
+        <TabsContent value="notifications" className="mt-0">
+          <form onSubmit={handleSaveNotifications} className="workspace-panel space-y-6 p-6">
             <div className="space-y-4">
               <h2 className="text-sm font-medium">Business alerts</h2>
               {[
@@ -1104,12 +1132,10 @@ export function AccountSettings() {
                 { id: "bookingCreated", label: "Email when a booking is created", checked: bookingCreatedEmail, set: setBookingCreatedEmail },
                 { id: "paymentReceived", label: "Email when a payment is received", checked: paymentReceivedEmail, set: setPaymentReceivedEmail },
               ].map((item) => (
-                <label key={item.id} className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
+                <label key={item.id} className="flex cursor-pointer items-center gap-3">
+                  <Checkbox
                     checked={item.checked}
-                    onChange={(e) => item.set(e.target.checked)}
-                    className="w-4 h-4 rounded border-border text-primary"
+                    onCheckedChange={(next) => item.set(Boolean(next))}
                     disabled={saving}
                   />
                   <span className="text-sm">{item.label}</span>
@@ -1158,11 +1184,9 @@ export function AccountSettings() {
               ).map((channel) => (
                 <div key={channel.key} className={`rounded-xl border border-border p-4 space-y-3 ${channel.disabled ? "opacity-60" : ""}`}>
                   <label className={`flex items-center gap-3 ${channel.disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={channel.enabled}
-                      onChange={(e) => channel.setEnabled(e.target.checked)}
-                      className="w-4 h-4 rounded border-border text-primary"
+                      onCheckedChange={(next) => channel.setEnabled(Boolean(next))}
                       disabled={saving || channel.disabled}
                     />
                     <span className="text-sm font-medium">{channel.label}</span>
@@ -1205,8 +1229,8 @@ export function AccountSettings() {
           </form>
         </TabsContent>
 
-        <TabsContent value="billing" className="mt-4">
-          <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+        <TabsContent value="billing" className="mt-0">
+          <div className="workspace-panel space-y-4 p-6">
             <div>
               <p className="text-sm text-muted-foreground">Current plan</p>
               <p className="text-2xl font-semibold capitalize">{planCode}</p>
@@ -1249,31 +1273,33 @@ export function AccountSettings() {
           </div>
         </TabsContent>
 
-        <TabsContent value="danger" className="mt-4">
-          <div className="bg-card border border-destructive/30 rounded-xl p-6 space-y-4">
-            <h2 className="text-lg font-medium text-destructive">Deactivate business</h2>
-            <p className="text-sm text-muted-foreground">
-              This soft-deactivates your business and signs out all users. Public booking and dashboard access stop.
-              Type <strong>DEACTIVATE</strong> to confirm.
-            </p>
-            <Input
-              value={deactivateConfirm}
-              onChange={(e) => setDeactivateConfirm(e.target.value)}
-              placeholder="DEACTIVATE"
-              disabled={saving}
-            />
-            <Button
-              type="button"
-              variant="destructive"
-              loading={saving}
-              loadingLabel="Deactivating..."
-              onClick={() => void handleDeactivate()}
-            >
-              Deactivate account
-            </Button>
-          </div>
+        <TabsContent value="danger" className="mt-0">
+          <SectionCard
+            tone="danger"
+            title="Deactivate business"
+            description="This soft-deactivates your business and signs out all users. Public booking and dashboard access stop. Type DEACTIVATE to confirm."
+          >
+            <div className="space-y-4">
+              <Input
+                value={deactivateConfirm}
+                onChange={(e) => setDeactivateConfirm(e.target.value)}
+                placeholder="DEACTIVATE"
+                disabled={saving}
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                loading={saving}
+                loadingLabel="Deactivating..."
+                onClick={() => void handleDeactivate()}
+              >
+                Deactivate account
+              </Button>
+            </div>
+          </SectionCard>
         </TabsContent>
+        </div>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }
