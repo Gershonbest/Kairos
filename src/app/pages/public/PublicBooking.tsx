@@ -30,6 +30,7 @@ import {
   type AppointmentFormat,
   type AppointmentType,
 } from "../../../lib/types/service";
+import { resolveMediaUrl } from "../../../lib/media";
 import { PhoneInput } from "../../components/forms/PhoneInput";
 import { BrandLoader } from "../../components/brand/BrandLoader";
 import { getDialCodeForCountry } from "../../../lib/data/locations";
@@ -892,7 +893,7 @@ export function PublicBooking() {
             <div className="mb-4 flex items-center gap-3">
               {businessProfile.public_logo_url ? (
                 <img
-                  src={businessProfile.public_logo_url}
+                  src={resolveMediaUrl(businessProfile.public_logo_url)}
                   alt=""
                   className="h-10 w-10 rounded-xl object-cover ring-1 ring-border"
                 />

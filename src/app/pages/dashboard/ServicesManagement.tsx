@@ -36,6 +36,7 @@ import {
   type BookingType,
   type ServiceAppointmentDetails,
 } from "../../../lib/types/service";
+import { resolveMediaUrl } from "../../../lib/media";
 
 interface Service {
   id: string;
@@ -501,7 +502,7 @@ export function ServicesManagement() {
             {service.imageUrl && (
               <div className="h-40 overflow-hidden bg-muted/20 p-2">
                 <img
-                  src={service.imageUrl}
+                  src={resolveMediaUrl(service.imageUrl)}
                   alt={service.name}
                   className="w-full h-full object-contain rounded-lg"
                 />

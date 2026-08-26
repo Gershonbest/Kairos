@@ -1,6 +1,7 @@
 // Initials avatar using the shared brand gradient tokens.
 
 import { cn } from "../ui/utils";
+import { resolveMediaUrl } from "../../../lib/media";
 
 type BrandAvatarProps = {
   name: string;
@@ -26,7 +27,7 @@ export function BrandAvatar({ name, imageUrl, size = "md", className }: BrandAva
   if (imageUrl) {
     return (
       <img
-        src={imageUrl}
+        src={resolveMediaUrl(imageUrl)}
         alt=""
         className={cn("shrink-0 rounded-full object-cover", SIZES[size], className)}
       />
