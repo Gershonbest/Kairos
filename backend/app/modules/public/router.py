@@ -1,16 +1,17 @@
 """Unauthenticated public business, availability, and booking endpoints."""
 
+import asyncio
 from datetime import UTC, datetime, time, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
-from pydantic import EmailStr
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.infra.cache import get_redis, redis_cache
 from app.infra.calendar_ics import CalendarEventArgs, calendar_invite_service
-from app.infra.db import get_db_session
+from app.infra.db import SessionLocal, get_db_session
 from app.infra.models import (
     AppointmentFormat,
     AvailabilityRule,
@@ -30,7 +31,8 @@ from app.infra.models import (
 )
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.clients.names import compose_full_name, profile_display_name, split_person_name, visit_display_name
-from app.modules.notifications.outbound import schedule_booking_reminders
+from app.modules.ai.workspace import workspace
+from app.modules.notifications.outbound import queue_booking_confirmations, schedule_booking_reminders
 from app.modules.notifications.service import (
     build_booking_receipt_data,
     create_booking_notifications,
@@ -164,6 +166,9 @@ def _booking_response(
         business_help_email=tenant.help_email,
         paid_at=payment_tx.paid_at if payment_tx else None,
         payment_currency=payment_tx.currency if payment_tx else None,
+        online_meeting_link=(
+            service.online_meeting_link if appointment_format == AppointmentFormat.online else None
+        ),
     )
 
 
@@ -695,6 +700,9 @@ async def create_public_booking(
         await schedule_booking_reminders(
             session, tenant=tenant, booking=booking, client=client, service=service
         )
+        await queue_booking_confirmations(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
         await session.commit()
         await session.refresh(booking)
         await redis.delete(lock_key)
@@ -715,7 +723,7 @@ async def create_public_booking(
             host_title=service.host_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
-            online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
+            online_meeting_link=service.online_meeting_link,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
             business_logo_url=tenant.public_logo_url,
@@ -853,6 +861,9 @@ async def confirm_public_booking_payment(
         await schedule_booking_reminders(
             session, tenant=tenant, booking=booking, client=client, service=service
         )
+        await queue_booking_confirmations(
+            session, tenant=tenant, booking=booking, client=client, service=service
+        )
 
     await session.commit()
     await session.refresh(booking)
@@ -875,7 +886,7 @@ async def confirm_public_booking_payment(
             host_title=service.host_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
-            online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
+            online_meeting_link=service.online_meeting_link,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
             business_logo_url=tenant.public_logo_url,
@@ -984,3 +995,63 @@ async def email_booking_receipt(
     )
     background_tasks.add_task(send_booking_receipt_from_data, receipt)
     return {"ok": True, "email": receipt.client_email}
+
+
+class PublicAiChatRequest(BaseModel):
+    message: str
+    thread_id: str | None = None
+    language: str | None = None
+
+
+@router.post("/businesses/{business_id}/ai/chat")
+async def public_ai_chat(
+    business_id: str,
+    payload: PublicAiChatRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    tenant = await resolve_tenant_key(business_id, session)
+    result = await workspace.chat(
+        session=session,
+        tenant_id=tenant.id,
+        message=payload.message,
+        agent_key="public_booking",
+        audience="external",
+        user_id=None,
+        thread_id=payload.thread_id,
+        language=payload.language,
+    )
+    return {
+        "reply": result.reply,
+        "thread_id": result.thread_id,
+        "agent": result.agent,
+        "status": result.status,
+    }
+
+
+@router.post("/businesses/{business_id}/ai/chat/stream")
+async def public_ai_chat_stream(
+    business_id: str,
+    payload: PublicAiChatRequest,
+):
+    from fastapi.responses import StreamingResponse
+
+    async with SessionLocal() as session:
+        tenant = await resolve_tenant_key(business_id, session)
+
+    async def event_gen():
+        try:
+            async with SessionLocal() as session:
+                async for chunk in workspace.stream_chat(
+                    session=session,
+                    tenant_id=tenant.id,
+                    message=payload.message,
+                    agent_key="public_booking",
+                    audience="external",
+                    thread_id=payload.thread_id,
+                    language=payload.language,
+                ):
+                    yield chunk
+        except asyncio.CancelledError:
+            raise
+
+    return StreamingResponse(event_gen(), media_type="application/x-ndjson")

@@ -21,7 +21,7 @@ from app.infra.models import (
     Service,
     Tenant,
 )
-from app.modules.clients.names import visit_display_name
+from app.modules.payments.service import BOOKING_LEDGER_PURPOSES
 
 router = APIRouter(dependencies=[Depends(require_active_subscription)])
 
@@ -97,7 +97,7 @@ async def get_dashboard_home_stats(
             .where(
                 PaymentTransaction.tenant_id == tenant.id,
                 PaymentTransaction.status == PaymentStatus.succeeded,
-                PaymentTransaction.purpose == "booking",
+                PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)),
                 func.coalesce(PaymentTransaction.paid_at, PaymentTransaction.created_at) >= week_start_utc,
                 func.coalesce(PaymentTransaction.paid_at, PaymentTransaction.created_at) <= now,
             )
@@ -110,7 +110,7 @@ async def get_dashboard_home_stats(
             .where(
                 PaymentTransaction.tenant_id == tenant.id,
                 PaymentTransaction.status == PaymentStatus.succeeded,
-                PaymentTransaction.purpose == "booking",
+                PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)),
                 func.coalesce(PaymentTransaction.paid_at, PaymentTransaction.created_at) >= month_start_utc,
                 func.coalesce(PaymentTransaction.paid_at, PaymentTransaction.created_at) <= now,
             )
@@ -145,7 +145,7 @@ async def get_dashboard_home_stats(
             select(PaymentTransaction.currency)
             .where(
                 PaymentTransaction.tenant_id == tenant.id,
-                PaymentTransaction.purpose == "booking",
+                PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)),
             )
             .order_by(PaymentTransaction.created_at.desc())
             .limit(1)
@@ -210,7 +210,7 @@ async def get_dashboard_summary(
     completed_transactions = [
         t
         for t in transactions
-        if t.status == PaymentStatus.succeeded and t.purpose == "booking"
+        if t.status == PaymentStatus.succeeded and t.purpose in BOOKING_LEDGER_PURPOSES
     ]
 
     def transaction_month(tx: PaymentTransaction) -> tuple[int, int] | None:

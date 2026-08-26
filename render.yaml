@@ -62,6 +62,26 @@ services:
       # Optional integrations — set in dashboard when ready.
       - key: BREVO_API_KEY
         sync: false
+      - key: MESSAGING_PROVIDER
+        value: brevo
+      - key: BREVO_SMS_SENDER
+        sync: false
+      - key: BREVO_WHATSAPP_SENDER
+        sync: false
+      - key: BREVO_WHATSAPP_TEMPLATE_CONFIRMATION
+        sync: false
+      - key: BREVO_WHATSAPP_TEMPLATE_REMINDER
+        sync: false
+      - key: TERMII_API_KEY
+        sync: false
+      - key: TERMII_BASE_URL
+        value: https://api.ng.termii.com
+      - key: TERMII_SMS_SENDER
+        sync: false
+      - key: TERMII_WHATSAPP_SENDER
+        sync: false
+      - key: TERMII_SMS_CHANNEL
+        value: dnd
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
       - key: PAYSTACK_SECRET_KEY
@@ -79,6 +99,16 @@ services:
       - key: PAYSTACK_CALLBACK_URL_BOOKING
         value: https://kairos-frontend-sugb.onrender.com/book
       - key: MESSAGING_DRY_RUN
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: VECTOR_STORE_PROVIDER
+        value: pgvector
+      - key: AI_ENABLED
         value: "true"
 
   # ----- Frontend (Vite build served by nginx) -----

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { BrandLoader } from "../../components/brand/BrandLoader";
 import { WeeklyAvailabilityEditor } from "../../components/forms/WeeklyAvailabilityEditor";
+import { ErrorNote, PageHeader, PageShell, StatCard } from "../../components/dashboard-ui";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import {
@@ -70,39 +71,21 @@ export function AvailabilitySettings() {
   const loadError = isError ? "Unable to load your availability." : error;
 
   return (
-    <div className="p-6 space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-3xl font-semibold">Weekly Availability</h1>
-        <p className="text-muted-foreground mt-1">
-          Set when clients can book you. Changes apply immediately to your public booking page.
-        </p>
-      </div>
+    <PageShell width="narrow">
+      <PageHeader
+        eyebrow="Schedule"
+        title="Weekly availability"
+        description="Set when clients can book you. Changes apply immediately to your public booking page."
+      />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Calendar className="w-4 h-4" />
-              Open days
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold">{enabledDays} / 7</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Clock className="w-4 h-4" />
-              Booking windows
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Slot length follows each service&apos;s duration and buffer settings.
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCard label="Open days" value={`${enabledDays} / 7`} icon={Calendar} />
+        <StatCard
+          label="Booking windows"
+          value="Service-led"
+          hint="Slot length follows each service's duration and buffer settings."
+          icon={Clock}
+        />
       </div>
 
       <Card>
@@ -116,10 +99,10 @@ export function AvailabilitySettings() {
             <form onSubmit={handleSave} className="space-y-4">
               <WeeklyAvailabilityEditor value={availability} onChange={setAvailability} disabled={isSaving} />
 
-              {loadError && <p className="text-sm text-red-600">{loadError}</p>}
-              {success && <p className="text-sm text-accent">{success}</p>}
+              {loadError && <ErrorNote>{loadError}</ErrorNote>}
+              {success && <ErrorNote tone="success">{success}</ErrorNote>}
 
-              <Button type="submit" className="bg-primary hover:bg-primary/90" loading={isSaving} loadingLabel="Saving...">
+              <Button type="submit" loading={isSaving} loadingLabel="Saving...">
                 <Save className="w-4 h-4 mr-2" />
                 Save weekly hours
               </Button>
@@ -127,6 +110,6 @@ export function AvailabilitySettings() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

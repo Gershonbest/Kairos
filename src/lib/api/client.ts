@@ -242,6 +242,79 @@ async function request<T>(path: string, init: RequestInit = {}, allowRefresh = t
   return response.json() as Promise<T>;
 }
 
+export type AiStreamEvent =
+  | { type: "status"; text: string }
+  | { type: "tool_start"; name: string; label?: string }
+  | { type: "tool_end"; name: string; preview?: string | null }
+  | { type: "token"; text: string }
+  | {
+      type: "final";
+      reply: string;
+      thread_id: string;
+      agent: string;
+      status: string;
+      suggestions?: string[];
+      pending_actions?: Array<{ id: string; type: string; args: Record<string, unknown> }>;
+    };
+
+async function consumeNdjsonStream(
+  path: string,
+  init: RequestInit,
+  onEvent: (event: AiStreamEvent) => void,
+  allowRefresh = true,
+): Promise<void> {
+  if (allowRefresh) await ensureLiveSession(path);
+  const hasBody = init.body !== undefined && init.body !== null && init.body !== "";
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...authHeaders(),
+      ...(init.headers ?? {}),
+    },
+  });
+
+  if (response.status === 401 && shouldHandleUnauthorized(path)) {
+    if (allowRefresh && (await refreshAccessToken())) {
+      return consumeNdjsonStream(path, init, onEvent, false);
+    }
+    handleUnauthorized(path);
+    throw new SessionExpiredError();
+  }
+
+  if (response.status === 402 && !path.startsWith("/subscriptions")) {
+    redirectToChoosePlan();
+    throw new SubscriptionRequiredError();
+  }
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(formatApiError(body, response.status));
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Streaming is not supported in this browser");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      onEvent(JSON.parse(trimmed) as AiStreamEvent);
+    }
+  }
+  const tail = buffer.trim();
+  if (tail) {
+    onEvent(JSON.parse(tail) as AiStreamEvent);
+  }
+}
+
 async function uploadMultipart(path: string, file: File, allowRefresh = true): Promise<{ url: string }> {
   if (allowRefresh) await ensureLiveSession(path);
   const formData = new FormData();
@@ -367,6 +440,14 @@ export interface BookingListItem {
   host_name?: string | null;
   host_title?: string | null;
   location?: string | null;
+  payment?: {
+    service_price: number;
+    deposit_amount: number;
+    collected_total: number;
+    balance_due: number;
+    balance_waived: boolean;
+    payment_state: "unpaid" | "deposit_paid" | "fully_paid" | "forfeited" | "waived" | string;
+  };
 }
 
 export function bookingClientLabel(booking: {
@@ -569,6 +650,8 @@ export const api = {
       help_email?: string | null;
       timezone?: string;
       onboarding_completed?: boolean;
+      cancellation_policy?: string | null;
+      booking_policies?: string | null;
       setup_progress?: {
         has_services: boolean;
         has_listing_based_service: boolean;
@@ -715,6 +798,8 @@ export const api = {
     public_description?: string;
     public_logo_url?: string;
     public_slug?: string;
+    cancellation_policy?: string;
+    booking_policies?: string;
   }) =>
     request<{ ok: boolean }>("/tenants/me/public-profile", { method: "PUT", body: JSON.stringify(payload) }),
   getNotificationPreferences: () =>
@@ -785,6 +870,17 @@ export const api = {
         last_visit_at?: string | null;
       }>
     >("/clients"),
+  getClient: (clientId: string) =>
+    request<{
+      id: string;
+      full_name: string;
+      email: string;
+      phone?: string;
+      notes?: string;
+      total_bookings: number;
+      total_spent: number;
+      last_visit_at?: string | null;
+    }>(`/clients/${clientId}`),
   createClient: (payload: { full_name: string; email: string; phone?: string; notes?: string }) =>
     request<{ id: string; full_name: string; email: string; phone?: string; notes?: string; total_bookings: number; total_spent: number }>(
       "/clients",
@@ -796,6 +892,74 @@ export const api = {
       { method: "PATCH", body: JSON.stringify(payload) }
     ),
   deleteClient: (clientId: string) => request<{ ok: boolean }>(`/clients/${clientId}`, { method: "DELETE" }),
+  listClientEmailTemplates: () =>
+    request<
+      Array<{
+        id: string;
+        name: string;
+        subject: string;
+        body: string;
+        is_system: boolean;
+      }>
+    >("/clients/email-templates"),
+  createClientEmailTemplate: (payload: { name: string; subject: string; body: string }) =>
+    request<{ id: string; name: string; subject: string; body: string; is_system: boolean }>(
+      "/clients/email-templates",
+      { method: "POST", body: JSON.stringify(payload) }
+    ),
+  updateClientEmailTemplate: (
+    templateId: string,
+    payload: { name?: string; subject?: string; body?: string }
+  ) =>
+    request<{ id: string; name: string; subject: string; body: string; is_system: boolean }>(
+      `/clients/email-templates/${templateId}`,
+      { method: "PATCH", body: JSON.stringify(payload) }
+    ),
+  deleteClientEmailTemplate: (templateId: string) =>
+    request<{ ok: boolean }>(`/clients/email-templates/${templateId}`, { method: "DELETE" }),
+  previewClientEmail: (
+    clientId: string,
+    payload: { template_id?: string; subject?: string; body?: string }
+  ) =>
+    request<{ subject: string; body: string }>(`/clients/${clientId}/email/preview`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  sendClientEmail: (clientId: string, payload: { subject: string; body: string; template_id?: string }) =>
+    request<{ ok: boolean; message: string }>(`/clients/${clientId}/email`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listClientCommunications: (clientId: string) =>
+    request<
+      Array<{
+        id: string;
+        channel: "email" | "phone_call" | "whatsapp";
+        status: string;
+        recipient: string;
+        subject?: string | null;
+        summary?: string | null;
+        template_id?: string | null;
+        template_name?: string | null;
+        actor_name?: string | null;
+        created_at: string;
+      }>
+    >(`/clients/${clientId}/communications`),
+  logClientCommunication: (
+    clientId: string,
+    payload: { channel: "phone_call" | "whatsapp"; phone?: string }
+  ) =>
+    request<{
+      id: string;
+      channel: "email" | "phone_call" | "whatsapp";
+      status: string;
+      recipient: string;
+      subject?: string | null;
+      summary?: string | null;
+      template_name?: string | null;
+      actor_name?: string | null;
+      created_at: string;
+    }>(`/clients/${clientId}/communications`, { method: "POST", body: JSON.stringify(payload) }),
   listBookings: () => request<BookingListItem[]>("/bookings"),
   listManualBookingAvailability: (
     serviceId: string,
@@ -836,6 +1000,21 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+  recordBookingBalance: (
+    bookingId: string,
+    payload: {
+      amount: number;
+      method: "cash" | "bank_transfer" | "pos" | "other";
+      paid_at?: string;
+      notes?: string;
+    },
+  ) =>
+    request<BookingListItem>(`/bookings/${bookingId}/record-balance`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  waiveBookingBalance: (bookingId: string) =>
+    request<BookingListItem>(`/bookings/${bookingId}/waive-balance`, { method: "POST" }),
   listNotifications: (limit = 30) =>
     request<AppNotification[]>(`/notifications?limit=${encodeURIComponent(String(limit))}`),
   getUnreadNotificationCount: () => request<{ count: number }>("/notifications/unread-count"),
@@ -905,6 +1084,13 @@ export const api = {
       settlement_account_last4?: string | null;
       platform_fee_percent?: number;
     }>("/tenants/me/payment-provider"),
+  getPaymentConfig: () =>
+    request<{
+      provider: string;
+      public_key?: string | null;
+      platform_fee_percent: number;
+      configured: boolean;
+    }>("/payments/config"),
   disconnectPaymentProvider: () =>
     request<{
       ok: boolean;
@@ -923,7 +1109,122 @@ export const api = {
       suggestions: string[];
     }>("/scheduling/insights"),
   askAssistant: (payload: { message: string }) =>
-    request<{ reply: string; suggestions: string[] }>("/ai/assistant", { method: "POST", body: JSON.stringify(payload) }),
+    request<{ reply: string; suggestions: string[]; thread_id?: string; agent?: string }>("/ai/assistant", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  aiChat: (payload: { message: string; agent?: string; thread_id?: string; language?: string }) =>
+    request<{
+      reply: string;
+      thread_id: string;
+      agent: string;
+      status: string;
+      suggestions?: string[];
+      pending_actions?: Array<{ id: string; type: string; args: Record<string, unknown> }>;
+    }>("/ai/chat", { method: "POST", body: JSON.stringify(payload) }),
+  aiChatStream: (
+    payload: { message: string; agent?: string; thread_id?: string; language?: string },
+    onEvent: (event: AiStreamEvent) => void,
+  ) =>
+    consumeNdjsonStream(
+      "/ai/chat/stream",
+      { method: "POST", body: JSON.stringify(payload) },
+      onEvent,
+    ),
+  aiChatResume: (payload: {
+    decision: "approve" | "reject";
+    actions: Array<{ id: string; type: string; args: Record<string, unknown> }>;
+    thread_id?: string;
+  }) =>
+    request<{ reply: string; thread_id: string; agent: string; status: string }>("/ai/chat/resume", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listAiAgents: () =>
+    request<Array<{ key: string; description: string; audience: string }>>("/ai/agents"),
+  listKnowledgeDocuments: () =>
+    request<{
+      documents: Array<{
+        id: string;
+        title: string;
+        filename: string;
+        content_type: string;
+        storage_url: string;
+        status: string;
+        error_message?: string | null;
+        byte_size: number;
+        created_at?: string | null;
+        updated_at?: string | null;
+      }>;
+      limit: number;
+      count: number;
+    }>("/ai/knowledge/documents"),
+  uploadKnowledgeDocument: async (file: File, title?: string) => {
+    await ensureLiveSession("/ai/knowledge/documents");
+    const formData = new FormData();
+    formData.append("file", file);
+    if (title?.trim()) formData.append("title", title.trim());
+    const response = await fetch(`${API_BASE_URL}/ai/knowledge/documents`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(formatApiError(body, response.status));
+    }
+    return response.json() as Promise<{
+      id: string;
+      title: string;
+      filename: string;
+      content_type: string;
+      status: string;
+      error_message?: string | null;
+      byte_size: number;
+    }>;
+  },
+  deleteKnowledgeDocument: (documentId: string) =>
+    request<{ ok: boolean }>(`/ai/knowledge/documents/${documentId}`, { method: "DELETE" }),
+  reindexKnowledge: () =>
+    request<{ ok: boolean; chunks: number }>("/ai/knowledge/reindex", { method: "POST" }),
+  listKnowledgeFaqs: () =>
+    request<Array<{ id: string; question: string; answer: string; sort_order: number }>>(
+      "/ai/knowledge/faqs",
+    ),
+  upsertKnowledgeFaq: (payload: { question: string; answer: string; faq_id?: string }) =>
+    request<{ id: string; question: string; answer: string }>("/ai/knowledge/faqs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteKnowledgeFaq: (faqId: string) =>
+    request<{ ok: boolean }>(`/ai/knowledge/faqs/${faqId}`, { method: "DELETE" }),
+  updateKnowledgePolicies: (payload: {
+    cancellation_policy?: string | null;
+    booking_policies?: string | null;
+  }) =>
+    request<{ ok: boolean; cancellation_policy?: string | null; booking_policies?: string | null }>(
+      "/ai/knowledge/policies",
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  publicAiChat: (
+    businessId: string,
+    payload: { message: string; thread_id?: string; language?: string },
+  ) =>
+    request<{ reply: string; thread_id: string; agent: string; status: string }>(
+      `/public/businesses/${businessId}/ai/chat`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  publicAiChatStream: (
+    businessId: string,
+    payload: { message: string; thread_id?: string; language?: string },
+    onEvent: (event: AiStreamEvent) => void,
+  ) =>
+    consumeNdjsonStream(
+      `/public/businesses/${businessId}/ai/chat/stream`,
+      { method: "POST", body: JSON.stringify(payload) },
+      onEvent,
+      false,
+    ),
   listPublicServices: (businessId: string) =>
     request<
       Array<{
@@ -1042,8 +1343,26 @@ export const api = {
         service_name: string;
         service_price: number;
         deposit_amount: number;
+        purpose?: string;
+        via_orheo?: boolean;
       }>
     >("/payments/transactions"),
+  listBalanceTracking: () =>
+    request<
+      Array<{
+        booking_id: string;
+        booking_status: string;
+        client_name: string;
+        service_name: string;
+        service_total: number;
+        deposit_required: number;
+        deposit_paid: number;
+        collected_total: number;
+        balance_due: number;
+        payment_state: string;
+        appointment_at: string | null;
+      }>
+    >("/payments/balance-tracking"),
   adminMetrics: () =>
     request<{ tenants: number; bookings: number; mrr: number; active_tenants: number; trial_tenants: number; suspended_tenants: number }>(
       "/admin/metrics"

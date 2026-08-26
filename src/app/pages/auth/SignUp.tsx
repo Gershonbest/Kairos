@@ -10,8 +10,10 @@ import { api, setAuthTokens } from "../../../lib/api/client";
 import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth/GoogleSignInButton";
 import { PasswordInput } from "../../components/forms/PasswordInput";
 import orheoLogo from "../../../assets/branding/logo.png";
+import { useForceLightTheme } from "../../components/theme/ThemeProvider";
 
 export function SignUp() {
+  useForceLightTheme();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     firstName: "",

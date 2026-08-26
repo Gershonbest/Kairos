@@ -6,9 +6,9 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Calendar as CalendarIcon, CalendarOff, CheckCircle2, ChevronLeft, ChevronRight, Clock, Mail, MapPin, Phone, Plus, Trash2, User, UserX, XCircle } from "lucide-react";
 import { CalendarBlockDialog } from "../../components/bookings/CalendarBlockDialog";
 import { ManualBookingDialog } from "../../components/bookings/ManualBookingDialog";
-import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
+import { Skeleton } from "../../components/ui/skeleton";
 import {
   Sheet,
   SheetContent,
@@ -16,20 +16,24 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { RecordBalanceDialog } from "../../components/payments/RecordBalanceDialog";
+import {
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  PageShell,
+  SectionCard,
+  StatusBadge,
+} from "../../components/dashboard-ui";
 import { api, bookingClientLabel, type BookingListItem } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
+import { statusBlockClass } from "../../../lib/bookings/status";
 
 type CalendarView = "month" | "week" | "day";
 
-const STATUS_STYLES: Record<string, string> = {
-  confirmed: "bg-primary/10 border-primary/30 text-primary dark:bg-primary/20 dark:border-primary/40 dark:text-primary-foreground",
-  pending: "bg-blue-100 border-blue-300 text-blue-900 dark:bg-blue-500/20 dark:border-blue-400/40 dark:text-blue-100",
-  completed: "bg-green-100 border-green-300 text-green-900 dark:bg-green-500/20 dark:border-green-400/40 dark:text-green-100",
-  cancelled: "bg-muted border-border text-muted-foreground",
-  no_show: "bg-amber-100 border-amber-300 text-amber-900 dark:bg-amber-500/20 dark:border-amber-400/40 dark:text-amber-100",
-};
-
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
+
+const LEGEND_STATUSES = ["confirmed", "pending", "completed", "no_show", "cancelled"] as const;
 
 function localDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -107,9 +111,15 @@ export function BookingCalendar() {
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
   const [blockInitialDate, setBlockInitialDate] = useState<Date | null>(null);
   const [outcomeUpdating, setOutcomeUpdating] = useState<string | null>(null);
+  const [balanceTarget, setBalanceTarget] = useState<{
+    bookingId: string;
+    clientName: string;
+    serviceName: string;
+    balanceDue: number;
+  } | null>(null);
   const [outcomeError, setOutcomeError] = useState("");
 
-  const { data: bookings = [] } = useQuery({
+  const { data: bookings = [], isPending: bookingsLoading } = useQuery({
     queryKey: queryKeys.bookings,
     queryFn: () => api.listBookings(),
   });
@@ -150,6 +160,13 @@ export function BookingCalendar() {
     setManualBookingStart(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
     setManualBookingClientId(searchParams.get("client"));
     setManualBookingOpen(true);
+  }, [searchParams]);
+
+  // Entry point for the command palette's "Block time off" action.
+  useEffect(() => {
+    if (searchParams.get("block") !== "1") return;
+    setBlockInitialDate(new Date());
+    setBlockDialogOpen(true);
   }, [searchParams]);
 
   const bookingsByDate = useMemo(() => {
@@ -256,6 +273,9 @@ export function BookingCalendar() {
         (rows ?? []).map((row) => (row.id === updated.id ? updated : row))
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.clients });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.balanceTracking });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary });
       setSelectedBooking(updated);
     },
   });
@@ -265,7 +285,20 @@ export function BookingCalendar() {
     setOutcomeError("");
     setOutcomeUpdating(status);
     try {
-      await updateOutcomeMutation.mutateAsync({ id: selectedBooking.id, status });
+      const updated = await updateOutcomeMutation.mutateAsync({ id: selectedBooking.id, status });
+      if (
+        status === "completed" &&
+        updated.payment &&
+        updated.payment.balance_due > 0 &&
+        updated.payment.payment_state === "deposit_paid"
+      ) {
+        setBalanceTarget({
+          bookingId: updated.id,
+          clientName: bookingClientLabel(updated),
+          serviceName: updated.service_name,
+          balanceDue: updated.payment.balance_due,
+        });
+      }
     } catch (err) {
       setOutcomeError(err instanceof Error ? err.message : "Unable to update appointment outcome.");
     } finally {
@@ -281,99 +314,171 @@ export function BookingCalendar() {
         e.stopPropagation();
         openBooking(booking);
       }}
-      className={`w-full text-left border rounded-lg hover:shadow-md transition-shadow ${
-        STATUS_STYLES[booking.status] ?? STATUS_STYLES.pending
-      } ${compact ? "px-1.5 py-1 mb-1" : "p-2 mb-2"}`}
+      className={`w-full rounded-lg border text-left transition-shadow hover:shadow-sm ${statusBlockClass(
+        booking.status,
+      )} ${compact ? "mb-1 px-2 py-1.5" : "mb-2 p-2.5"}`}
     >
-      <div className="flex items-center gap-1">
-        <User className={compact ? "w-3 h-3" : "w-3.5 h-3.5"} />
-        <span className={`${compact ? "text-[10px]" : "text-xs"} font-medium truncate`}>
-          {bookingClientLabel(booking)}
-        </span>
+      <div className="flex items-center gap-1.5">
+        <User className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} />
+        <span className="truncate text-xs font-semibold">{bookingClientLabel(booking)}</span>
       </div>
-      {!compact && (
+      {compact ? (
+        <div className="mt-0.5 truncate text-xs opacity-80">
+          {isAllDayBooking(booking) ? "All day" : formatTime(booking.start_at)} · {booking.service_name}
+        </div>
+      ) : (
         <>
-          <div className="text-xs truncate mt-0.5">{booking.service_name}</div>
+          <div className="mt-1 truncate text-xs opacity-90">{booking.service_name}</div>
           {booking.listing_name && (
-            <div className="text-[11px] truncate text-muted-foreground">Product: {booking.listing_name}</div>
+            <div className="truncate text-xs opacity-70">{booking.listing_name}</div>
           )}
-          <div className="flex items-center gap-1 mt-1 text-xs">
-            <Clock className="w-3 h-3" />
+          <div className="mt-1 flex items-center gap-1 text-xs opacity-80">
+            <Clock className="h-3 w-3 shrink-0" />
             {bookingWhenLabel(booking)}
           </div>
         </>
       )}
-      {compact && (
-        <div className="text-[10px] truncate">
-          {isAllDayBooking(booking) ? "All day" : formatTime(booking.start_at)} · {booking.service_name}
-          {booking.listing_name ? ` · ${booking.listing_name}` : ""}
-        </div>
-      )}
     </button>
   );
 
+  const agendaDays = useMemo(() => {
+    if (view === "day") return [currentDate];
+    if (view === "week") return weekDays;
+    return monthCells.filter((day) => day.getMonth() === currentDate.getMonth());
+  }, [view, currentDate, weekDays, monthCells]);
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold">Booking Calendar</h1>
-          <p className="text-muted-foreground mt-1">Manage your appointments and schedule</p>
+    <PageShell>
+      <PageHeader
+        eyebrow="Schedule"
+        title="Calendar"
+        description="Everything booked, blocked, and open — across the month, week, or day."
+        actions={
+          <>
+            <Button onClick={() => openManualBooking(new Date())}>
+              <Plus className="mr-2 h-4 w-4" />
+              New booking
+            </Button>
+            <Button variant="outline" onClick={() => openBlockDialog(new Date())}>
+              <CalendarOff className="mr-2 h-4 w-4" />
+              Block time
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/dashboard/availability")}>
+              <Clock className="mr-2 h-4 w-4" />
+              Availability
+            </Button>
+          </>
+        }
+      />
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="icon" onClick={() => shiftDate(-1)} aria-label="Previous">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => shiftDate(1)} aria-label="Next">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setCurrentDate(new Date())}>
+            Today
+          </Button>
+          <div className="flex min-w-0 items-center gap-2 pl-1">
+            <CalendarIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-semibold text-foreground">{headerLabel}</span>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => openManualBooking(new Date())}>
-            <Plus className="w-4 h-4 mr-2" />
-            New booking
-          </Button>
-          <Button variant="outline" onClick={() => openBlockDialog(new Date())}>
-            <CalendarOff className="w-4 h-4 mr-2" />
-            Block time
-          </Button>
-          <Button variant="outline" onClick={() => navigate("/dashboard/availability")}>
-            <Clock className="w-4 h-4 mr-2" />
-            Edit availability
-          </Button>
+
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          {(["month", "week", "day"] as CalendarView[]).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setView(mode)}
+              className={`rounded-md px-3 py-1.5 text-sm capitalize transition-colors ${
+                view === mode
+                  ? "bg-card font-medium text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button variant="outline" size="icon" onClick={() => shiftDate(-1)}>
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <div className="flex items-center gap-2 min-w-0">
-                <CalendarIcon className="w-5 h-5 text-muted-foreground shrink-0" />
-                <span className="font-medium truncate">{headerLabel}</span>
+      {bookingsLoading ? (
+        <div className="space-y-2 rounded-xl border border-border bg-card p-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      ) : (
+        <>
+          {/* Phones get a scannable agenda list instead of a horizontally scrolling grid. */}
+          <div className="rounded-xl border border-border bg-card lg:hidden">
+            {agendaDays.length === 0 ? (
+              <div className="p-4">
+                <EmptyState icon={CalendarIcon} title="Nothing in this range" />
               </div>
-              <Button variant="outline" size="icon" onClick={() => shiftDate(1)}>
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
-                Today
-              </Button>
-            </div>
-
-            <div className="flex gap-2">
-              {(["month", "week", "day"] as CalendarView[]).map((mode) => (
-                <Button
-                  key={mode}
-                  variant={view === mode ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setView(mode)}
-                  className={view === mode ? "bg-primary hover:bg-primary/90 capitalize" : "capitalize"}
-                >
-                  {mode}
-                </Button>
-              ))}
-            </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {agendaDays.map((day) => {
+                  const key = localDateKey(day);
+                  const items = bookingsByDate[key] ?? [];
+                  const dayBlocks = blocksForDate(day);
+                  const isToday = key === localDateKey(new Date());
+                  if (items.length === 0 && dayBlocks.length === 0 && view === "month") return null;
+                  return (
+                    <div key={key} className="p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p
+                          className={`text-sm font-semibold ${
+                            isToday ? "text-primary" : "text-foreground"
+                          }`}
+                        >
+                          {day.toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          {isToday ? " · Today" : ""}
+                        </p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const start = new Date(day);
+                            start.setHours(9, 0, 0, 0);
+                            openManualBooking(start);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {dayBlocks.map((block) => (
+                        <div
+                          key={block.id}
+                          className="mb-2 rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-xs font-medium text-destructive"
+                        >
+                          Blocked{block.reason ? ` · ${block.reason}` : ""}
+                        </div>
+                      ))}
+                      {items.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Nothing booked.</p>
+                      ) : (
+                        items.map((booking) => bookingChip(booking))
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
 
+          <div className="hidden lg:block">
       {view === "month" && (
-        <Card>
-          <CardContent className="p-0 overflow-x-auto">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="overflow-x-auto">
             <div className="min-w-[720px]">
               <div className="grid grid-cols-7 border-b border-border bg-muted/40">
                 {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
@@ -397,24 +502,32 @@ export function BookingCalendar() {
                         setCurrentDate(day);
                         setView("day");
                       }}
-                      className={`min-h-[110px] p-2 border-r border-b border-border text-left align-top hover:bg-muted/40 ${
+                      className={`min-h-[112px] border-b border-r border-border p-2 text-left align-top transition-colors hover:bg-muted/40 ${
                         dayBlocks.length > 0
-                          ? "bg-red-50 dark:bg-red-950/20"
-                          : inMonth ? "bg-card" : "bg-muted/30"
+                          ? "bg-destructive/6"
+                          : inMonth
+                            ? "bg-card"
+                            : "bg-muted/25"
                       } ${isToday ? "ring-1 ring-inset ring-primary/40" : ""}`}
                     >
-                      <div className={`text-sm mb-1 ${inMonth ? "text-foreground" : "text-muted-foreground"} ${isToday ? "font-semibold text-primary" : ""}`}>
+                      <div
+                        className={`mb-1 text-sm tabular-nums ${
+                          inMonth ? "text-foreground" : "text-muted-foreground/60"
+                        } ${isToday ? "font-semibold text-primary" : ""}`}
+                      >
                         {day.getDate()}
                       </div>
                       {dayBlocks.length > 0 && (
-                        <p className="mb-1 truncate rounded bg-red-100 px-1.5 py-1 text-[10px] font-medium text-red-700 dark:bg-red-500/20 dark:text-red-200">
+                        <p className="mb-1 truncate rounded bg-destructive/12 px-1.5 py-1 text-xs font-medium text-destructive">
                           Blocked{dayBlocks[0].reason ? ` · ${dayBlocks[0].reason}` : ""}
                         </p>
                       )}
                       <div className="space-y-0.5">
-                        {dayItems.slice(0, 3).map((booking) => bookingChip(booking, true))}
-                        {dayItems.length > 3 && (
-                          <p className="text-[10px] text-muted-foreground px-1">+{dayItems.length - 3} more</p>
+                        {dayItems.slice(0, 2).map((booking) => bookingChip(booking, true))}
+                        {dayItems.length > 2 && (
+                          <p className="px-1 text-xs font-medium text-muted-foreground">
+                            +{dayItems.length - 2} more
+                          </p>
                         )}
                       </div>
                     </button>
@@ -422,18 +535,19 @@ export function BookingCalendar() {
                 })}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {view === "week" && (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <div className="min-w-[800px]">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="workspace-scroll overflow-x-auto">
+              <div className="min-w-[860px]">
                 <div className="grid grid-cols-8 border-b border-border">
-                  <div className="p-4 bg-muted/40 border-r border-border">
-                    <span className="text-sm font-medium text-muted-foreground">Time</span>
+                  <div className="border-r border-border bg-muted/40 p-4">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Time
+                    </span>
                   </div>
                   {weekDays.map((day) => {
                     const key = localDateKey(day);
@@ -446,31 +560,33 @@ export function BookingCalendar() {
                           setCurrentDate(day);
                           setView("day");
                         }}
-                        className={`p-4 text-center border-r border-border hover:bg-muted/60 ${
+                        className={`border-r border-border p-4 text-center transition-colors hover:bg-muted/60 ${
                           isToday ? "bg-primary/10" : "bg-muted/40"
                         }`}
                       >
-                        <div className="text-sm font-medium">
+                        <div className={`text-sm font-medium ${isToday ? "text-primary" : ""}`}>
                           {day.toLocaleDateString("en-US", { weekday: "short" })} {day.getDate()}
                         </div>
                       </button>
                     );
                   })}
                 </div>
-                <div className="grid grid-cols-8 border-b border-border bg-amber-100/40 dark:bg-amber-500/10">
-                  <div className="p-3 bg-amber-100 dark:bg-amber-500/20 border-r border-border">
-                    <span className="text-xs font-medium text-amber-900 dark:text-amber-100">All day</span>
+                <div className="grid grid-cols-8 border-b border-border bg-[var(--warning-surface)]/25">
+                  <div className="border-r border-border bg-[var(--warning-surface)]/60 p-3">
+                    <span className="text-xs font-medium uppercase tracking-wide text-[var(--warning-on-surface)]">
+                      All day
+                    </span>
                   </div>
                   {weekDays.map((day) => {
                     const key = localDateKey(day);
                     const allDayItems = (bookingsByDate[key] ?? []).filter(isAllDayBooking);
                     const dayBlocks = blocksForDate(day);
                     return (
-                      <div key={`allday-${key}`} className="p-2 border-r border-border min-h-[56px]">
+                      <div key={`allday-${key}`} className="min-h-[56px] border-r border-border p-2">
                         {dayBlocks.map((block) => (
                           <div
                             key={block.id}
-                            className="mb-1 truncate rounded border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+                            className="mb-1 truncate rounded border border-destructive/30 bg-destructive/8 px-2 py-1 text-xs font-medium text-destructive"
                           >
                             Blocked{block.reason ? ` · ${block.reason}` : ""}
                           </div>
@@ -482,8 +598,10 @@ export function BookingCalendar() {
                 </div>
                 {HOURS.map((hour) => (
                   <div key={hour} className="grid grid-cols-8 border-b border-border">
-                    <div className="p-4 bg-muted/40 border-r border-border">
-                      <span className="text-sm text-muted-foreground">{String(hour).padStart(2, "0")}:00</span>
+                    <div className="border-r border-border bg-muted/40 p-4">
+                      <span className="text-sm tabular-nums text-muted-foreground">
+                        {String(hour).padStart(2, "0")}:00
+                      </span>
                     </div>
                     {weekDays.map((day) => {
                       const key = localDateKey(day);
@@ -495,10 +613,8 @@ export function BookingCalendar() {
                       return (
                         <div
                           key={`${key}-${hour}`}
-                          className={`p-2 border-r border-border min-h-[80px] ${
-                            blocked
-                              ? "bg-red-50/60 dark:bg-red-950/10"
-                              : "cursor-pointer hover:bg-muted/30"
+                          className={`min-h-[80px] border-r border-border p-2 ${
+                            blocked ? "bg-destructive/5" : "cursor-pointer hover:bg-muted/30"
                           }`}
                           onClick={() => {
                             if (blocked) return;
@@ -515,30 +631,30 @@ export function BookingCalendar() {
                 ))}
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
       )}
 
       {view === "day" && (
-        <Card>
-          <CardContent className="p-0">
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
             <div className="divide-y divide-border">
-              <div className="grid grid-cols-[88px_1fr] min-h-[72px] bg-amber-100/40 dark:bg-amber-500/10">
-                <div className="p-4 bg-amber-100 dark:bg-amber-500/20 border-r border-border">
-                  <span className="text-xs font-medium text-amber-900 dark:text-amber-100">All day</span>
+              <div className="grid min-h-[72px] grid-cols-[88px_1fr] bg-[var(--warning-surface)]/25">
+                <div className="border-r border-border bg-[var(--warning-surface)]/60 p-4">
+                  <span className="text-xs font-medium uppercase tracking-wide text-[var(--warning-on-surface)]">
+                    All day
+                  </span>
                 </div>
-                <div className="p-3 space-y-2">
+                <div className="space-y-2 p-3">
                   {blocksForDate(currentDate).map((block) => (
                     <div
                       key={block.id}
-                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+                      className="rounded-lg border border-destructive/30 bg-destructive/8 px-3 py-2 text-sm font-medium text-destructive"
                     >
                       Calendar blocked{block.reason ? ` · ${block.reason}` : ""}
                     </div>
                   ))}
                   {dayBookings.filter(isAllDayBooking).length === 0 &&
                   blocksForDate(currentDate).length === 0 ? (
-                    <div className="h-full min-h-[40px] rounded-lg border border-dashed border-amber-300/70 dark:border-amber-400/30" />
+                    <div className="h-full min-h-[40px] rounded-lg border border-dashed border-[var(--warning-on-surface)]/25" />
                   ) : (
                     dayBookings.filter(isAllDayBooking).map((booking) => bookingChip(booking))
                   )}
@@ -551,15 +667,15 @@ export function BookingCalendar() {
                     !isAllDayBooking(booking) && new Date(booking.start_at).getHours() === hour
                 );
                 return (
-                  <div key={hour} className="grid grid-cols-[88px_1fr] min-h-[88px]">
-                    <div className="p-4 bg-muted/40 border-r border-border">
-                      <span className="text-sm text-muted-foreground">{String(hour).padStart(2, "0")}:00</span>
+                  <div key={hour} className="grid min-h-[88px] grid-cols-[88px_1fr]">
+                    <div className="border-r border-border bg-muted/40 p-4">
+                      <span className="text-sm tabular-nums text-muted-foreground">
+                        {String(hour).padStart(2, "0")}:00
+                      </span>
                     </div>
                     <div
-                      className={`p-3 space-y-2 ${
-                        blocked
-                          ? "bg-red-50/60 dark:bg-red-950/10"
-                          : "cursor-pointer hover:bg-muted/30"
+                      className={`space-y-2 p-3 ${
+                        blocked ? "bg-destructive/5" : "cursor-pointer hover:bg-muted/30"
                       }`}
                       onClick={() => {
                         if (blocked) return;
@@ -578,76 +694,64 @@ export function BookingCalendar() {
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+      )}
+          </div>
+        </>
       )}
 
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="text-sm font-medium text-muted-foreground">Status:</span>
-            {[
-              { label: "Confirmed", className: "bg-primary/10 border-primary/30" },
-              { label: "Pending", className: "bg-blue-100 border-blue-300" },
-              { label: "Completed", className: "bg-green-100 border-green-300" },
-              { label: "No-show", className: "bg-amber-100 border-amber-300" },
-              { label: "Cancelled", className: "bg-muted border-border" },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2">
-                <div className={`w-4 h-4 rounded border ${item.className}`} />
-                <span className="text-sm">{item.label}</span>
-              </div>
-            ))}
+      {outcomeError && <ErrorNote>{outcomeError}</ErrorNote>}
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-border bg-card px-4 py-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Status key
+        </span>
+        {LEGEND_STATUSES.map((status) => (
+          <div key={status} className="flex items-center gap-2">
+            <span className={`h-3.5 w-3.5 rounded border ${statusBlockClass(status)}`} />
+            <StatusBadge status={status} className="bg-transparent px-0 text-foreground" />
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
 
       {calendarBlocks.length > 0 && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <div>
-              <h2 className="font-semibold">Blocked dates</h2>
-              <p className="text-sm text-muted-foreground">
-                Remove a block when the business is ready to accept bookings again.
-              </p>
+        <SectionCard
+          title="Blocked dates"
+          description="Remove a block when you're ready to accept bookings again."
+          contentClassName="space-y-2"
+        >
+          {calendarBlocks.map((block) => (
+            <div
+              key={block.id}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">
+                  {new Date(`${block.start_date}T00:00:00`).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                  {block.end_date !== block.start_date &&
+                    ` – ${new Date(`${block.end_date}T00:00:00`).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}`}
+                </p>
+                {block.reason && <p className="text-sm text-muted-foreground">{block.reason}</p>}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Remove calendar block"
+                onClick={() => void deleteBlock(block.id)}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
             </div>
-            <div className="space-y-2">
-              {calendarBlocks.map((block) => (
-                <div
-                  key={block.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-                >
-                  <div>
-                    <p className="text-sm font-medium">
-                      {new Date(`${block.start_date}T00:00:00`).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                      {block.end_date !== block.start_date &&
-                        ` – ${new Date(`${block.end_date}T00:00:00`).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}`}
-                    </p>
-                    {block.reason && (
-                      <p className="text-sm text-muted-foreground">{block.reason}</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Remove calendar block"
-                    onClick={() => void deleteBlock(block.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-600" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+          ))}
+        </SectionCard>
       )}
 
       <Sheet open={Boolean(selectedBooking)} onOpenChange={(open) => !open && closeBooking()}>
@@ -761,6 +865,49 @@ export function BookingCalendar() {
                   </div>
                 )}
 
+                {selectedBooking.payment && selectedBooking.payment.deposit_amount > 0 && (
+                  <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Service total</p>
+                        <p className="font-medium">₦{selectedBooking.payment.service_price.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Collected</p>
+                        <p className="font-medium">₦{selectedBooking.payment.collected_total.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Balance due</p>
+                        <p className="font-medium">₦{selectedBooking.payment.balance_due.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Status</p>
+                        <p className="font-medium capitalize">
+                          {selectedBooking.payment.payment_state.replace("_", " ")}
+                        </p>
+                      </div>
+                    </div>
+                    {selectedBooking.payment.balance_due > 0 &&
+                      selectedBooking.payment.payment_state === "deposit_paid" && (
+                        <Button
+                          size="sm"
+                          className="mt-1"
+                          onClick={() =>
+                            setBalanceTarget({
+                              bookingId: selectedBooking.id,
+                              clientName: bookingClientLabel(selectedBooking),
+                              serviceName: selectedBooking.service_name,
+                              balanceDue: selectedBooking.payment!.balance_due,
+                            })
+                          }
+                        >
+                          Record balance payment
+                        </Button>
+                      )}
+                  </div>
+                )}
+
                 <div className="space-y-3 pt-2 border-t border-border">
                   <div>
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Appointment outcome</p>
@@ -771,7 +918,6 @@ export function BookingCalendar() {
                   <div className="grid grid-cols-1 gap-2">
                     <Button
                       variant={selectedBooking.status === "completed" ? "default" : "outline"}
-                      className={selectedBooking.status === "completed" ? "bg-green-600 hover:bg-green-700" : ""}
                       loading={outcomeUpdating === "completed"}
                       loadingLabel="Saving..."
                       disabled={outcomeUpdating !== null}
@@ -782,11 +928,6 @@ export function BookingCalendar() {
                     </Button>
                     <Button
                       variant={selectedBooking.status === "no_show" ? "default" : "outline"}
-                      className={
-                        selectedBooking.status === "no_show"
-                          ? "bg-amber-600 hover:bg-amber-700 text-white"
-                          : ""
-                      }
                       loading={outcomeUpdating === "no_show"}
                       loadingLabel="Saving..."
                       disabled={outcomeUpdating !== null}
@@ -797,7 +938,6 @@ export function BookingCalendar() {
                     </Button>
                     <Button
                       variant={selectedBooking.status === "cancelled" ? "default" : "outline"}
-                      className={selectedBooking.status === "cancelled" ? "bg-gray-700 hover:bg-gray-800" : ""}
                       loading={outcomeUpdating === "cancelled"}
                       loadingLabel="Saving..."
                       disabled={outcomeUpdating !== null}
@@ -820,13 +960,35 @@ export function BookingCalendar() {
                       </Button>
                     )}
                   </div>
-                  {outcomeError && <p className="text-sm text-red-600">{outcomeError}</p>}
+                  {outcomeError && <ErrorNote>{outcomeError}</ErrorNote>}
                 </div>
               </div>
             </>
           )}
         </SheetContent>
       </Sheet>
+
+      <RecordBalanceDialog
+        open={balanceTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setBalanceTarget(null);
+        }}
+        bookingId={balanceTarget?.bookingId ?? ""}
+        clientName={balanceTarget?.clientName ?? ""}
+        serviceName={balanceTarget?.serviceName ?? ""}
+        balanceDue={balanceTarget?.balanceDue ?? 0}
+        onSubmit={async (payload) => {
+          if (!balanceTarget) return;
+          const updated = await api.recordBookingBalance(balanceTarget.bookingId, payload);
+          queryClient.setQueryData<BookingListItem[]>(queryKeys.bookings, (rows) =>
+            (rows ?? []).map((row) => (row.id === updated.id ? updated : row)),
+          );
+          setSelectedBooking(updated);
+          void queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.balanceTracking });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardSummary });
+        }}
+      />
 
       <ManualBookingDialog
         open={manualBookingOpen}
@@ -856,6 +1018,6 @@ export function BookingCalendar() {
           void queryClient.invalidateQueries({ queryKey: queryKeys.calendarBlocks });
         }}
       />
-    </div>
+    </PageShell>
   );
 }

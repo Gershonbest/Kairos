@@ -13,6 +13,7 @@ from app.infra.db import get_db_session
 from app.infra.models import (
     AppointmentFormat,
     Booking,
+    BookingStatus,
     Client,
     PaymentStatus,
     PaymentTransaction,
@@ -25,7 +26,7 @@ from app.infra.models import (
 )
 from app.infra.paystack import PaystackError, paystack_client
 from app.modules.clients.names import visit_display_name
-from app.modules.notifications.outbound import schedule_booking_reminders
+from app.modules.notifications.outbound import queue_booking_confirmations, schedule_booking_reminders
 from app.modules.notifications.service import (
     create_booking_notifications,
     send_booking_confirmation_email,
@@ -34,9 +35,13 @@ from app.modules.notifications.service import (
 )
 from app.modules.payments.providers import get_provider, verify_paystack_signature, verify_webhook_signature
 from app.modules.payments.service import (
+    BOOKING_CHARGE_PURPOSES,
+    BOOKING_LEDGER_PURPOSES,
     apply_successful_paystack_payment,
+    booking_payment_summary,
     classify_paystack_status,
     ensure_booking_payment,
+    is_partial_deposit_service,
     mark_failed_paystack_payment,
 )
 from app.modules.services.helpers import resolve_service_location
@@ -102,8 +107,8 @@ async def _subscription_receipt_args(
 async def payment_public_config() -> dict:
     return {
         "provider": "paystack",
-        "public_key": settings.paystack_public_key,
-        "platform_fee_percent": float(settings.paystack_platform_fee_percent),
+        "public_key": get_settings().paystack_public_key,
+        "platform_fee_percent": float(get_settings().paystack_platform_fee_percent),
         "configured": paystack_client.is_configured(),
     }
 
@@ -141,7 +146,7 @@ async def list_transactions(
             .outerjoin(Booking, PaymentTransaction.booking_id == Booking.id)
             .outerjoin(Client, Booking.client_id == Client.id)
             .outerjoin(Service, Booking.service_id == Service.id)
-            .where(PaymentTransaction.tenant_id == tenant_id, PaymentTransaction.purpose == "booking")
+            .where(PaymentTransaction.tenant_id == tenant_id, PaymentTransaction.purpose.in_(tuple(BOOKING_LEDGER_PURPOSES)))
             .order_by(PaymentTransaction.created_at.desc())
         )
     ).all()
@@ -164,10 +169,77 @@ async def list_transactions(
             "service_name": service.name if service else None,
             "service_price": float(service.price_amount) if service else None,
             "deposit_amount": float(service.deposit_amount or 0) if service else None,
+            "purpose": tx.purpose,
+            "via_orheo": tx.purpose in BOOKING_CHARGE_PURPOSES and tx.provider == "paystack",
         }
         for tx, _booking, client, service in rows
     ]
     await redis_cache.set_json(cache_key, payload)
+    return payload
+
+
+@router.get("/balance-tracking")
+async def list_balance_tracking(
+    current_user: CurrentUser = Depends(require_active_subscription),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    """Bookings with deposit paid and an outstanding or recently closed balance."""
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+
+    rows = (
+        await session.execute(
+            select(Booking, Client, Service)
+            .join(Client, Booking.client_id == Client.id)
+            .join(Service, Booking.service_id == Service.id)
+            .where(
+                Booking.tenant_id == current_user.tenant_id,
+                Booking.status.in_(
+                    (BookingStatus.confirmed, BookingStatus.completed, BookingStatus.no_show)
+                ),
+            )
+            .order_by(Booking.start_at.desc())
+        )
+    ).all()
+
+    payload: list[dict] = []
+    for booking, client, service in rows:
+        if not is_partial_deposit_service(service):
+            continue
+        summary = await booking_payment_summary(session, booking=booking, service=service)
+        state = str(summary["payment_state"])
+        if state in {"fully_paid", "waived"}:
+            continue
+        if state == "unpaid":
+            continue
+        collected = float(summary["collected_total"])
+        deposit_paid = sum(
+            float(tx.amount)
+            for tx in (
+                await session.execute(
+                    select(PaymentTransaction).where(
+                        PaymentTransaction.booking_id == booking.id,
+                        PaymentTransaction.status == PaymentStatus.succeeded,
+                        PaymentTransaction.purpose.in_(("booking", "deposit")),
+                    )
+                )
+            ).scalars().all()
+        )
+        payload.append(
+            {
+                "booking_id": booking.id,
+                "booking_status": booking.status.value,
+                "client_name": visit_display_name(booking, client),
+                "service_name": service.name,
+                "service_total": float(summary["service_price"]),
+                "deposit_required": float(summary["deposit_amount"]),
+                "deposit_paid": round(deposit_paid, 2),
+                "collected_total": collected,
+                "balance_due": float(summary["balance_due"]),
+                "payment_state": state,
+                "appointment_at": booking.start_at.isoformat() if booking.start_at else None,
+            }
+        )
     return payload
 
 
@@ -264,7 +336,7 @@ async def verify_payment_reference(
             )
             if tx:
                 await session.commit()
-                if tx.purpose == "booking" and tx.tenant_id:
+                if tx.purpose in BOOKING_CHARGE_PURPOSES and tx.tenant_id:
                     await redis_cache.invalidate_tenant(
                         tx.tenant_id,
                         "bookings:list",
@@ -296,7 +368,7 @@ async def verify_payment_reference(
     await redis_cache.invalidate_admin_payments()
     if tx.purpose == "subscription":
         await redis_cache.invalidate_admin_overview()
-    elif tx.purpose == "booking" and tx.tenant_id:
+    elif tx.purpose in BOOKING_CHARGE_PURPOSES and tx.tenant_id:
         await redis_cache.invalidate_tenant(
             tx.tenant_id,
             "bookings:list",
@@ -377,7 +449,7 @@ async def receive_webhook(
                 ).scalar_one_or_none()
                 already_paid = bool(existing_tx and existing_tx.status == PaymentStatus.succeeded)
                 tx = await apply_successful_paystack_payment(session, reference=str(reference))
-                if tx and tx.purpose == "booking" and tx.booking_id and not already_paid:
+                if tx and tx.purpose in BOOKING_CHARGE_PURPOSES and tx.booking_id and not already_paid:
                     await _send_booking_emails_after_payment(session, tx.booking_id)
                     if tx.tenant_id:
                         await redis_cache.invalidate_tenant(
@@ -455,6 +527,9 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
     await schedule_booking_reminders(
         session, tenant=tenant, booking=booking, client=client, service=service
     )
+    await queue_booking_confirmations(
+        session, tenant=tenant, booking=booking, client=client, service=service
+    )
     appointment_format = booking.appointment_format or AppointmentFormat.onsite
     appointment_location = resolve_service_location(service, tenant, appointment_format)
     payment_tx = (
@@ -488,7 +563,7 @@ async def _send_booking_emails_after_payment(session: AsyncSession, booking_id: 
             host_title=service.host_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
-            online_meeting_link=service.online_meeting_link if appointment_format == AppointmentFormat.online else None,
+            online_meeting_link=meeting_link,
             booking_id=booking.id,
             is_all_day=bool(booking.is_all_day),
             business_logo_url=tenant.public_logo_url,

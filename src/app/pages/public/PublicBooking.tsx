@@ -4,8 +4,6 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Calendar,
-  Clock,
   Check,
   ArrowLeft,
   Sparkles,
@@ -16,8 +14,6 @@ import {
   Send,
   ChevronLeft,
   ChevronRight,
-  Star,
-  Shield,
   Mail,
   User,
   FileText,
@@ -26,7 +22,7 @@ import {
   Loader2,
   Download,
 } from "lucide-react";
-import { api, type PublicBookingResponse } from "../../../lib/api/client";
+import { api, type AiStreamEvent, type PublicBookingResponse } from "../../../lib/api/client";
 import {
   appointmentTypeLabels,
   formatHostLabel,
@@ -37,6 +33,11 @@ import {
 import { PhoneInput } from "../../components/forms/PhoneInput";
 import { BrandLoader } from "../../components/brand/BrandLoader";
 import { getDialCodeForCountry } from "../../../lib/data/locations";
+import { BookingSummary } from "../../components/public-booking/BookingSummary";
+import { MonogramThumb } from "../../components/public-booking/MonogramThumb";
+import { ServiceRow } from "../../components/public-booking/ServiceRow";
+import { StepTrail } from "../../components/public-booking/StepTrail";
+import { useForceLightTheme } from "../../components/theme/ThemeProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -70,15 +71,55 @@ interface ListingOption {
   image_urls: string[];
 }
 
-interface TimeSlot {
-  time: string;
-  available: boolean;
-}
-
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+}
+
+type ActivityStep = {
+  id: string;
+  label: string;
+  status: "running" | "done";
+};
+
+function handlePublicStreamEvent(
+  event: AiStreamEvent,
+  setActivitySteps: React.Dispatch<React.SetStateAction<ActivityStep[]>>,
+  aiMessageId: string,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setAiThreadId: React.Dispatch<React.SetStateAction<string | undefined>>,
+) {
+  if (event.type === "status") {
+    setActivitySteps([{ id: "status", label: event.text, status: "running" }]);
+    return;
+  }
+  if (event.type === "tool_start") {
+    setActivitySteps((prev) => {
+      const done = prev.map((step) => ({ ...step, status: "done" as const }));
+      return [...done, { id: `tool-${event.name}`, label: event.label || event.name, status: "running" }];
+    });
+    return;
+  }
+  if (event.type === "tool_end") {
+    setActivitySteps((prev) =>
+      prev.map((step) => (step.id === `tool-${event.name}` ? { ...step, status: "done" } : step)),
+    );
+    return;
+  }
+  if (event.type === "token") {
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === aiMessageId ? { ...msg, content: msg.content + event.text } : msg)),
+    );
+    return;
+  }
+  if (event.type === "final") {
+    setAiThreadId(event.thread_id);
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === aiMessageId ? { ...msg, content: event.reply } : msg)),
+    );
+    setActivitySteps([]);
+  }
 }
 
 type StepId = "service" | "listing" | "datetime" | "details" | "payment" | "confirmation";
@@ -127,56 +168,6 @@ function assistantIntro(businessName: string): string {
   return `Hi! I'm the ${name} booking assistant. Ask me about services, pricing, availability — or just tell me what you need and I'll guide you through it.`;
 }
 
-function getAIResponse(input: string, businessName: string): string {
-  const q = input.toLowerCase();
-  const name = businessName.trim() || "this business";
-  if (q.includes("price") || q.includes("cost") || q.includes("how much"))
-    return "Our treatments start at ₦120. Quick overview:\n\n• Swedish Massage — ₦120 (₦40 deposit)\n• Deep Tissue — ₦160 (₦55 deposit)\n• Signature Facial — ₦140 (₦45 deposit)\n• Hot Stone Ritual — ₦175 (₦60 deposit)\n\nDeposits are refundable if you cancel 24h+ in advance. Want to book?";
-  if (q.includes("available") || q.includes("slot") || q.includes("open"))
-    return "We have openings starting tomorrow! Morning (9–11 AM), afternoon (12–3 PM), and evening slots (4–6 PM) are available Monday through Saturday. Which treatment interests you?";
-  if (q.includes("swedish") || q.includes("relax"))
-    return "The Classic Swedish Massage (60 min, ₦120) is perfect for unwinding. It uses long, flowing strokes across the full body. Just ₦40 secures your spot — want me to walk you through booking?";
-  if (q.includes("facial") || q.includes("skin"))
-    return "Our Signature Facial (75 min, ₦140) is customized to your skin type — cleansing, exfoliation, and serums tailored on the day. A ₦45 deposit holds your appointment.";
-  if (q.includes("hot stone"))
-    return "The Hot Stone Ritual (90 min, ₦175) uses heated basalt stones to melt tension at a deeper level than hands alone. One of our most-booked treatments — ₦60 deposit required.";
-  if (q.includes("cancel") || q.includes("reschedule"))
-    return "No problem! You can cancel or reschedule at no cost up to 24 hours before your appointment. After that, the deposit is non-refundable. Need help with anything else?";
-  if (q.includes("deposit") || q.includes("refund"))
-    return "Deposits hold your time slot and are fully refundable with 24h+ notice. The balance is paid at your appointment. Deposits range from ₦40–₦60 depending on the service.";
-  if (q.includes("hi") || q.includes("hello") || q.includes("hey"))
-    return `Hi there! I'm the ${name} booking assistant. Tell me what you're looking for — a service, availability, pricing — and I'll help you get booked in minutes.`;
-  if (q.includes("book") || q.includes("appointment"))
-    return "I'd love to help you book! Use the steps on this page or just tell me: which service interests you, and when are you looking to come in?";
-  if (q.includes("voice") || q.includes("speak") || q.includes("talk"))
-    return "Voice mode is on — just speak your question or request and I'll respond. You can also type if you prefer. How can I help?";
-  return "Happy to help! Ask me about pricing, services, availability, or what to expect — or just tap a service above to get started.";
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const brandPrimary = "var(--color-primary)";
-const brandAccent = "var(--color-accent)";
-const cream = "var(--color-background)";
-const creamCard = "var(--color-input-background)";
-const stone600 = "var(--color-foreground)";
-const stone500 = "var(--color-muted-foreground)";
-const stone400 = "var(--color-muted-foreground)";
-const dark = "var(--color-foreground)";
-
-const inputStyle: React.CSSProperties = {
-  backgroundColor: creamCard,
-  border: "1px solid transparent",
-  color: dark,
-  outline: "none",
-  width: "100%",
-  padding: "10px 14px",
-  borderRadius: 12,
-  fontSize: 14,
-  fontFamily: "'DM Sans', sans-serif",
-  transition: "border-color 0.15s",
-};
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function localPhoneFromStored(stored: string | null | undefined, dialCode: string): string {
@@ -189,6 +180,7 @@ function localPhoneFromStored(stored: string | null | undefined, dialCode: strin
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function PublicBooking() {
+  useForceLightTheme();
   const { businessId } = useParams<{ businessId: string }>();
   const [searchParams] = useSearchParams();
   const [services, setServices] = useState<Service[]>([]);
@@ -238,6 +230,9 @@ export function PublicBooking() {
       content: assistantIntro("this business"),
     },
   ]);
+  const [aiThreadId, setAiThreadId] = useState<string | undefined>(undefined);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const paymentHandledRef = useRef(false);
 
@@ -417,9 +412,7 @@ export function PublicBooking() {
             host_title: row.host_title,
             client_instructions: row.client_instructions,
             buffer_minutes: row.buffer_minutes ?? 0,
-            image:
-              row.image_url ||
-              "https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=500&h=280&fit=crop&auto=format",
+            image: row.image_url || "",
           }));
           setServices(mapped);
           if (preselectedServiceId) {
@@ -532,17 +525,42 @@ export function PublicBooking() {
     return new Date(slotIso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
 
-  function sendMessage(text?: string) {
+  async function sendMessage(text?: string) {
     const content = text ?? chatInput;
-    if (!content.trim()) return;
+    if (!content.trim() || aiBusy || !businessId) return;
     const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", content };
-    const aiMsg: ChatMessage = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: getAIResponse(content, businessProfile.name),
-    };
-    setMessages((prev) => [...prev, userMsg, aiMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setChatInput("");
+    setAiBusy(true);
+    setActivitySteps([{ id: "status", label: "Starting…", status: "running" }]);
+    const aiMessageId = `${Date.now()}-ai`;
+    setMessages((prev) => [...prev, { id: aiMessageId, role: "assistant", content: "" }]);
+    try {
+      await api.publicAiChatStream(
+        businessId,
+        {
+          message: content.trim(),
+          thread_id: aiThreadId,
+        },
+        (event) => {
+          handlePublicStreamEvent(event, setActivitySteps, aiMessageId, setMessages, setAiThreadId);
+        },
+      );
+    } catch {
+      setActivitySteps([]);
+      setMessages((prev) =>
+        prev
+          .filter((msg) => msg.id !== aiMessageId)
+          .concat({
+            id: `${Date.now()}-err`,
+            role: "assistant",
+            content: "I couldn't reach the booking assistant just now. Please try again in a moment.",
+          }),
+      );
+    } finally {
+      setAiBusy(false);
+      setActivitySteps([]);
+    }
   }
 
   function applyConfirmedBooking(confirmed: PublicBookingResponse) {
@@ -778,1767 +796,995 @@ export function PublicBooking() {
 
   const hostLabel = service ? formatHostLabel(service.host_name, service.host_title) : null;
 
+  const dateLabel = selectedDateObj
+    ? `${selectedDateObj.day}, ${selectedDateObj.month} ${selectedDateObj.num}`
+    : null;
+  const timeLabel =
+    selectedSlotIso && service?.scheduling_mode !== "all_day" ? displayTime(selectedSlotIso) : null;
+  const dueTodayAmount = service ? (service.deposit > 0 ? service.deposit : service.price) : null;
+  const contactName =
+    form.firstName.trim() || form.lastName.trim()
+      ? `${form.firstName} ${form.lastName}`.trim()
+      : null;
+  const showSummaryRail = step !== "confirmation";
+  const showMobileStrip = Boolean(service) && step !== "confirmation";
+
+  const summaryProps = {
+    businessName: businessProfile.name,
+    serviceName: service?.name,
+    serviceImage: service?.image || null,
+    listingName: selectedListing?.name,
+    dateLabel,
+    timeLabel: service?.scheduling_mode === "all_day" && selectedSlotIso ? "All day" : timeLabel,
+    durationLabel: service ? serviceDurationLabel(service) : null,
+    formatLabel: resolvedAppointmentFormat
+      ? resolvedAppointmentFormat === "online"
+        ? "Online"
+        : "In person"
+      : null,
+    hostLabel,
+    contactName,
+    totalLabel: service ? `₦${service.price}` : null,
+    dueTodayLabel: dueTodayAmount != null ? `₦${dueTodayAmount}` : null,
+    balanceLabel:
+      service && service.deposit > 0 ? `₦${Math.max(0, service.price - service.deposit)}` : null,
+  };
+
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: cream, fontFamily: "'DM Sans', sans-serif" }}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header style={{ backgroundColor: "var(--color-card)", borderBottom: "1px solid var(--color-border)" }}>
-        <div
-          style={{
-            maxWidth: 780,
-            margin: "0 auto",
-            padding: "18px 24px",
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-          }}
-        >
-          <div
-            style={{
-              width: 46,
-              height: 46,
-              borderRadius: 14,
-              background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 100%)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            {businessProfile.public_logo_url ? (
-              <img
-                src={businessProfile.public_logo_url}
-                alt={businessProfile.name}
-                style={{ width: 30, height: 30, borderRadius: 8, objectFit: "cover" }}
-              />
-            ) : (
-              <Sparkles size={18} color="#fff" />
+    <div className={`booking-page ${showMobileStrip ? "pb-28 lg:pb-0" : ""}`}>
+      <div className="mx-auto max-w-5xl px-5 pb-16 pt-10 sm:px-8">
+        {/* Hero */}
+        <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-4 flex items-center gap-3">
+              {businessProfile.public_logo_url ? (
+                <img
+                  src={businessProfile.public_logo_url}
+                  alt=""
+                  className="h-10 w-10 rounded-xl object-cover ring-1 ring-border"
+                />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-emerald-300">
+                  <Sparkles size={16} />
+                </div>
+              )}
+              <span className="text-xs font-medium text-muted-foreground">Accepting bookings</span>
+            </div>
+            <h1 className="booking-hero-name">{businessProfile.name}</h1>
+            {businessProfile.public_tagline && (
+              <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
+                {businessProfile.public_tagline}
+              </p>
             )}
           </div>
-          <div>
-            <h1
-              style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: "1.25rem",
-                fontWeight: 600,
-                color: dark,
-                lineHeight: 1.2,
-              }}
-            >
-              {businessProfile.name}
-            </h1>
-            <p style={{ fontSize: 12, color: stone500, marginTop: 2 }}>
-              {businessProfile.public_tagline || "Book your appointment"}
-            </p>
-          </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-            <div
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                backgroundColor: "#4ade80",
-                animation: "pulse 2s ease-in-out infinite",
-              }}
-            />
-            <span style={{ fontSize: 12, color: stone500 }}>Accepting bookings</span>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <div style={{ maxWidth: 780, margin: "0 auto", padding: "36px 24px 120px" }}>
-        {/* ── Progress stepper ─────────────────────────────────────────────── */}
         {step !== "confirmation" && (
-          <div style={{ marginBottom: 40 }}>
-            <div style={{ display: "flex", alignItems: "flex-start" }}>
-              {stepLabels.map((label, i) => {
-                const done = i < stepIndex;
-                const active = i === stepIndex;
-                return (
-                  <div key={label} style={{ display: "flex", alignItems: "flex-start", flex: 1 }}>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                      <div
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: "50%",
-                          backgroundColor: done ? brandAccent : active ? brandPrimary : "var(--color-muted)",
-                          color: done || active ? "#fff" : stone400,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          boxShadow: active ? `0 0 0 4px rgba(146,64,14,0.15)` : "none",
-                          transition: "all 0.3s",
-                        }}
-                      >
-                        {done ? <Check size={14} strokeWidth={2.5} /> : i + 1}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          marginTop: 6,
-                          whiteSpace: "nowrap",
-                          color: active ? brandPrimary : done ? brandAccent : stone400,
-                          fontWeight: active ? 600 : 400,
-                        }}
-                      >
-                        {label}
-                      </span>
-                    </div>
-                    {i < stepLabels.length - 1 && (
-                      <div
-                        style={{
-                          flex: 1,
-                          height: 1,
-                          backgroundColor: i < stepIndex ? brandAccent : "var(--color-muted)",
-                          marginTop: 16,
-                          marginLeft: 8,
-                          marginRight: 8,
-                          transition: "background-color 0.4s",
-                        }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <StepTrail labels={stepLabels} activeIndex={Math.max(0, stepIndex)} />
         )}
 
-        {/* ── Steps ─────────────────────────────────────────────────────────── */}
-        <AnimatePresence mode="wait">
-          {/* ── Step 1: Service ── */}
-          {step === "service" && (
-            <motion.div
-              key="service"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-            >
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "1.85rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: businessProfile.public_description ? 6 : 28,
-                }}
-              >
-                Choose a service
-              </h2>
-              {businessProfile.public_description && (
-                <p style={{ fontSize: 14, color: stone500, marginBottom: 28, lineHeight: 1.6 }}>
-                  {businessProfile.public_description}
-                </p>
-              )}
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-                  gap: 16,
-                }}
-              >
-                {servicesLoading && <BrandLoader label="Loading services" className="col-span-full" />}
-                {!servicesLoading && servicesError && (
-                  <p style={{ fontSize: 14, color: "#E74C3C" }}>{servicesError}</p>
-                )}
-                {!servicesLoading && !servicesError && services.length === 0 && (
-                  <p style={{ fontSize: 14, color: stone500 }}>
-                    No active services are available for this business yet.
-                  </p>
-                )}
-                {services.map((svc) => (
-                  <motion.button
-                    key={svc.id}
-                    onClick={() => {
-                      setService(svc);
-                      setAppointmentFormat("");
-                      setSelectedListing(null);
-                      setSelectedDate("");
-                      setSelectedSlotIso("");
-                      setStep(svc.booking_type === "listing" ? "listing" : "datetime");
-                    }}
-                    whileHover={{ y: -3 }}
-                    transition={{ duration: 0.15 }}
-                    style={{
-                      textAlign: "left",
-                      backgroundColor: "var(--color-card)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 20,
-                      overflow: "hidden",
-                      boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
-                      cursor: "pointer",
-                      padding: 0,
-                      display: "block",
-                      width: "100%",
-                    }}
-                  >
-                    {/* Image */}
-                    <div style={{ position: "relative", height: 180, backgroundColor: "var(--color-muted)", overflow: "hidden" }}>
-                      <img
-                        src={svc.image}
-                        alt={svc.name}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                      {svc.popular && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 12,
-                            left: 12,
-                            backgroundColor: brandPrimary,
-                            color: "#fff",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            padding: "3px 8px",
-                            borderRadius: 20,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          <Star size={10} fill="#fff" /> Popular
-                        </div>
-                      )}
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 12,
-                          right: 12,
-                          backgroundColor: "var(--color-card)",
-                          color: stone600,
-                          fontSize: 11,
-                          padding: "3px 8px",
-                          borderRadius: 20,
-                        }}
-                      >
-                        {svc.category}
-                      </div>
-                    </div>
-
-                    {/* Info */}
-                    <div style={{ padding: "16px 18px 18px" }}>
-                      <p
-                        style={{
-                          fontFamily: "'Playfair Display', serif",
-                          fontSize: "1rem",
-                          fontWeight: 600,
-                          color: dark,
-                          marginBottom: 5,
-                        }}
-                      >
-                        {svc.name}
-                      </p>
-                      <p style={{ fontSize: 13, color: stone500, lineHeight: 1.6, marginBottom: 8 }}>
-                        {svc.description}
-                      </p>
-                      {(svc.host_name || svc.appointment_type !== "onsite") && (
-                        <p style={{ fontSize: 12, color: stone500, marginBottom: 12 }}>
-                          {formatHostLabel(svc.host_name, svc.host_title) && `With ${formatHostLabel(svc.host_name, svc.host_title)} · `}
-                          {appointmentTypeLabels[svc.appointment_type]}
-                        </p>
-                      )}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <span
-                            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: stone500 }}
-                          >
-                            <Clock size={13} /> {serviceDurationLabel(svc)}
-                          </span>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: dark }}>
-                            ₦{svc.price}
-                          </span>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            backgroundColor: "var(--color-accent)",
-                            color: brandPrimary,
-                            padding: "3px 9px",
-                            borderRadius: 20,
-                            fontWeight: 500,
-                          }}
-                        >
-                          ₦{svc.deposit} deposit
-                        </span>
-                      </div>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-
-              {/* Trust bar */}
-              <div
-                style={{
-                  marginTop: 36,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 32,
-                  flexWrap: "wrap",
-                }}
-              >
-                {[
-                  { Icon: Shield, text: "Secure payments" },
-                  { Icon: Calendar, text: "Free cancellation 24h" },
-                  { Icon: Star, text: "4.9 · 380+ reviews" },
-                ].map(({ Icon, text }) => (
-                  <div
-                    key={text}
-                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: stone400 }}
-                  >
-                    <Icon size={13} /> {text}
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Step 2: Listing (conditional) ── */}
-          {step === "listing" && service && service.booking_type === "listing" && (
-            <motion.div
-              key="listing"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-            >
-              <button
-                onClick={() => setStep(service.booking_type === "listing" ? "listing" : "service")}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: stone500, marginBottom: 24, background: "none", border: "none", cursor: "pointer" }}
-              >
-                <ArrowLeft size={15} /> {service.booking_type === "listing" ? "Back to products" : "Back to services"}
-              </button>
-
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "1.6rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: 8,
-                }}
-              >
-                Select a product
-              </h2>
-              <p style={{ fontSize: 14, color: stone500, marginBottom: 24 }}>
-                Choose the exact property, vehicle, or item you want to book for {service.name}.
-              </p>
-
-              {listingsLoading && <BrandLoader label="Loading products" />}
-              {!listingsLoading && serviceListings.length === 0 && (
-                <p style={{ fontSize: 13, color: stone500 }}>
-                  No available products for this service right now. Please try another service.
-                </p>
-              )}
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-                {serviceListings.map((listing) => {
-                  const isSelected = selectedListing?.id === listing.id;
-                  return (
-                    <button
-                      key={listing.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedListing(listing);
-                        setSelectedDate("");
-                        setSelectedSlotIso("");
-                      }}
-                      style={{
-                        textAlign: "left",
-                        backgroundColor: "var(--color-card)",
-                        border: isSelected ? `2px solid ${brandPrimary}` : "1px solid var(--color-border)",
-                        borderRadius: 14,
-                        padding: 0,
-                        overflow: "hidden",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {listing.image_urls[0] && (
-                        <div style={{ height: 140, overflow: "hidden" }}>
-                          <img src={listing.image_urls[0]} alt={listing.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        </div>
-                      )}
-                      <div style={{ padding: 14 }}>
-                        <p style={{ fontSize: 14, fontWeight: 600, color: dark }}>{listing.name}</p>
-                        {listing.description && (
-                          <p style={{ marginTop: 6, fontSize: 12, color: stone500, lineHeight: 1.5 }}>{listing.description}</p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedListing && (
-                <motion.button
-                  key="continue-listing"
-                  initial={{ opacity: 0, y: 8 }}
+        <div
+          className={`mt-10 grid gap-10 ${
+            showSummaryRail ? "lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start" : ""
+          }`}
+        >
+          <div className="min-w-0">
+            <AnimatePresence mode="wait">
+              {/* Service */}
+              {step === "service" && (
+                <motion.div
+                  key="service"
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setStep("datetime")}
-                  style={{
-                    width: "100%",
-                    marginTop: 20,
-                    padding: "14px 0",
-                    borderRadius: 14,
-                    border: "none",
-                    backgroundColor: brandPrimary,
-                    color: "#fff",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
                 >
-                  Continue to date & time
-                </motion.button>
-              )}
-            </motion.div>
-          )}
-
-          {/* ── Step 3: Date & Time ── */}
-          {step === "datetime" && service && (
-            <motion.div
-              key="datetime"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-            >
-              <button
-                onClick={() => setStep("service")}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: stone500, marginBottom: 24, background: "none", border: "none", cursor: "pointer" }}
-              >
-                <ArrowLeft size={15} /> Back to services
-              </button>
-
-              {/* Service recap pill */}
-              <div
-                style={{
-                  backgroundColor: "var(--color-accent)",
-                  border: "1px solid rgba(146,64,14,0.14)",
-                  borderRadius: 14,
-                  padding: "12px 16px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  marginBottom: 28,
-                }}
-              >
-                <img
-                  src={service.image}
-                  alt=""
-                  style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover" }}
-                />
-                <div>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>{service.name}</p>
-                  <p style={{ fontSize: 12, color: brandPrimary }}>
-                    {serviceDurationLabel(service)} · ₦{service.price} · ₦{service.deposit} deposit
-                  </p>
-                </div>
-              </div>
-
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "1.6rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: 20,
-                }}
-              >
-                Pick a date & time
-              </h2>
-
-              {/* Date picker */}
-              <div
-                style={{
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 20,
-                  padding: 20,
-                  marginBottom: 14,
-                  boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: dark }}>
-                    {(visibleDates[0]
-                      ? new Date(`${visibleDates[0].key}T00:00:00`)
-                      : new Date()
-                    ).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                  </span>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {[
-                      {
-                        Icon: ChevronLeft,
-                        disabled: dateOffset === 0,
-                        onClick: () => setDateOffset(Math.max(0, dateOffset - 7)),
-                      },
-                      {
-                        Icon: ChevronRight,
-                        disabled: dateOffset >= Math.max(0, allDates.length - 7),
-                        onClick: () =>
-                          setDateOffset((prev) => Math.min(Math.max(0, allDates.length - 7), prev + 7)),
-                      },
-                    ].map(({ Icon, disabled, onClick }, i) => (
-                      <button
-                        key={i}
-                        onClick={onClick}
-                        disabled={disabled}
-                        style={{
-                          width: 30,
-                          height: 30,
-                          borderRadius: 8,
-                          backgroundColor: disabled ? "transparent" : creamCard,
-                          border: "none",
-                          cursor: disabled ? "not-allowed" : "pointer",
-                          opacity: disabled ? 0.3 : 1,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Icon size={16} color={stone500} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
-                  {visibleDates.map((d) => {
-                    const isSelected = selectedDate === d.key;
-                    return (
-                      <button
-                        key={d.key}
-                        disabled={!d.available}
-                        onClick={() => { setSelectedDate(d.key); setSelectedSlotIso(""); }}
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          padding: "10px 4px",
-                          borderRadius: 12,
-                          border: "none",
-                          backgroundColor: isSelected ? brandPrimary : "transparent",
-                          cursor: d.available ? "pointer" : "not-allowed",
-                          opacity: d.available ? 1 : 0.3,
-                          transition: "background-color 0.15s",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (d.available && !isSelected)
-                            (e.currentTarget as HTMLButtonElement).style.backgroundColor = creamCard;
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isSelected)
-                            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent";
-                        }}
-                      >
-                        <span style={{ fontSize: 11, fontWeight: 500, color: isSelected ? "rgba(255,255,255,0.75)" : stone500 }}>
-                          {d.day}
-                        </span>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: isSelected ? "#fff" : dark, marginTop: 2 }}>
-                          {d.num}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Time slots / all-day confirmation */}
-              <AnimatePresence>
-                {selectedDate && service.scheduling_mode === "all_day" && (
-                  <motion.div
-                    key="allday"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{
-                      backgroundColor: "var(--color-card)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 20,
-                      padding: 20,
-                      marginBottom: 18,
-                      boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
-                      {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Choose a service</h2>
+                  {businessProfile.public_description && (
+                    <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                      {businessProfile.public_description}
                     </p>
-                    {slotsLoading ? (
-                      <BrandLoader label="Checking availability" size="sm" />
-                    ) : selectedSlotIso ? (
-                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
-                        This books the entire calendar day — no start time needed.
-                      </p>
-                    ) : (
-                      <p style={{ fontSize: 13, color: stone500, margin: 0 }}>
-                        This date is fully booked. Please pick another day.
-                      </p>
-                    )}
-                  </motion.div>
-                )}
-                {selectedDate && service.scheduling_mode !== "all_day" && (
-                  <motion.div
-                    key="timeslots"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    style={{
-                      backgroundColor: "var(--color-card)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: 20,
-                      padding: 20,
-                      marginBottom: 18,
-                      boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 8 }}>
-                      Available times for{" "}
-                      <span style={{ color: brandPrimary }}>
-                        {selectedDateObj?.day}, {selectedDateObj?.month} {selectedDateObj?.num}
-                      </span>
-                    </p>
-                    {service.scheduling_mode === "flexible" && (
-                      <p style={{ fontSize: 12, color: stone500, marginBottom: 16 }}>
-                        Pick a start time. Typical length: about {service.duration} minutes.
-                      </p>
-                    )}
-                    {service.scheduling_mode !== "flexible" && <div style={{ marginBottom: 16 }} />}
-                    {Object.entries(groupedSlots).map(([label, slots]) => (
-                      <div key={label} style={{ marginBottom: 16 }}>
-                        <p
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 600,
-                            letterSpacing: "0.1em",
-                            textTransform: "uppercase",
-                            color: stone400,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {label}
-                        </p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          {slots.map((slotIso) => {
-                            const slot = { time: displayTime(slotIso), available: true } as TimeSlot;
-                            const isSelected = selectedSlotIso === slotIso;
-                            return (
-                              <button
-                                key={slotIso}
-                                disabled={!slot.available}
-                                onClick={() => setSelectedSlotIso(slotIso)}
-                                style={{
-                                  padding: "8px 16px",
-                                  borderRadius: 10,
-                                  border: "none",
-                                  fontSize: 13,
-                                  fontWeight: 500,
-                                  backgroundColor: isSelected ? brandPrimary : slot.available ? creamCard : "var(--color-muted)",
-                                  color: isSelected ? "#fff" : slot.available ? stone600 : stone400,
-                                  cursor: slot.available ? "pointer" : "not-allowed",
-                                  transition: "all 0.15s",
-                                  fontFamily: "'DM Sans', sans-serif",
-                                }}
-                                onMouseEnter={(e) => {
-                                  if (slot.available && !isSelected)
-                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-accent)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  if (!isSelected)
-                                    (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                                      slot.available ? creamCard : "var(--color-muted)";
-                                }}
-                              >
-                                {slot.time}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                    {slotsLoading && <BrandLoader label="Loading times" size="sm" />}
-                    {!slotsLoading && Object.keys(groupedSlots).length === 0 && (
-                      <p style={{ fontSize: 13, color: stone500 }}>
-                        No available slots for this date. Please pick another day.
-                      </p>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {service.appointment_type === "hybrid" && selectedSlotIso && (
-                <div
-                  style={{
-                    marginTop: 20,
-                    backgroundColor: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 16,
-                    padding: 18,
-                  }}
-                >
-                  <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 12 }}>
-                    How would you like to attend?
-                  </p>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    {(["online", "onsite"] as AppointmentFormat[]).map((format) => {
-                      const selected = appointmentFormat === format;
-                      return (
-                        <button
-                          key={format}
-                          type="button"
-                          onClick={() => setAppointmentFormat(format)}
-                          style={{
-                            padding: "12px 14px",
-                            borderRadius: 12,
-                            border: selected ? `2px solid ${brandPrimary}` : "1px solid var(--color-border)",
-                            backgroundColor: selected ? "var(--color-accent)" : "var(--color-card)",
-                            textAlign: "left",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>
-                            {format === "online" ? "Online" : "In person"}
-                          </p>
-                          <p style={{ fontSize: 11, color: stone500, marginTop: 4 }}>
-                            {format === "online"
-                              ? "Video call link sent after booking"
-                              : resolvePublicLocation(service, businessProfile.location, format) || "At the business location"}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <AnimatePresence>
-                {selectedDate && selectedSlotIso && (service.appointment_type !== "hybrid" || appointmentFormat) && (
-                  <motion.button
-                    key="continue-dt"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    onClick={() => setStep("details")}
-                    style={{
-                      width: "100%",
-                      padding: "14px 0",
-                      borderRadius: 14,
-                      border: "none",
-                      backgroundColor: brandPrimary,
-                      color: "#fff",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontFamily: "'DM Sans', sans-serif",
-                    }}
-                    whileHover={{ backgroundColor: brandAccent } as never}
-                  >
-                    Continue to your details
-                  </motion.button>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-
-          {/* ── Step 3: Details ── */}
-          {step === "details" && service && (
-            <motion.div
-              key="details"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-            >
-              <button
-                onClick={() => setStep("datetime")}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: stone500, marginBottom: 24, background: "none", border: "none", cursor: "pointer" }}
-              >
-                <ArrowLeft size={15} /> Back
-              </button>
-
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "1.6rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: 6,
-                }}
-              >
-                Your details
-              </h2>
-              <p style={{ fontSize: 14, color: stone500, marginBottom: 28 }}>
-                We use this to send your confirmation and calendar invite.
-              </p>
-
-              {service.client_instructions && (
-                <div
-                  style={{
-                    marginBottom: 20,
-                    backgroundColor: "var(--color-accent)",
-                    border: "1px solid rgba(146,64,14,0.14)",
-                    borderRadius: 14,
-                    padding: "14px 16px",
-                    fontSize: 13,
-                    color: stone600,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  <strong style={{ color: dark }}>Before your visit:</strong> {service.client_instructions}
-                </div>
-              )}
-
-              <div
-                style={{
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 20,
-                  padding: 24,
-                  boxShadow: "0 1px 6px rgba(28,25,23,0.05)",
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
-                      Email address
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <Mail
-                        size={15}
-                        color={stone400}
-                        style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }}
-                      />
-                      <input
-                        type="email"
-                        value={form.email}
-                        onChange={(e) => setForm({ ...form, email: e.target.value })}
-                        placeholder="alex@example.com"
-                        autoComplete="email"
-                        style={{ ...inputStyle, paddingLeft: 38 }}
-                        onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                        onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                      />
-                    </div>
-                  </div>
-
-                  {returningClient && (
-                    <div
-                      style={{
-                        backgroundColor: "var(--color-accent)",
-                        border: "1px solid rgba(146,64,14,0.14)",
-                        borderRadius: 14,
-                        padding: "12px 14px",
-                        fontSize: 13,
-                        color: stone600,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      <Sparkles size={15} color={brandPrimary} />
-                      <span>
-                        Welcome back,{" "}
-                        <strong style={{ color: dark }}>
-                          {`${returningClient.first_name} ${returningClient.last_name}`.trim()}
-                        </strong>
-                      </span>
-                    </div>
                   )}
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: 12,
-                    }}
-                  >
-                    {[
-                      { id: "firstName", label: "First name", placeholder: "Alexandra", key: "firstName" as const },
-                      { id: "lastName", label: "Surname", placeholder: "Chen", key: "lastName" as const },
-                    ].map(({ id, label, placeholder, key }) => (
-                      <div key={id}>
-                        <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
-                          {label}
-                        </label>
-                        <div style={{ position: "relative" }}>
-                          <User
-                            size={15}
-                            color={stone400}
-                            style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }}
-                          />
-                          <input
-                            type="text"
-                            value={form[key]}
-                            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                            placeholder={placeholder}
-                            autoComplete={key === "firstName" ? "given-name" : "family-name"}
-                            style={{ ...inputStyle, paddingLeft: 38 }}
-                            onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                            onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <PhoneInput
-                    countryCode={phoneCountryCode}
-                    dialCode={phoneDialCode}
-                    phoneNumber={form.phone}
-                    onCountryCodeChange={(countryCode, dialCode) => {
-                      setPhoneCountryCode(countryCode);
-                      setPhoneDialCode(dialCode);
-                    }}
-                    onPhoneNumberChange={(phone) => setForm({ ...form, phone })}
-                    idPrefix="booking-phone"
-                  />
-
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: dark, display: "block", marginBottom: 8 }}>
-                      Anything we should know?{" "}
-                      <span style={{ color: stone400, fontWeight: 400 }}>(optional)</span>
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <FileText
-                        size={15}
-                        color={stone400}
-                        style={{ position: "absolute", left: 13, top: 12 }}
-                      />
-                      <textarea
-                        value={form.notes}
-                        onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                        placeholder="Skin sensitivities, areas to focus on, preferences..."
-                        rows={3}
-                        style={{ ...inputStyle, paddingLeft: 38, resize: "none" }}
-                        onFocus={(e) => (e.target.style.borderColor = brandPrimary)}
-                        onBlur={(e) => (e.target.style.borderColor = "transparent")}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => { if (canProceedDetails) setStep("payment"); }}
-                  style={{
-                    width: "100%",
-                    marginTop: 22,
-                    padding: "13px 0",
-                    borderRadius: 13,
-                    border: "none",
-                    backgroundColor: canProceedDetails ? brandPrimary : "var(--color-muted)",
-                    color: canProceedDetails ? "#fff" : stone400,
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: canProceedDetails ? "pointer" : "not-allowed",
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: "background-color 0.15s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (canProceedDetails)
-                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent;
-                  }}
-                  onMouseLeave={(e) => {
-                    if (canProceedDetails)
-                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary;
-                  }}
-                >
-                  Continue to payment
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Step 4: Payment ── */}
-          {step === "payment" && service && selectedSlotIso && (
-            <motion.div
-              key="payment"
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.22 }}
-            >
-              <button
-                onClick={() => setStep("details")}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: stone500, marginBottom: 24, background: "none", border: "none", cursor: "pointer" }}
-              >
-                <ArrowLeft size={15} /> Back
-              </button>
-
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "1.6rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: 6,
-                }}
-              >
-                Secure your spot
-              </h2>
-              <p style={{ fontSize: 14, color: stone500, marginBottom: 28 }}>
-                {service.deposit > 0
-                  ? `Pay ₦${service.deposit} now to secure your spot. Remaining ₦${Math.max(0, service.price - service.deposit)} is due at your appointment.`
-                  : `Pay ₦${service.price} securely via Paystack to confirm your booking.`}
-              </p>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
-                <div
-                  style={{
-                    background: `linear-gradient(135deg, ${brandPrimary} 0%, ${brandAccent} 55%, ${brandPrimary} 100%)`,
-                    borderRadius: 20,
-                    padding: "28px 28px 24px",
-                    position: "relative",
-                    overflow: "hidden",
-                    minHeight: 150,
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: -40,
-                      right: -40,
-                      width: 200,
-                      height: 200,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.07)",
-                    }}
-                  />
-                  <div style={{ position: "relative" }}>
-                    <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 20 }}>
-                      Secure checkout · {businessProfile.name}
-                    </p>
-                    <p style={{ color: "#fff", fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
-                      ₦{service.deposit > 0 ? service.deposit : service.price}
-                    </p>
-                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
-                      Card, bank transfer, OPay, USSD, and more via Paystack
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    backgroundColor: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 20,
-                    padding: 22,
-                  }}
-                >
-                  <p style={{ fontSize: 13, fontWeight: 600, color: dark, marginBottom: 12 }}>
-                    Available payment methods
-                  </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {["Card", "Bank transfer", "Pay with bank / OPay", "USSD", "QR"].map((method) => (
-                      <span
-                        key={method}
-                        style={{
-                          fontSize: 12,
-                          color: dark,
-                          backgroundColor: creamCard,
-                          border: "1px solid var(--color-border)",
-                          borderRadius: 999,
-                          padding: "6px 12px",
-                        }}
-                      >
-                        {method}
-                      </span>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14, fontSize: 11, color: stone400 }}>
-                    <Lock size={12} /> You’ll choose your method on the secure Paystack checkout page. We never store card details.
-                  </div>
-                </div>
-
-                {/* Summary */}
-                <div
-                  style={{
-                    backgroundColor: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 20,
-                    padding: 20,
-                  }}
-                >
-                  <p
-                    style={{
-                      fontFamily: "'Playfair Display', serif",
-                      fontSize: "0.95rem",
-                      fontWeight: 600,
-                      color: dark,
-                      marginBottom: 16,
-                    }}
-                  >
-                    Booking summary
-                  </p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {[
-                      { label: "Service", value: service.name },
-                      ...(service.booking_type === "listing" && selectedListing
-                        ? [{ label: "Listing", value: selectedListing.name }]
-                        : []),
-                      { label: "Format", value: resolvedAppointmentFormat === "online" ? "Online" : "In person" },
-                      ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
-                      ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
-                      { label: "Date", value: `${selectedDateObj?.day}, ${selectedDateObj?.month} ${selectedDateObj?.num}` },
-                      ...(service.scheduling_mode === "all_day"
-                        ? []
-                        : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
-                      { label: "Duration", value: serviceDurationLabel(service) },
-                    ].map(({ label, value }) => (
-                      <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span style={{ color: stone500 }}>{label}</span>
-                        <span style={{ fontWeight: 500, color: dark }}>{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ borderTop: "1px solid var(--color-border)", marginTop: 14, paddingTop: 14 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
-                      <span style={{ color: stone500 }}>Total</span>
-                      <span style={{ fontWeight: 500, color: dark }}>₦{service.price}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
-                      <span style={{ color: stone500 }}>Due today</span>
-                      <span style={{ fontWeight: 700, color: brandPrimary }}>
-                        ₦{service.deposit > 0 ? service.deposit : service.price}
-                      </span>
-                    </div>
-                    {service.deposit > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 4 }}>
-                        <span style={{ color: stone400 }}>Due at appointment</span>
-                        <span style={{ color: stone400 }}>₦{Math.max(0, service.price - service.deposit)}</span>
-                      </div>
+                  <div className="mt-7 flex flex-col gap-3">
+                    {servicesLoading && <BrandLoader label="Loading services" />}
+                    {!servicesLoading && servicesError && (
+                      <p className="text-sm text-destructive">{servicesError}</p>
                     )}
-                  </div>
-
-                  <button
-                    onClick={handleDepositPayment}
-                    disabled={isBooking}
-                    style={{
-                      width: "100%",
-                      marginTop: 18,
-                      padding: "13px 0",
-                      borderRadius: 13,
-                      border: "none",
-                      backgroundColor: isBooking ? brandAccent : brandPrimary,
-                      color: "#fff",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: isBooking ? "not-allowed" : "pointer",
-                      opacity: isBooking ? 0.9 : 1,
-                      fontFamily: "'DM Sans', sans-serif",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      transition: "background-color 0.15s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isBooking) {
-                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent;
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isBooking) {
-                        (e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary;
-                      }
-                    }}
-                  >
-                    {isBooking ? (
-                      <>
-                        <Loader2 size={15} className="animate-spin" />
-                        Redirecting to Paystack...
-                      </>
-                    ) : (
-                      <>
-                        <Lock size={15} /> Continue to Paystack · ₦
-                        {service.deposit > 0 ? service.deposit : service.price}
-                      </>
+                    {!servicesLoading && !servicesError && services.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        No active services are available for this business yet.
+                      </p>
                     )}
-                  </button>
-                  {bookingError && (
-                    <p style={{ marginTop: 10, fontSize: 12, color: "#E74C3C" }}>{bookingError}</p>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Step 5: Confirmation ── */}
-          {step === "confirmation" && (
-            <motion.div
-              key="confirmation"
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.28 }}
-              style={{ textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}
-            >
-              {isBooking && !confirmedBooking && (
-                <>
-                  <Loader2 size={36} color={brandPrimary} className="animate-spin" style={{ marginBottom: 16 }} />
-                  <p style={{ fontSize: 14, color: stone500, marginBottom: 8 }}>Confirming your payment…</p>
-                  <p style={{ fontSize: 12, color: stone400, maxWidth: 320, lineHeight: 1.5 }}>
-                    Please wait while we verify your payment and prepare your receipt.
-                  </p>
-                </>
-              )}
-
-              {!isBooking && bookingError && !confirmedBooking && (
-                <>
-                  <h2
-                    style={{
-                      fontFamily: "'Playfair Display', serif",
-                      fontSize: "1.8rem",
-                      fontWeight: 600,
-                      color: dark,
-                      marginBottom: 8,
-                    }}
-                  >
-                    {/not completed yet|still processing/i.test(bookingError)
-                      ? "Payment still processing"
-                      : "Payment unsuccessful"}
-                  </h2>
-                  <p style={{ fontSize: 14, color: "#E74C3C", marginBottom: 16, maxWidth: 380, lineHeight: 1.6 }}>
-                    {bookingError}
-                  </p>
-                  <p style={{ fontSize: 13, color: stone500, marginBottom: 20, maxWidth: 380, lineHeight: 1.6 }}>
-                    {/not completed yet|still processing/i.test(bookingError)
-                      ? "If you were charged, this page can take a moment to confirm. Refresh once, and do not pay again until you see a failure."
-                      : "You were not charged for a completed booking. The time slot is free again — you can start over and try a different payment method."}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (/not completed yet|still processing/i.test(bookingError) && businessId) {
-                        window.location.reload();
-                        return;
-                      }
-                      resetBooking();
-                    }}
-                    style={{
-                      padding: "12px 20px",
-                      borderRadius: 13,
-                      border: "none",
-                      backgroundColor: brandPrimary,
-                      color: "#fff",
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontFamily: "'DM Sans', sans-serif",
-                    }}
-                  >
-                    {/not completed yet|still processing/i.test(bookingError) ? "Refresh status" : "Book again"}
-                  </button>
-                </>
-              )}
-
-              {(confirmedBooking || (service && !isBooking && !bookingError)) && (
-                <>
-              <motion.div
-                initial={{ scale: 0, rotate: -20 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ delay: 0.15, type: "spring", stiffness: 220, damping: 16 }}
-                style={{
-                  width: 80,
-                  height: 80,
-                  borderRadius: "50%",
-                  backgroundColor: brandPrimary,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 24,
-                }}
-              >
-                <Check size={38} color="#fff" strokeWidth={2.5} />
-              </motion.div>
-
-              <h2
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: "2.1rem",
-                  fontWeight: 600,
-                  color: dark,
-                  marginBottom: 8,
-                }}
-              >
-                You&apos;re all set
-              </h2>
-              <p style={{ fontSize: 14, color: stone500, marginBottom: 32, maxWidth: 380, lineHeight: 1.7 }}>
-                A confirmation email with your receipt and calendar invite
-                {confirmedBooking?.payment_reference ? " (including payment reference)" : ""} has been sent to{" "}
-                <strong style={{ color: dark }}>
-                  {confirmedBooking?.client_email || form.email}
-                </strong>
-                . You can also download or resend it below.
-              </p>
-
-              {/* Booking card */}
-              <div
-                style={{
-                  width: "100%",
-                  maxWidth: 400,
-                  backgroundColor: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 20,
-                  padding: 22,
-                  marginBottom: 22,
-                  boxShadow: "0 6px 24px rgba(28,25,23,0.09)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    paddingBottom: 16,
-                    marginBottom: 16,
-                    borderBottom: "1px solid var(--color-border)",
-                  }}
-                >
-                  {(confirmedBooking?.service_image_url || service?.image) && (
-                    <img
-                      src={confirmedBooking?.service_image_url || service?.image}
-                      alt=""
-                      style={{ width: 46, height: 46, borderRadius: 12, objectFit: "cover" }}
-                    />
-                  )}
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: dark }}>
-                      {confirmedBooking?.service_name || service?.name}
-                    </p>
-                    <p style={{ fontSize: 12, color: stone500 }}>
-                      {confirmedBooking?.business_name || businessProfile.name}
-                    </p>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      backgroundColor: "#dcfce7",
-                      color: "#239B56",
-                      padding: "4px 10px",
-                      borderRadius: 20,
-                    }}
-                  >
-                    Confirmed
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {(() => {
-                    const confFormat =
-                      confirmedBooking?.appointment_format ||
-                      (resolvedAppointmentFormat === "online" ? "online" : "onsite");
-                    const confHost =
-                      confirmedBooking?.host_name ||
-                      (confirmedBooking?.host_title
-                        ? confirmedBooking.host_title
-                        : hostLabel) ||
-                      hostLabel;
-                    const confLocation = confirmedBooking?.location || appointmentLocation;
-                    const confStart = confirmedBooking?.start_at || selectedSlotIso;
-                    const confDate = confStart
-                      ? new Date(confStart).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : selectedDateObj
-                        ? `${selectedDateObj.day}, ${selectedDateObj.month} ${selectedDateObj.num}`
-                        : "—";
-                    const confTime =
-                      confirmedBooking?.is_all_day || service?.scheduling_mode === "all_day"
-                        ? null
-                        : confStart
-                          ? displayTime(confStart)
-                          : selectedSlotIso
-                            ? displayTime(selectedSlotIso)
-                            : null;
-                    const confDuration =
-                      confirmedBooking?.scheduling_mode === "all_day"
-                        ? "All day"
-                        : confirmedBooking?.service_duration_minutes
-                          ? confirmedBooking.scheduling_mode === "flexible"
-                            ? `About ${confirmedBooking.service_duration_minutes} min`
-                            : `${confirmedBooking.service_duration_minutes} min`
-                          : service
-                            ? serviceDurationLabel(service)
-                            : "—";
-                    const depositPaid =
-                      confirmedBooking?.service_deposit ?? service?.deposit ?? 0;
-                    const price = confirmedBooking?.service_price ?? service?.price ?? 0;
-                    const rows = [
-                      {
-                        label: "Name",
-                        value:
-                          confirmedBooking?.client_name ||
-                          `${form.firstName} ${form.lastName}`.trim() ||
-                          "—",
-                      },
-                      ...(confirmedBooking?.listing_name || selectedListing?.name
-                        ? [{ label: "Listing", value: confirmedBooking?.listing_name || selectedListing?.name || "—" }]
-                        : []),
-                      { label: "Format", value: confFormat === "online" ? "Online" : "In person" },
-                      ...(confHost ? [{ label: "You'll meet", value: confHost }] : []),
-                      ...(confLocation ? [{ label: "Location", value: confLocation }] : []),
-                      { label: "Date", value: confDate },
-                      ...(confTime ? [{ label: "Time", value: confTime }] : []),
-                      { label: "Duration", value: confDuration },
-                      ...(depositPaid > 0
-                        ? [
-                            { label: "Deposit paid", value: `₦${depositPaid}` },
-                            {
-                              label: "Balance due",
-                              value: `₦${Math.max(0, price - depositPaid)} at appointment`,
-                            },
+                    {services.map((svc) => (
+                      <ServiceRow
+                        key={svc.id}
+                        name={svc.name}
+                        description={svc.description}
+                        meta={
+                          [
+                            formatHostLabel(svc.host_name, svc.host_title)
+                              ? `With ${formatHostLabel(svc.host_name, svc.host_title)}`
+                              : null,
+                            appointmentTypeLabels[svc.appointment_type],
                           ]
-                        : [{ label: "Amount paid", value: `₦${price}` }]),
-                      ...(confirmedBooking?.payment_reference
-                        ? [{ label: "Payment ref", value: confirmedBooking.payment_reference }]
-                        : []),
-                      { label: "Paid to", value: confirmedBooking?.business_name || businessProfile.name },
-                    ];
-                    return rows.map(({ label, value }) => (
-                      <div
-                        key={label}
-                        style={{ display: "flex", justifyContent: "space-between", fontSize: 13, textAlign: "left" }}
-                      >
-                        <span style={{ color: stone500 }}>{label}</span>
-                        <span style={{ fontWeight: 500, color: dark }}>{value}</span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
+                            .filter(Boolean)
+                            .join(" · ") || undefined
+                        }
+                        durationLabel={serviceDurationLabel(svc)}
+                        priceLabel={`₦${svc.price}`}
+                        depositLabel={svc.deposit > 0 ? `₦${svc.deposit} deposit` : undefined}
+                        imageUrl={svc.image || null}
+                        onClick={() => {
+                          setService(svc);
+                          setAppointmentFormat("");
+                          setSelectedListing(null);
+                          setSelectedDate("");
+                          setSelectedSlotIso("");
+                          setStep(svc.booking_type === "listing" ? "listing" : "datetime");
+                        }}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
 
-              {/* Calendar + receipt actions */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 400 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <button
-                    type="button"
-                    disabled={!confirmedBooking?.id || receiptBusy === "download"}
-                    onClick={handleDownloadReceipt}
-                    style={{
-                      padding: "12px 10px",
-                      borderRadius: 12,
-                      border: "1px solid var(--color-border)",
-                      backgroundColor: "var(--color-card)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: brandPrimary,
-                      cursor: confirmedBooking?.id ? "pointer" : "not-allowed",
-                      opacity: confirmedBooking?.id ? 1 : 0.55,
-                      fontFamily: "'DM Sans', sans-serif",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                    }}
-                  >
-                    {receiptBusy === "download" ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                    Download receipt
+              {/* Listing */}
+              {step === "listing" && service && service.booking_type === "listing" && (
+                <motion.div
+                  key="listing"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
+                >
+                  <button type="button" className="booking-btn-ghost" onClick={() => setStep("service")}>
+                    <ArrowLeft size={15} /> Back to services
                   </button>
-                  <button
-                    type="button"
-                    disabled={!confirmedBooking?.id || receiptBusy === "email"}
-                    onClick={handleEmailReceipt}
-                    style={{
-                      padding: "12px 10px",
-                      borderRadius: 12,
-                      border: "1px solid var(--color-border)",
-                      backgroundColor: "var(--color-card)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: brandPrimary,
-                      cursor: confirmedBooking?.id ? "pointer" : "not-allowed",
-                      opacity: confirmedBooking?.id ? 1 : 0.55,
-                      fontFamily: "'DM Sans', sans-serif",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                    }}
-                  >
-                    {receiptBusy === "email" ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
-                    Email receipt
-                  </button>
-                </div>
-                {receiptMessage && (
-                  <p style={{ fontSize: 12, color: stone500, lineHeight: 1.5, margin: 0 }}>{receiptMessage}</p>
-                )}
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Select a product</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Choose the exact property, vehicle, or item for {service.name}.
+                  </p>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  {[
-                    { label: "Google Calendar", kind: "google" as const },
-                    { label: "Apple Calendar", kind: "ics" as const },
-                    { label: "Outlook", kind: "ics" as const },
-                  ].map(({ label, kind }) => (
-                    <button
-                      key={label}
+                  <div className="mt-7 flex flex-col gap-3">
+                    {listingsLoading && <BrandLoader label="Loading products" />}
+                    {!listingsLoading && serviceListings.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        No available products for this service right now.
+                      </p>
+                    )}
+                    {serviceListings.map((listing) => (
+                      <ServiceRow
+                        key={listing.id}
+                        name={listing.name}
+                        description={listing.description}
+                        imageUrl={listing.image_urls[0] || null}
+                        selected={selectedListing?.id === listing.id}
+                        onClick={() => {
+                          setSelectedListing(listing);
+                          setSelectedDate("");
+                          setSelectedSlotIso("");
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  {selectedListing && (
+                    <motion.button
                       type="button"
-                      disabled={!calendarLinks}
-                      onClick={() => openCalendar(kind)}
-                      style={{
-                        padding: "10px 8px",
-                        borderRadius: 12,
-                        border: "1px solid var(--color-border)",
-                        backgroundColor: "var(--color-card)",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        color: stone600,
-                        cursor: calendarLinks ? "pointer" : "not-allowed",
-                        opacity: calendarLinks ? 1 : 0.55,
-                        fontFamily: "'DM Sans', sans-serif",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 5,
-                        transition: "all 0.15s",
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="booking-btn-primary mt-6"
+                      onClick={() => setStep("datetime")}
+                    >
+                      Continue to date & time
+                    </motion.button>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Date & time */}
+              {step === "datetime" && service && (
+                <motion.div
+                  key="datetime"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
+                >
+                  <button
+                    type="button"
+                    className="booking-btn-ghost"
+                    onClick={() => setStep(service.booking_type === "listing" ? "listing" : "service")}
+                  >
+                    <ArrowLeft size={15} /> Back
+                  </button>
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Pick a date & time</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {service.name}
+                    {selectedListing ? ` · ${selectedListing.name}` : ""}
+                  </p>
+
+                  <div className="booking-panel mt-7">
+                    <div className="mb-4 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-foreground">
+                        {(visibleDates[0]
+                          ? new Date(`${visibleDates[0].key}T00:00:00`)
+                          : new Date()
+                        ).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card disabled:opacity-30"
+                          disabled={dateOffset === 0}
+                          onClick={() => setDateOffset(Math.max(0, dateOffset - 7))}
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card disabled:opacity-30"
+                          disabled={dateOffset >= Math.max(0, allDates.length - 7)}
+                          onClick={() =>
+                            setDateOffset((prev) => Math.min(Math.max(0, allDates.length - 7), prev + 7))
+                          }
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {visibleDates.map((d) => (
+                        <button
+                          key={d.key}
+                          type="button"
+                          className="booking-date"
+                          data-selected={selectedDate === d.key}
+                          disabled={!d.available}
+                          onClick={() => {
+                            setSelectedDate(d.key);
+                            setSelectedSlotIso("");
+                          }}
+                        >
+                          <span className="text-[11px] opacity-70">{d.day}</span>
+                          <span className="text-sm font-semibold">{d.num}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <AnimatePresence>
+                    {selectedDate && service.scheduling_mode === "all_day" && (
+                      <motion.div
+                        key="allday"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="booking-panel mt-3 overflow-hidden"
+                      >
+                        <p className="mb-2 text-sm font-semibold text-foreground">{dateLabel}</p>
+                        {slotsLoading ? (
+                          <BrandLoader label="Checking availability" size="sm" />
+                        ) : selectedSlotIso ? (
+                          <p className="text-sm text-muted-foreground">
+                            This books the entire calendar day — no start time needed.
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            This date is fully booked. Please pick another day.
+                          </p>
+                        )}
+                      </motion.div>
+                    )}
+                    {selectedDate && service.scheduling_mode !== "all_day" && (
+                      <motion.div
+                        key="timeslots"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="booking-panel mt-3 overflow-hidden"
+                      >
+                        <p className="mb-1 text-sm font-semibold text-foreground">
+                          Available times for {dateLabel}
+                        </p>
+                        {service.scheduling_mode === "flexible" && (
+                          <p className="mb-4 text-xs text-muted-foreground">
+                            Pick a start time. Typical length: about {service.duration} minutes.
+                          </p>
+                        )}
+                        {service.scheduling_mode !== "flexible" && <div className="mb-4" />}
+                        {Object.entries(groupedSlots).map(([label, slots]) => (
+                          <div key={label} className="mb-4 last:mb-0">
+                            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                              {label}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {slots.map((slotIso) => (
+                                <button
+                                  key={slotIso}
+                                  type="button"
+                                  className="booking-slot"
+                                  data-selected={selectedSlotIso === slotIso}
+                                  onClick={() => setSelectedSlotIso(slotIso)}
+                                >
+                                  {displayTime(slotIso)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        {slotsLoading && <BrandLoader label="Loading times" size="sm" />}
+                        {!slotsLoading && Object.keys(groupedSlots).length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No available slots for this date. Please pick another day.
+                          </p>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {service.appointment_type === "hybrid" && selectedSlotIso && (
+                    <div className="booking-panel mt-4">
+                      <p className="mb-3 text-sm font-semibold text-foreground">How would you like to attend?</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["online", "onsite"] as AppointmentFormat[]).map((format) => {
+                          const selected = appointmentFormat === format;
+                          return (
+                            <button
+                              key={format}
+                              type="button"
+                              onClick={() => setAppointmentFormat(format)}
+                              className={`rounded-xl border p-3 text-left transition-colors ${
+                                selected
+                                  ? "border-primary bg-primary/5"
+                                  : "border-border bg-card hover:border-foreground/20"
+                              }`}
+                            >
+                              <p className="text-sm font-semibold text-foreground">
+                                {format === "online" ? "Online" : "In person"}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {format === "online"
+                                  ? "Video call link sent after booking"
+                                  : resolvePublicLocation(service, businessProfile.location, format) ||
+                                    "At the business location"}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <AnimatePresence>
+                    {selectedDate &&
+                      selectedSlotIso &&
+                      (service.appointment_type !== "hybrid" || appointmentFormat) && (
+                        <motion.button
+                          type="button"
+                          key="continue-dt"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0 }}
+                          className="booking-btn-primary mt-5"
+                          onClick={() => setStep("details")}
+                        >
+                          Continue to your details
+                        </motion.button>
+                      )}
+                  </AnimatePresence>
+                </motion.div>
+              )}
+
+              {/* Details */}
+              {step === "details" && service && (
+                <motion.div
+                  key="details"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
+                >
+                  <button type="button" className="booking-btn-ghost" onClick={() => setStep("datetime")}>
+                    <ArrowLeft size={15} /> Back
+                  </button>
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Your details</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    We use this to send your confirmation and calendar invite.
+                  </p>
+
+                  {service.client_instructions && (
+                    <div className="mt-5 rounded-xl border border-border bg-slate-900/[0.03] px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+                      <strong className="text-foreground">Before your visit:</strong>{" "}
+                      {service.client_instructions}
+                    </div>
+                  )}
+
+                  <div className="booking-panel mt-6 space-y-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-foreground">Email address</label>
+                      <div className="relative">
+                        <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                        <input
+                          type="email"
+                          value={form.email}
+                          onChange={(e) => setForm({ ...form, email: e.target.value })}
+                          placeholder="alex@example.com"
+                          autoComplete="email"
+                          className="booking-field booking-field-icon"
+                        />
+                      </div>
+                    </div>
+
+                    {returningClient && (
+                      <div className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm text-muted-foreground">
+                        <Sparkles size={15} className="text-primary" />
+                        <span>
+                          Welcome back,{" "}
+                          <strong className="text-foreground">
+                            {`${returningClient.first_name} ${returningClient.last_name}`.trim()}
+                          </strong>
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {(
+                        [
+                          { label: "First name", key: "firstName" as const, placeholder: "Alexandra", auto: "given-name" },
+                          { label: "Surname", key: "lastName" as const, placeholder: "Chen", auto: "family-name" },
+                        ] as const
+                      ).map(({ label, key, placeholder, auto }) => (
+                        <div key={key}>
+                          <label className="mb-2 block text-sm font-semibold text-foreground">{label}</label>
+                          <div className="relative">
+                            <User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                              type="text"
+                              value={form[key]}
+                              onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                              placeholder={placeholder}
+                              autoComplete={auto}
+                              className="booking-field booking-field-icon"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <PhoneInput
+                      countryCode={phoneCountryCode}
+                      dialCode={phoneDialCode}
+                      phoneNumber={form.phone}
+                      onCountryCodeChange={(countryCode, dialCode) => {
+                        setPhoneCountryCode(countryCode);
+                        setPhoneDialCode(dialCode);
                       }}
-                      onMouseEnter={(e) => {
-                        const el = e.currentTarget as HTMLButtonElement;
-                        el.style.borderColor = brandPrimary;
-                        el.style.color = brandPrimary;
-                      }}
-                      onMouseLeave={(e) => {
-                        const el = e.currentTarget as HTMLButtonElement;
-                        el.style.borderColor = "var(--color-border)";
-                        el.style.color = stone600;
+                      onPhoneNumberChange={(phone) => setForm({ ...form, phone })}
+                      idPrefix="booking-phone"
+                    />
+
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-foreground">
+                        Anything we should know?{" "}
+                        <span className="font-normal text-muted-foreground">(optional)</span>
+                      </label>
+                      <div className="relative">
+                        <FileText size={15} className="absolute left-3 top-3 text-muted-foreground" />
+                        <textarea
+                          value={form.notes}
+                          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                          placeholder="Preferences, accessibility needs, or other notes…"
+                          rows={3}
+                          className="booking-field booking-field-icon resize-none"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="booking-btn-primary"
+                      disabled={!canProceedDetails}
+                      onClick={() => {
+                        if (canProceedDetails) setStep("payment");
                       }}
                     >
-                      <CalendarPlus size={16} />
-                      {label}
+                      Continue to payment
                     </button>
-                  ))}
-                </div>
+                  </div>
+                </motion.div>
+              )}
 
-                <button
-                  onClick={resetBooking}
-                  style={{
-                    padding: "12px 0",
-                    borderRadius: 13,
-                    border: "none",
-                    backgroundColor: creamCard,
-                    color: stone600,
-                    fontSize: 13,
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: "background-color 0.15s",
-                  }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--color-accent)")}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = creamCard)}
+              {/* Payment */}
+              {step === "payment" && service && selectedSlotIso && (
+                <motion.div
+                  key="payment"
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22 }}
                 >
-                  Book another appointment
-                </button>
-              </div>
+                  <button type="button" className="booking-btn-ghost" onClick={() => setStep("details")}>
+                    <ArrowLeft size={15} /> Back
+                  </button>
+                  <h2 className="text-2xl font-semibold tracking-tight text-foreground">Secure your spot</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {service.deposit > 0
+                      ? `Pay ₦${service.deposit} now to secure your spot. Remaining ₦${Math.max(0, service.price - service.deposit)} is due at your appointment.`
+                      : `Pay ₦${service.price} securely via Paystack to confirm your booking.`}
+                  </p>
 
-              <p style={{ marginTop: 28, fontSize: 12, color: stone400, maxWidth: 420, lineHeight: 1.6 }}>
-                Need to cancel or reschedule? Email{" "}
-                <a
-                  href={`mailto:${businessProfile.contact_email || businessProfile.help_email || ""}`}
-                  style={{ color: brandPrimary }}
+                  <div className="mt-7 space-y-4">
+                    <div className="booking-panel">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                        Due today
+                      </p>
+                      <p className="mt-2 text-3xl font-bold tracking-tight tabular-nums text-foreground">
+                        ₦{service.deposit > 0 ? service.deposit : service.price}
+                      </p>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Card, bank transfer, OPay, USSD, and more via Paystack
+                      </p>
+                      <div className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
+                        <Lock size={12} className="mt-0.5 shrink-0" />
+                        You’ll choose your method on the secure Paystack checkout. We never store card details.
+                      </div>
+                    </div>
+
+                    <div className="booking-panel space-y-2.5 lg:hidden">
+                      {[
+                        { label: "Service", value: service.name },
+                        ...(service.booking_type === "listing" && selectedListing
+                          ? [{ label: "Listing", value: selectedListing.name }]
+                          : []),
+                        {
+                          label: "Format",
+                          value: resolvedAppointmentFormat === "online" ? "Online" : "In person",
+                        },
+                        ...(hostLabel ? [{ label: "You'll meet", value: hostLabel }] : []),
+                        ...(appointmentLocation ? [{ label: "Location", value: appointmentLocation }] : []),
+                        { label: "Date", value: dateLabel || "—" },
+                        ...(service.scheduling_mode === "all_day"
+                          ? []
+                          : [{ label: "Time", value: displayTime(selectedSlotIso) }]),
+                        { label: "Duration", value: serviceDurationLabel(service) },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex justify-between gap-3 text-sm">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="text-right font-medium text-foreground">{value}</span>
+                        </div>
+                      ))}
+                      <div className="border-t border-border pt-3">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Due today</span>
+                          <span className="font-semibold text-primary">
+                            ₦{service.deposit > 0 ? service.deposit : service.price}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="booking-btn-primary"
+                      disabled={isBooking}
+                      onClick={handleDepositPayment}
+                    >
+                      {isBooking ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          Redirecting to Paystack…
+                        </>
+                      ) : (
+                        <>
+                          <Lock size={15} /> Continue to Paystack · ₦
+                          {service.deposit > 0 ? service.deposit : service.price}
+                        </>
+                      )}
+                    </button>
+                    {bookingError && <p className="text-sm text-destructive">{bookingError}</p>}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Confirmation */}
+              {step === "confirmation" && (
+                <motion.div
+                  key="confirmation"
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.28 }}
+                  className="mx-auto flex max-w-lg flex-col items-center text-center"
                 >
-                  {businessProfile.contact_email || "the business"}
-                </a>
-                {businessProfile.help_email &&
-                  businessProfile.help_email !== businessProfile.contact_email && (
+                  {isBooking && !confirmedBooking && (
                     <>
-                      {" "}
-                      or help at{" "}
-                      <a href={`mailto:${businessProfile.help_email}`} style={{ color: brandPrimary }}>
-                        {businessProfile.help_email}
-                      </a>
+                      <Loader2 size={36} className="mb-4 animate-spin text-primary" />
+                      <p className="mb-2 text-sm text-muted-foreground">Confirming your payment…</p>
+                      <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                        Please wait while we verify your payment and prepare your receipt.
+                      </p>
                     </>
                   )}
-                .
-              </p>
-                </>
+
+                  {!isBooking && bookingError && !confirmedBooking && (
+                    <>
+                      <h2 className="mb-2 text-2xl font-semibold tracking-tight text-foreground">
+                        {/not completed yet|still processing/i.test(bookingError)
+                          ? "Payment still processing"
+                          : "Payment unsuccessful"}
+                      </h2>
+                      <p className="mb-4 max-w-md text-sm leading-relaxed text-destructive">{bookingError}</p>
+                      <p className="mb-5 max-w-md text-sm leading-relaxed text-muted-foreground">
+                        {/not completed yet|still processing/i.test(bookingError)
+                          ? "If you were charged, this page can take a moment to confirm. Refresh once, and do not pay again until you see a failure."
+                          : "You were not charged for a completed booking. The time slot is free again — you can start over."}
+                      </p>
+                      <button
+                        type="button"
+                        className="booking-btn-primary max-w-xs"
+                        onClick={() => {
+                          if (/not completed yet|still processing/i.test(bookingError) && businessId) {
+                            window.location.reload();
+                            return;
+                          }
+                          resetBooking();
+                        }}
+                      >
+                        {/not completed yet|still processing/i.test(bookingError)
+                          ? "Refresh status"
+                          : "Book again"}
+                      </button>
+                    </>
+                  )}
+
+                  {(confirmedBooking || (service && !isBooking && !bookingError)) && (
+                    <>
+                      <motion.div
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ delay: 0.1, type: "spring", stiffness: 220, damping: 18 }}
+                        className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground"
+                      >
+                        <Check size={30} strokeWidth={2.5} />
+                      </motion.div>
+                      <h2 className="mb-2 text-3xl font-semibold tracking-tight text-foreground">
+                        You&apos;re all set
+                      </h2>
+                      <p className="mb-8 max-w-md text-sm leading-relaxed text-muted-foreground">
+                        A confirmation email with your receipt and calendar invite
+                        {confirmedBooking?.payment_reference ? " (including payment reference)" : ""} has
+                        been sent to{" "}
+                        <strong className="text-foreground">
+                          {confirmedBooking?.client_email || form.email}
+                        </strong>
+                        .
+                      </p>
+
+                      <div className="booking-panel mb-5 w-full text-left">
+                        <div className="mb-4 flex items-center gap-3 border-b border-border pb-4">
+                          <MonogramThumb
+                            name={confirmedBooking?.service_name || service?.name || "Booking"}
+                            imageUrl={
+                              confirmedBooking?.service_image_url || service?.image || null
+                            }
+                            size="sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-foreground">
+                              {confirmedBooking?.service_name || service?.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {confirmedBooking?.business_name || businessProfile.name}
+                            </p>
+                          </div>
+                          <span className="rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                            Confirmed
+                          </span>
+                        </div>
+                        <div className="space-y-2.5">
+                          {(() => {
+                            const confFormat =
+                              confirmedBooking?.appointment_format ||
+                              (resolvedAppointmentFormat === "online" ? "online" : "onsite");
+                            const confHost =
+                              confirmedBooking?.host_name ||
+                              (confirmedBooking?.host_title
+                                ? confirmedBooking.host_title
+                                : hostLabel) ||
+                              hostLabel;
+                            const confLocation = confirmedBooking?.location || appointmentLocation;
+                            const confStart = confirmedBooking?.start_at || selectedSlotIso;
+                            const confDate = confStart
+                              ? new Date(confStart).toLocaleDateString("en-US", {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })
+                              : dateLabel || "—";
+                            const confTime =
+                              confirmedBooking?.is_all_day || service?.scheduling_mode === "all_day"
+                                ? null
+                                : confStart
+                                  ? displayTime(confStart)
+                                  : selectedSlotIso
+                                    ? displayTime(selectedSlotIso)
+                                    : null;
+                            const confDuration =
+                              confirmedBooking?.scheduling_mode === "all_day"
+                                ? "All day"
+                                : confirmedBooking?.service_duration_minutes
+                                  ? confirmedBooking.scheduling_mode === "flexible"
+                                    ? `About ${confirmedBooking.service_duration_minutes} min`
+                                    : `${confirmedBooking.service_duration_minutes} min`
+                                  : service
+                                    ? serviceDurationLabel(service)
+                                    : "—";
+                            const depositPaid =
+                              confirmedBooking?.service_deposit ?? service?.deposit ?? 0;
+                            const price = confirmedBooking?.service_price ?? service?.price ?? 0;
+                            const rows = [
+                              {
+                                label: "Name",
+                                value:
+                                  confirmedBooking?.client_name ||
+                                  `${form.firstName} ${form.lastName}`.trim() ||
+                                  "—",
+                              },
+                              ...(confirmedBooking?.listing_name || selectedListing?.name
+                                ? [
+                                    {
+                                      label: "Listing",
+                                      value:
+                                        confirmedBooking?.listing_name || selectedListing?.name || "—",
+                                    },
+                                  ]
+                                : []),
+                              {
+                                label: "Format",
+                                value: confFormat === "online" ? "Online" : "In person",
+                              },
+                              ...(confHost ? [{ label: "You'll meet", value: confHost }] : []),
+                              ...(confLocation ? [{ label: "Location", value: confLocation }] : []),
+                              { label: "Date", value: confDate },
+                              ...(confTime ? [{ label: "Time", value: confTime }] : []),
+                              { label: "Duration", value: confDuration },
+                              ...(depositPaid > 0
+                                ? [
+                                    { label: "Deposit paid", value: `₦${depositPaid}` },
+                                    {
+                                      label: "Balance due",
+                                      value: `₦${Math.max(0, price - depositPaid)} at appointment`,
+                                    },
+                                  ]
+                                : [{ label: "Amount paid", value: `₦${price}` }]),
+                              ...(confirmedBooking?.payment_reference
+                                ? [
+                                    {
+                                      label: "Payment ref",
+                                      value: confirmedBooking.payment_reference,
+                                    },
+                                  ]
+                                : []),
+                              {
+                                label: "Paid to",
+                                value: confirmedBooking?.business_name || businessProfile.name,
+                              },
+                            ];
+                            return rows.map(({ label, value }) => (
+                              <div key={label} className="flex justify-between gap-3 text-sm">
+                                <span className="text-muted-foreground">{label}</span>
+                                <span className="text-right font-medium text-foreground">{value}</span>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+
+                      <div className="flex w-full flex-col gap-2.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            disabled={!confirmedBooking?.id || receiptBusy === "download"}
+                            onClick={handleDownloadReceipt}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 py-3 text-xs font-semibold text-primary disabled:opacity-50"
+                          >
+                            {receiptBusy === "download" ? (
+                              <Loader2 size={15} className="animate-spin" />
+                            ) : (
+                              <Download size={15} />
+                            )}
+                            Download receipt
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!confirmedBooking?.id || receiptBusy === "email"}
+                            onClick={handleEmailReceipt}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 py-3 text-xs font-semibold text-primary disabled:opacity-50"
+                          >
+                            {receiptBusy === "email" ? (
+                              <Loader2 size={15} className="animate-spin" />
+                            ) : (
+                              <Mail size={15} />
+                            )}
+                            Email receipt
+                          </button>
+                        </div>
+                        {receiptMessage && (
+                          <p className="text-left text-xs text-muted-foreground">{receiptMessage}</p>
+                        )}
+                        <div className="grid grid-cols-3 gap-2">
+                          {(
+                            [
+                              { label: "Google", kind: "google" as const },
+                              { label: "Apple", kind: "ics" as const },
+                              { label: "Outlook", kind: "ics" as const },
+                            ] as const
+                          ).map(({ label, kind }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              disabled={!calendarLinks}
+                              onClick={() => openCalendar(kind)}
+                              className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card px-2 py-2.5 text-[11px] font-medium text-foreground disabled:opacity-50"
+                            >
+                              <CalendarPlus size={15} />
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={resetBooking}
+                          className="rounded-xl border border-border bg-card px-3 py-3 text-sm font-medium text-foreground hover:bg-slate-50"
+                        >
+                          Book another appointment
+                        </button>
+                      </div>
+
+                      <p className="mt-7 max-w-md text-xs leading-relaxed text-muted-foreground">
+                        Need to cancel or reschedule? Email{" "}
+                        <a
+                          href={`mailto:${businessProfile.contact_email || businessProfile.help_email || ""}`}
+                          className="text-primary"
+                        >
+                          {businessProfile.contact_email || "the business"}
+                        </a>
+                        {businessProfile.help_email &&
+                          businessProfile.help_email !== businessProfile.contact_email && (
+                            <>
+                              {" "}
+                              or help at{" "}
+                              <a href={`mailto:${businessProfile.help_email}`} className="text-primary">
+                                {businessProfile.help_email}
+                              </a>
+                            </>
+                          )}
+                        .
+                      </p>
+                    </>
+                  )}
+                </motion.div>
               )}
-            </motion.div>
+            </AnimatePresence>
+          </div>
+
+          {showSummaryRail && (
+            <aside className="hidden lg:block">
+              <BookingSummary {...summaryProps} />
+            </aside>
           )}
-        </AnimatePresence>
+        </div>
       </div>
 
-      {/* ── AI Chat Widget ─────────────────────────────────────────────────── */}
-      <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 50 }}>
+      {/* Mobile sticky context strip */}
+      {showMobileStrip && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-4 py-3 backdrop-blur-md lg:hidden">
+          <BookingSummary {...summaryProps} compact />
+        </div>
+      )}
+
+      {/* AI Chat Widget */}
+      <div className={`fixed right-5 z-50 ${showMobileStrip ? "bottom-20 lg:bottom-6" : "bottom-6"}`}>
         <AnimatePresence>
           {chatOpen && (
             <motion.div
               key="chat"
-              initial={{ opacity: 0, y: 20, scale: 0.94 }}
+              initial={{ opacity: 0, y: 16, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.94 }}
+              exit={{ opacity: 0, y: 16, scale: 0.96 }}
               transition={{ duration: 0.2 }}
-              style={{
-                position: "absolute",
-                bottom: 72,
-                right: 0,
-                width: 320,
-                height: 440,
-                backgroundColor: "var(--color-card)",
-                borderRadius: 20,
-                border: "1px solid var(--color-border)",
-                boxShadow: "0 24px 64px rgba(28,25,23,0.18)",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
+              className="absolute bottom-16 right-0 flex h-[440px] w-[320px] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
             >
-              {/* Chat header */}
-              <div
-                style={{
-                  padding: "14px 16px",
-                  backgroundColor: brandPrimary,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  flexShrink: 0,
-                }}
-              >
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    backgroundColor: "rgba(255,255,255,0.2)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Sparkles size={15} color="#fff" />
+              <div className="flex shrink-0 items-center gap-2.5 bg-slate-900 px-4 py-3.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15">
+                  <Sparkles size={15} className="text-white" />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{businessProfile.name}</p>
-                  <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 11 }}>Booking assistant</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-white">{businessProfile.name}</p>
+                  <p className="text-[11px] text-white/65">Booking assistant</p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setVoiceActive(!voiceActive)}
                   title={voiceActive ? "Disable voice" : "Enable voice"}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: "50%",
-                    backgroundColor: voiceActive ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)",
-                    border: "none",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "background-color 0.15s",
-                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15"
                 >
-                  {voiceActive ? <Mic size={14} color="#fff" /> : <MicOff size={14} color="rgba(255,255,255,0.7)" />}
+                  {voiceActive ? (
+                    <Mic size={14} className="text-white" />
+                  ) : (
+                    <MicOff size={14} className="text-white/70" />
+                  )}
                 </button>
-                <button
-                  onClick={() => setChatOpen(false)}
-                  style={{ background: "none", border: "none", cursor: "pointer", display: "flex", padding: 2 }}
-                >
-                  <X size={16} color="rgba(255,255,255,0.8)" />
+                <button type="button" onClick={() => setChatOpen(false)} className="p-0.5">
+                  <X size={16} className="text-white/80" />
                 </button>
               </div>
 
-              {/* Voice indicator */}
               {voiceActive && (
-                <div
-                  style={{
-                    padding: "8px 14px",
-                    backgroundColor: "var(--color-accent)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 11,
-                    color: brandPrimary,
-                    flexShrink: 0,
-                  }}
-                >
-                  <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-                    {[6, 10, 8, 12, 7].map((h, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 3,
-                          height: h,
-                          backgroundColor: brandAccent,
-                          borderRadius: 4,
-                          animation: `bounce ${0.5 + i * 0.08}s ease-in-out infinite alternate`,
-                        }}
-                      />
-                    ))}
-                  </div>
+                <div className="flex shrink-0 items-center gap-2 bg-primary/10 px-3.5 py-2 text-[11px] text-primary">
                   Voice mode active — speak your request
                 </div>
               )}
 
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="flex flex-1 flex-col gap-2.5 overflow-y-auto p-3.5">
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", alignItems: "flex-end", gap: 6 }}
+                    className={`flex items-end gap-1.5 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                   >
                     {msg.role === "assistant" && (
-                      <div
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          backgroundColor: creamCard,
-                          flexShrink: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          marginBottom: 2,
-                        }}
-                      >
-                        <Sparkles size={11} color={brandAccent} />
+                      <div className="mb-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100">
+                        <Sparkles size={11} className="text-primary" />
                       </div>
                     )}
                     <div
-                      style={{
-                        maxWidth: "78%",
-                        padding: "9px 12px",
-                        fontSize: 12,
-                        lineHeight: 1.6,
-                        whiteSpace: "pre-line",
-                        backgroundColor: msg.role === "user" ? brandPrimary : creamCard,
-                        color: msg.role === "user" ? "#fff" : dark,
-                        borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                      }}
+                      className={`max-w-[78%] whitespace-pre-line px-3 py-2 text-xs leading-relaxed ${
+                        msg.role === "user"
+                          ? "rounded-[14px_14px_4px_14px] bg-primary text-primary-foreground"
+                          : "rounded-[14px_14px_14px_4px] bg-slate-100 text-foreground"
+                      }`}
                     >
                       {msg.content}
                     </div>
                   </div>
                 ))}
+                {aiBusy && activitySteps.length > 0 && (
+                  <div className="ml-7 max-w-[85%] rounded-xl border border-border bg-slate-50 px-3 py-2.5 text-[11px] text-muted-foreground">
+                    <div className="mb-1.5 font-semibold">Working…</div>
+                    {activitySteps.map((s) => (
+                      <div key={s.id} className="mt-1 flex items-center gap-1.5">
+                        {s.status === "running" ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Check size={12} className="text-primary" />
+                        )}
+                        <span>{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {aiBusy && activitySteps.length === 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100">
+                      <Sparkles size={11} className="text-primary" />
+                    </div>
+                    <div className="rounded-[14px_14px_14px_4px] bg-slate-100 px-3 py-2 text-xs text-muted-foreground">
+                      Thinking…
+                    </div>
+                  </div>
+                )}
                 <div ref={chatEndRef} />
               </div>
 
-              {/* Quick replies */}
               {messages.length <= 2 && (
-                <div style={{ padding: "0 12px 10px", display: "flex", flexWrap: "wrap", gap: 6, flexShrink: 0 }}>
-                  {["What are the prices?", "What's available this week?", "Tell me about facials"].map((q) => (
+                <div className="flex shrink-0 flex-wrap gap-1.5 px-3 pb-2.5">
+                  {["What are the prices?", "What's available this week?", "Help me book"].map((q) => (
                     <button
                       key={q}
+                      type="button"
                       onClick={() => sendMessage(q)}
-                      style={{
-                        fontSize: 11,
-                        padding: "5px 10px",
-                        borderRadius: 20,
-                        border: "none",
-                        backgroundColor: creamCard,
-                        color: stone600,
-                        cursor: "pointer",
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}
+                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-foreground"
                     >
                       {q}
                     </button>
@@ -2546,111 +1792,51 @@ export function PublicBooking() {
                 </div>
               )}
 
-              {/* Input */}
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderTop: "1px solid var(--color-border)",
-                  display: "flex",
-                  gap: 8,
-                  flexShrink: 0,
-                }}
-              >
+              <div className="flex shrink-0 gap-2 border-t border-border px-3 py-2.5">
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                  placeholder={voiceActive ? "Listening… or type here" : "Ask me anything…"}
-                  style={{
-                    flex: 1,
-                    padding: "8px 12px",
-                    borderRadius: 10,
-                    border: "none",
-                    backgroundColor: creamCard,
-                    fontSize: 12,
-                    color: dark,
-                    outline: "none",
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}
+                  onKeyDown={(e) => e.key === "Enter" && !aiBusy && sendMessage()}
+                  placeholder={
+                    aiBusy ? "Waiting for reply…" : voiceActive ? "Listening… or type here" : "Ask me anything…"
+                  }
+                  disabled={aiBusy}
+                  className="min-w-0 flex-1 rounded-lg border-none bg-slate-100 px-3 py-2 text-xs text-foreground outline-none disabled:opacity-70"
                 />
                 <button
+                  type="button"
                   onClick={() => sendMessage()}
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 10,
-                    border: "none",
-                    backgroundColor: brandPrimary,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    transition: "background-color 0.15s",
-                  }}
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandAccent)}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.backgroundColor = brandPrimary)}
+                  disabled={aiBusy}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary disabled:opacity-60"
                 >
-                  <Send size={14} color="#fff" />
+                  <Send size={14} className="text-primary-foreground" />
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* FAB */}
         <motion.button
-          whileHover={{ scale: 1.07 }}
-          whileTap={{ scale: 0.94 }}
+          type="button"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setChatOpen(!chatOpen)}
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            backgroundColor: chatOpen ? "#57534e" : brandPrimary,
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 8px 28px rgba(146,64,14,0.35)",
-            position: "relative",
-            transition: "background-color 0.2s",
-          }}
+          className={`relative flex h-14 w-14 items-center justify-center rounded-full border-none shadow-lg ${
+            chatOpen ? "bg-slate-700" : "bg-primary"
+          }`}
         >
-          {chatOpen ? <X size={20} color="#fff" /> : <MessageCircle size={20} color="#fff" />}
+          {chatOpen ? (
+            <X size={20} className="text-white" />
+          ) : (
+            <MessageCircle size={20} className="text-white" />
+          )}
           {!chatOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: -4,
-                right: -4,
-                width: 22,
-                height: 22,
-                borderRadius: "50%",
-                backgroundColor: brandPrimary,
-                color: "#fff",
-                fontSize: 9,
-                fontWeight: 800,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "2px solid var(--color-background)",
-                letterSpacing: "-0.02em",
-              }}
-            >
+            <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-background bg-slate-900 text-[9px] font-bold text-white">
               AI
-            </div>
+            </span>
           )}
         </motion.button>
       </div>
-
-      <style>{`
-        @keyframes bounce {
-          from { transform: scaleY(0.6); }
-          to { transform: scaleY(1.4); }
-        }
-      `}</style>
     </div>
   );
 }

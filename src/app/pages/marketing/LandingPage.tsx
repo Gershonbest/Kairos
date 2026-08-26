@@ -63,9 +63,9 @@ const features = [
   },
   {
     icon: Brain,
-    title: "AI Assistant",
+    title: "Orion",
     description:
-      "Let AI handle customer inquiries, suggest optimal scheduling, and provide business insights automatically.",
+      "Orion handles customer inquiries, suggests optimal scheduling, and surfaces business insights automatically.",
     color: "#3D5AFE",
     image: featureAi,
   },
@@ -109,7 +109,7 @@ const testimonials = [
     role: "Owner, Blissful Spa · Lagos, Nigeria",
     image: testimonialNigeria,
     quote:
-      "Orheo cut our no-shows by 60% and doubled our online bookings in the first month. The AI assistant answers questions even when we're closed!",
+      "Orion cut our no-shows by 60% and doubled our online bookings in the first month. It answers questions even when we're closed!",
     rating: 5,
   },
   {

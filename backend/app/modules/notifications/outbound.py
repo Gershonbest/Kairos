@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.plans import PlanFeature, plan_has_feature
 from app.infra.cache import redis_cache
 from app.infra.db import SessionLocal
 from app.infra.messaging import ProviderResult, get_adapter
@@ -41,6 +42,7 @@ DEFAULT_CHANNEL_OFFSETS = {
 MAX_SEND_ATTEMPTS = 5
 LOCK_KEY = "jobs:outbound-messages"
 TEMPLATE_KEY = "booking_reminder"
+TEMPLATE_KEY_CONFIRMATION = "booking_confirmation"
 CHANNEL_OFFSET_KEYS = ("email", "sms", "whatsapp", "voice")
 
 
@@ -90,16 +92,47 @@ class ReminderPlan:
     payload: dict
 
 
-def enabled_reminder_channels(prefs: NotificationPreference | None) -> list[OutboundChannel]:
+def _channel_allowed_by_plan(tenant: Tenant | None, channel: OutboundChannel) -> bool:
+    if tenant is None or not getattr(tenant, "plan_code", None):
+        return True
+    feature_map = {
+        OutboundChannel.email: PlanFeature.client_reminders_email,
+        OutboundChannel.sms: PlanFeature.client_reminders_sms,
+        OutboundChannel.whatsapp: PlanFeature.client_reminders_whatsapp,
+        OutboundChannel.voice: PlanFeature.client_reminders_voice,
+    }
+    feature = feature_map[channel]
+    try:
+        return plan_has_feature(tenant.plan_code, feature)
+    except Exception:
+        return True
+
+
+def enabled_reminder_channels(
+    prefs: NotificationPreference | None,
+    *,
+    tenant: Tenant | None = None,
+) -> list[OutboundChannel]:
     channels: list[OutboundChannel] = []
-    if prefs is None or getattr(prefs, "client_reminder_email", True):
+    if (
+        (prefs is None or getattr(prefs, "client_reminder_email", True))
+        and _channel_allowed_by_plan(tenant, OutboundChannel.email)
+    ):
         channels.append(OutboundChannel.email)
     sms_on = bool(getattr(prefs, "sms_enabled", False) and getattr(prefs, "client_reminder_sms", False))
-    if sms_on:
+    if sms_on and _channel_allowed_by_plan(tenant, OutboundChannel.sms):
         channels.append(OutboundChannel.sms)
-    if prefs is not None and getattr(prefs, "client_reminder_whatsapp", False):
+    if (
+        prefs is not None
+        and getattr(prefs, "client_reminder_whatsapp", False)
+        and _channel_allowed_by_plan(tenant, OutboundChannel.whatsapp)
+    ):
         channels.append(OutboundChannel.whatsapp)
-    if prefs is not None and getattr(prefs, "client_reminder_voice", False):
+    if (
+        prefs is not None
+        and getattr(prefs, "client_reminder_voice", False)
+        and _channel_allowed_by_plan(tenant, OutboundChannel.voice)
+    ):
         channels.append(OutboundChannel.voice)
     return channels
 
@@ -176,7 +209,7 @@ def plan_reminder_jobs(
     subject = f"Reminder: {service.name} with {tenant.name}"
     jobs: list[ReminderPlan] = []
     seen: set[tuple[str, int]] = set()
-    for channel in enabled_reminder_channels(prefs):
+    for channel in enabled_reminder_channels(prefs, tenant=tenant):
         to_address = destination_for(channel, client)
         if not to_address:
             continue
@@ -201,6 +234,7 @@ def plan_reminder_jobs(
                         "when_label": when_label,
                         "body": body,
                         "subject": subject,
+                        "template_key": TEMPLATE_KEY,
                     },
                 )
             )
@@ -337,6 +371,137 @@ async def sync_booking_reminders(session: AsyncSession, booking: Booking) -> Non
     )
 
 
+def build_confirmation_body(
+    *,
+    client_name: str,
+    service_name: str,
+    business_name: str,
+    when_label: str,
+) -> str:
+    return (
+        f"Hi {client_name}, your booking is confirmed: {service_name} with {business_name} on {when_label}. "
+        "Reply if you need to reschedule."
+    )
+
+
+def enabled_confirmation_channels(
+    prefs: NotificationPreference | None,
+    *,
+    tenant: Tenant | None = None,
+) -> list[OutboundChannel]:
+    channels: list[OutboundChannel] = []
+    sms_on = bool(getattr(prefs, "sms_enabled", False) and getattr(prefs, "client_reminder_sms", False))
+    if sms_on and _channel_allowed_by_plan(tenant, OutboundChannel.sms):
+        channels.append(OutboundChannel.sms)
+    if (
+        prefs is not None
+        and getattr(prefs, "client_reminder_whatsapp", False)
+        and _channel_allowed_by_plan(tenant, OutboundChannel.whatsapp)
+    ):
+        channels.append(OutboundChannel.whatsapp)
+    return channels
+
+
+async def queue_booking_confirmations(
+    session: AsyncSession,
+    *,
+    tenant: Tenant,
+    booking: Booking,
+    client: Client,
+    service: Service,
+    now: datetime | None = None,
+) -> list[OutboundMessage]:
+    if booking.status != BookingStatus.confirmed:
+        return []
+    prefs = await _get_or_create_prefs(session, tenant.id)
+    channels = enabled_confirmation_channels(prefs, tenant=tenant)
+    if not channels:
+        return []
+
+    when_label = format_local_when(
+        booking.start_at,
+        tenant.timezone or "Africa/Lagos",
+        is_all_day=bool(booking.is_all_day),
+    )
+    client_name = visit_display_name(booking, client)
+    body = build_confirmation_body(
+        client_name=client_name,
+        service_name=service.name,
+        business_name=tenant.name,
+        when_label=when_label,
+    )
+    subject = f"Booking confirmed: {service.name} with {tenant.name}"
+    moment = now or datetime.now(UTC)
+    desired_channels: set[str] = set()
+    existing_rows = (
+        await session.execute(
+            select(OutboundMessage).where(
+                OutboundMessage.booking_id == booking.id,
+                OutboundMessage.purpose == OutboundPurpose.booking_confirmation,
+            )
+        )
+    ).scalars().all()
+    existing = {row.channel.value: row for row in existing_rows}
+    queued: list[OutboundMessage] = []
+
+    for channel in channels:
+        to_address = destination_for(channel, client)
+        if not to_address:
+            continue
+        desired_channels.add(channel.value)
+        payload = {
+            "client_name": client_name,
+            "service_name": service.name,
+            "business_name": tenant.name,
+            "when_label": when_label,
+            "body": body,
+            "subject": subject,
+            "template_key": TEMPLATE_KEY_CONFIRMATION,
+        }
+        row = existing.get(channel.value)
+        if row is None:
+            row = OutboundMessage(
+                tenant_id=tenant.id,
+                booking_id=booking.id,
+                client_id=client.id,
+                channel=channel,
+                purpose=OutboundPurpose.booking_confirmation,
+                offset_minutes=0,
+                scheduled_for=moment,
+                status=OutboundMessageStatus.pending,
+                to_address=to_address,
+                template_key=TEMPLATE_KEY_CONFIRMATION,
+                payload=payload,
+            )
+            session.add(row)
+            queued.append(row)
+            continue
+        if row.status in {
+            OutboundMessageStatus.sent,
+            OutboundMessageStatus.skipped,
+            OutboundMessageStatus.sending,
+        }:
+            continue
+        row.scheduled_for = moment
+        row.to_address = to_address
+        row.template_key = TEMPLATE_KEY_CONFIRMATION
+        row.payload = payload
+        row.status = OutboundMessageStatus.pending
+        row.last_error = None
+        row.updated_at = moment
+        queued.append(row)
+
+    for channel_key, row in existing.items():
+        if channel_key in desired_channels:
+            continue
+        if row.status in {OutboundMessageStatus.pending, OutboundMessageStatus.failed}:
+            row.status = OutboundMessageStatus.cancelled
+            row.updated_at = moment
+
+    await session.flush()
+    return queued
+
+
 async def reschedule_tenant_upcoming_reminders(session: AsyncSession, tenant_id: str) -> int:
     """Re-apply current prefs to upcoming confirmed bookings for this business."""
     now = datetime.now(UTC)
@@ -383,7 +548,11 @@ async def dispatch_outbound_message(session: AsyncSession, message: OutboundMess
     result = deliver_planned_message(
         channel=message.channel,
         to_address=message.to_address,
-        payload=message.payload or {},
+        payload={
+            **(message.payload or {}),
+            "template_key": message.template_key,
+            "purpose": message.purpose.value,
+        },
     )
     message.attempts = int(message.attempts or 0) + 1
     message.provider = result.provider

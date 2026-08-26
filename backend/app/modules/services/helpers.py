@@ -17,7 +17,11 @@ def resolve_appointment_format(
     return requested_format
 
 
-def resolve_service_location(service: Service, tenant: Tenant, appointment_format: AppointmentFormat) -> str | None:
+def resolve_service_location(
+    service: Service,
+    tenant: Tenant,
+    appointment_format: AppointmentFormat,
+) -> str | None:
     if appointment_format == AppointmentFormat.online:
         if service.online_meeting_link:
             return f"Online: {service.online_meeting_link}"

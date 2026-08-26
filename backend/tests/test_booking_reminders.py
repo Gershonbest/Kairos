@@ -20,6 +20,7 @@ from app.infra.models import (
     OutboundChannel,
     OutboundMessage,
     OutboundMessageStatus,
+    OutboundPurpose,
     Service,
     Tenant,
 )
@@ -29,6 +30,7 @@ from app.modules.notifications.outbound import (
     dispatch_outbound_message,
     enabled_reminder_channels,
     plan_reminder_jobs,
+    queue_booking_confirmations,
     schedule_booking_reminders,
     sync_booking_reminders,
 )
@@ -125,7 +127,17 @@ def test_enabled_channels_require_sms_master_switch() -> None:
     )
 
 
+def test_standard_plan_blocks_sms_and_whatsapp_reminders() -> None:
+    tenant = SimpleNamespace(plan_code="standard")
+    channels = enabled_reminder_channels(
+        _prefs(sms_enabled=True, client_reminder_sms=True, client_reminder_whatsapp=True),
+        tenant=tenant,  # type: ignore[arg-type]
+    )
+    assert channels == [OutboundChannel.email]
+
+
 def test_stub_sms_sends_in_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MESSAGING_PROVIDER", "brevo")
     monkeypatch.setenv("MESSAGING_DRY_RUN", "true")
     get_settings.cache_clear()
     result = deliver_planned_message(
@@ -135,7 +147,7 @@ def test_stub_sms_sends_in_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert result.ok is True
     assert result.skipped is False
-    assert result.provider == "stub"
+    assert result.provider == "brevo_sms"
     get_settings.cache_clear()
 
 
@@ -158,7 +170,7 @@ async def _session() -> AsyncSession:
 
 
 async def _seed(session: AsyncSession, *, phone: str | None = "+2348012345678", hours_ahead: int = 48):
-    tenant = Tenant(name="Bliss Spa", timezone="Africa/Lagos")
+    tenant = Tenant(name="Bliss Spa", timezone="Africa/Lagos", plan_code="premium")
     session.add(tenant)
     await session.flush()
     client = Client(
@@ -259,6 +271,7 @@ async def test_cancelled_booking_cancels_pending_messages() -> None:
 
 @pytest.mark.asyncio
 async def test_poller_marks_stub_sms_sent_when_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MESSAGING_PROVIDER", "brevo")
     monkeypatch.setenv("MESSAGING_DRY_RUN", "true")
     get_settings.cache_clear()
     session = await _session()
@@ -275,5 +288,23 @@ async def test_poller_marks_stub_sms_sent_when_dry_run(monkeypatch: pytest.Monke
         message.status = OutboundMessageStatus.sending
         await dispatch_outbound_message(session, message)
         assert message.status == OutboundMessageStatus.sent
-        assert message.provider == "stub"
+        assert message.provider == "brevo_sms"
     get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_queue_booking_confirmations_creates_sms_and_whatsapp_rows() -> None:
+    session = await _session()
+    async with session:
+        tenant, booking, client, service = await _seed(session, hours_ahead=24)
+        rows = await queue_booking_confirmations(
+            session,
+            tenant=tenant,
+            booking=booking,
+            client=client,
+            service=service,
+        )
+        assert len(rows) == 2
+        assert {row.channel for row in rows} == {OutboundChannel.sms, OutboundChannel.whatsapp}
+        assert {row.purpose for row in rows} == {OutboundPurpose.booking_confirmation}
+        assert {row.template_key for row in rows} == {"booking_confirmation"}

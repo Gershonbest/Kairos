@@ -60,6 +60,19 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = False
     smtp_timeout: int = 60
     brevo_api_key: str | None = None
+    brevo_sms_sender: str | None = None
+    brevo_whatsapp_sender: str | None = None
+    brevo_whatsapp_template_confirmation: int | None = None
+    brevo_whatsapp_template_reminder: int | None = None
+    # SMS/WhatsApp provider for booking confirmations and reminders.
+    # Email still uses Brevo/SMTP/Gmail cascade independently.
+    messaging_provider: str = "brevo"
+    termii_api_key: str | None = None
+    termii_base_url: str = "https://api.ng.termii.com"
+    termii_sms_sender: str | None = None
+    termii_whatsapp_sender: str | None = None
+    # Termii SMS route: dnd (transactional) or generic (promotional).
+    termii_sms_channel: str = "dnd"
     # Gmail SMTP (Google account + app password). See:
     # https://myaccount.google.com/apppasswords
     google_gmail_sender: str | None = None
@@ -87,11 +100,43 @@ class Settings(BaseSettings):
     outbound_job_token: str | None = None
     outbound_poll_interval_seconds: int = 60
     outbound_batch_size: int = 50
+    # AI agents / RAG
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_temperature: float = 0.2
+    vector_store_provider: str = "pgvector"
+    ai_checkpoint_database_url: str | None = None
+    ai_enabled: bool = True
 
     @field_validator("allowed_origins")
     @classmethod
     def trim_allowed_origins(cls, value: str) -> str:
         return ",".join([part.strip() for part in value.split(",") if part.strip()])
+
+    @field_validator("messaging_provider")
+    @classmethod
+    def normalize_messaging_provider(cls, value: str) -> str:
+        cleaned = (value or "brevo").strip().lower()
+        if cleaned not in {"brevo", "termii"}:
+            return "brevo"
+        return cleaned
+
+    @field_validator("termii_sms_channel")
+    @classmethod
+    def normalize_termii_sms_channel(cls, value: str) -> str:
+        cleaned = (value or "dnd").strip().lower()
+        if cleaned not in {"dnd", "generic"}:
+            return "dnd"
+        return cleaned
+
+    @field_validator("vector_store_provider")
+    @classmethod
+    def normalize_vector_store_provider(cls, value: str) -> str:
+        cleaned = (value or "pgvector").strip().lower()
+        if cleaned not in {"pgvector", "memory"}:
+            return "pgvector"
+        return cleaned
 
 
 @lru_cache

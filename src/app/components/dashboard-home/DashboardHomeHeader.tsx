@@ -31,14 +31,14 @@ export function DashboardHomeHeader({ firstName, action }: DashboardHomeHeaderPr
   const naturalDate = formatLongDate(now);
 
   return (
-    <section className="w-full rounded-2xl border border-border bg-card p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold">
+    <section className="w-full">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <p className="workspace-eyebrow mb-2">{naturalDate}</p>
+          <h1 className="workspace-title">
             {greeting}
             {firstName ? `, ${firstName}` : ""}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">{naturalDate}</p>
         </div>
 
         <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">

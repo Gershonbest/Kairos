@@ -62,6 +62,8 @@ def _tenant_payload(tenant: Tenant) -> dict:
         "help_email": tenant.help_email,
         "timezone": tenant.timezone or "Africa/Lagos",
         "onboarding_completed": tenant.onboarding_completed,
+        "cancellation_policy": tenant.cancellation_policy,
+        "booking_policies": tenant.booking_policies,
     }
 
 
@@ -295,10 +297,21 @@ async def update_public_profile(
     tenant.public_tagline = payload.public_tagline
     tenant.public_description = payload.public_description
     tenant.public_logo_url = payload.public_logo_url
+    if payload.cancellation_policy is not None:
+        tenant.cancellation_policy = payload.cancellation_policy
+    if payload.booking_policies is not None:
+        tenant.booking_policies = payload.booking_policies
     if payload.public_slug is not None:
         await _ensure_unique_slug(session, payload.public_slug, tenant.id)
         tenant.public_slug = payload.public_slug
     await session.commit()
+    try:
+        from app.modules.ai.knowledge.indexer import reindex_tenant_knowledge
+
+        await reindex_tenant_knowledge(session, tenant.id)
+        await session.commit()
+    except Exception:
+        pass
     await redis_cache.invalidate_tenant(current_user.tenant_id, TENANT_CACHE, BOOKING_LINKS_CACHE)
     return {"ok": True}
 
@@ -365,9 +378,7 @@ def _payment_provider_payload(tenant: Tenant) -> dict:
         "settlement_account_name": tenant.settlement_account_name,
         "settlement_account_number": tenant.settlement_account_number,
         "settlement_account_last4": tenant.settlement_account_last4,
-        "platform_fee_percent": float(tenant.platform_fee_percent)
-        if tenant.platform_fee_percent is not None
-        else float(settings.paystack_platform_fee_percent),
+        "platform_fee_percent": float(get_settings().paystack_platform_fee_percent),
     }
 
 
@@ -520,6 +531,7 @@ async def get_payment_provider(
     cache_key = redis_cache.tenant_key(current_user.tenant_id, PAYMENT_PROVIDER_CACHE)
     cached = await redis_cache.get_json(cache_key)
     if isinstance(cached, dict) and "settlement_account_number" in cached:
+        cached["platform_fee_percent"] = float(get_settings().paystack_platform_fee_percent)
         return cached
 
     tenant = (

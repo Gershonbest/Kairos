@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { CalendarDays } from "lucide-react";
+import { SectionCard } from "../dashboard-ui/SectionCard";
 import type { BookingListItem } from "../../../lib/api/client";
 
 type DashboardMiniCalendarProps = {
@@ -52,7 +52,7 @@ export function DashboardMiniCalendar({ bookings }: DashboardMiniCalendarProps) 
     return byDate;
   }, [bookings]);
 
-  const monthLabel = monthDate.toLocaleDateString("en-US", { month: "long" });
+  const monthLabel = monthDate.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const gridStart = startOfGrid(monthDate);
   const cells = Array.from({ length: 42 }, (_, i) => {
     const day = new Date(gridStart);
@@ -62,55 +62,56 @@ export function DashboardMiniCalendar({ bookings }: DashboardMiniCalendarProps) 
   const todayKey = toDateKey(today);
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between text-lg">
-          <span>{monthLabel}</span>
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-muted-foreground" />
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1">
-          {["S", "M", "T", "W", "T", "F", "S"].map((label) => (
-            <div key={label} className="py-1">
-              {label}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-1">
-          {cells.map((day) => {
-            const key = toDateKey(day);
-            const inMonth = day.getMonth() === monthDate.getMonth();
-            const isToday = key === todayKey;
-            const hasBookings = (bookingMap[key] ?? 0) > 0;
+          {monthLabel}
+        </span>
+      }
+      actions={<span className="text-xs text-muted-foreground">Tap a day to open it</span>}
+    >
+      <div className="mb-1 grid grid-cols-7 text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => (
+          <div key={`${label}-${index}`} className="py-1">
+            {label}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((day) => {
+          const key = toDateKey(day);
+          const inMonth = day.getMonth() === monthDate.getMonth();
+          const isToday = key === todayKey;
+          const count = bookingMap[key] ?? 0;
 
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => navigate(`/dashboard/calendar?date=${encodeURIComponent(key)}`)}
-                className={`relative rounded-md py-2 text-sm transition-colors ${
-                  isToday
-                    ? "bg-primary text-primary-foreground"
-                    : inMonth
-                      ? "hover:bg-accent hover:text-accent-foreground"
-                      : "text-muted-foreground/50 hover:bg-accent/60"
-                }`}
-              >
-                {day.getDate()}
-                {hasBookings && (
-                  <span
-                    className={`absolute bottom-1 left-1/2 h-1.5 w-1.5 -translate-x-1/2 rounded-full ${
-                      isToday ? "bg-primary-foreground" : "bg-accent"
-                    }`}
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => navigate(`/dashboard/calendar?date=${encodeURIComponent(key)}`)}
+              aria-label={`${day.toDateString()}${count > 0 ? `, ${count} booking${count === 1 ? "" : "s"}` : ""}`}
+              className={`relative rounded-lg py-2 text-sm tabular-nums transition-colors ${
+                isToday
+                  ? "bg-primary font-semibold text-primary-foreground"
+                  : inMonth
+                    ? "text-foreground hover:bg-muted"
+                    : "text-muted-foreground/45 hover:bg-muted/60"
+              }`}
+            >
+              {day.getDate()}
+              {count > 0 && (
+                <span
+                  className={`absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${
+                    isToday ? "bg-primary-foreground" : "bg-primary"
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </SectionCard>
   );
 }
