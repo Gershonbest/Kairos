@@ -499,8 +499,12 @@ export function ServicesManagement() {
         {services.map((service) => (
           <Card key={service.id} className={`overflow-hidden ${!service.active ? "opacity-60" : ""} ${service.imageUrl ? "gap-0" : ""}`}>
             {service.imageUrl && (
-              <div className="h-36 overflow-hidden">
-                <img src={service.imageUrl} alt="" className="w-full h-full object-cover" />
+              <div className="h-40 overflow-hidden bg-muted/20 p-2">
+                <img
+                  src={service.imageUrl}
+                  alt={service.name}
+                  className="w-full h-full object-contain rounded-lg"
+                />
               </div>
             )}
             <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">

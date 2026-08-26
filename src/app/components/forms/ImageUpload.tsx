@@ -53,7 +53,11 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
           className="w-full sm:w-28 h-28 rounded-xl border border-dashed border-border bg-card overflow-hidden flex items-center justify-center shrink-0 transition-colors hover:border-primary/40 disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {value ? (
-            <img src={value} alt="" className="w-full h-full object-cover" />
+            <img
+              src={value}
+              alt=""
+              className="w-full h-full object-contain bg-muted/30 p-1"
+            />
           ) : (
             <ImagePlus className="w-8 h-8 text-muted-foreground" />
           )}
