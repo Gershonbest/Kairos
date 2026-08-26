@@ -149,6 +149,13 @@ class ChannelReminderOffsets(BaseModel):
     voice: list[int] | None = None
 
 
+class ChannelReminderOffsets(BaseModel):
+    email: list[int] | None = None
+    sms: list[int] | None = None
+    whatsapp: list[int] | None = None
+    voice: list[int] | None = None
+
+
 class NotificationPreferencesUpdate(BaseModel):
     email_enabled: bool | None = None
     booking_created_email: bool | None = None
