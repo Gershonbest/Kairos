@@ -1,12 +1,15 @@
 // Manage and copy public booking URLs.
 
-import React, { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Copy, Download, ExternalLink, Link as LinkIcon, QrCode } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { ImageUpload } from "../../components/forms/ImageUpload";
+import { EmptyState, ErrorNote, PageHeader, PageShell, SectionCard } from "../../components/dashboard-ui";
 
 type BookingLink = {
   label: string;
@@ -135,32 +138,29 @@ export function BookingLinksManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold">Booking Links</h1>
-        <p className="text-muted-foreground mt-1">
-          Share a single public booking page or direct service-specific links.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Customers"
+        title="Booking links"
+        description="Share a single public booking page or direct service-specific links."
+      />
 
-      {displayError && <p className="text-sm text-red-600">{displayError}</p>}
+      {displayError && <ErrorNote>{displayError}</ErrorNote>}
 
-      <div className="bg-card border border-border rounded-xl p-5">
+      <SectionCard>
         <p className="text-sm text-muted-foreground">
           Total links available: <span className="font-semibold text-foreground">{totalLinks}</span>
         </p>
-      </div>
+      </SectionCard>
 
-      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-foreground">Public Booking Branding</h2>
-        <p className="text-sm text-muted-foreground">
-          Customize what clients see on your public booking page.
-        </p>
+      <SectionCard
+        title="Public booking branding"
+        description="Customize what clients see on your public booking page."
+      >
         <div className="grid grid-cols-1 gap-3">
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">Tagline / info</label>
-            <input
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            <label className="mb-1 block text-xs text-muted-foreground">Tagline / info</label>
+            <Input
               value={profileForm.public_tagline}
               onChange={(e) => setProfileForm((prev) => ({ ...prev, public_tagline: e.target.value }))}
               placeholder="Book your appointment online"
@@ -168,9 +168,9 @@ export function BookingLinksManagement() {
             />
           </div>
           <div>
-            <label className="block text-xs text-muted-foreground mb-1">Description</label>
-            <textarea
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background min-h-[88px]"
+            <label className="mb-1 block text-xs text-muted-foreground">Description</label>
+            <Textarea
+              className="min-h-[88px]"
               value={profileForm.public_description}
               onChange={(e) => setProfileForm((prev) => ({ ...prev, public_description: e.target.value }))}
               placeholder="Tell clients about your business"
@@ -193,14 +193,21 @@ export function BookingLinksManagement() {
             loading={savingProfile}
             loadingLabel="Saving..."
           >
-            Save Public Profile
+            Save public profile
           </Button>
         </div>
-      </div>
+      </SectionCard>
 
       <div className="space-y-3">
-        {links.map((item) => (
-          <div key={item.url} className="bg-card border border-border rounded-xl p-5">
+        {links.length === 0 ? (
+          <EmptyState
+            icon={LinkIcon}
+            title="No booking links yet"
+            description="Add a service to generate shareable booking URLs."
+          />
+        ) : (
+          links.map((item) => (
+          <SectionCard key={item.url}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground flex items-center gap-2">
@@ -218,13 +225,10 @@ export function BookingLinksManagement() {
                 </a>
               </div>
               <div className="flex items-center gap-2 flex-wrap justify-end">
-                <button
-                  onClick={() => void handleCopy(item.url)}
-                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-muted inline-flex items-center gap-2"
-                >
-                  <Copy className="w-4 h-4" />
+                <Button variant="outline" size="sm" onClick={() => void handleCopy(item.url)}>
+                  <Copy className="mr-2 h-4 w-4" />
                   {copied === item.url ? "Copied" : "Copy"}
-                </button>
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -236,20 +240,18 @@ export function BookingLinksManagement() {
                   <QrCode className="w-4 h-4" />
                   Export QR
                 </Button>
-                <a
-                  href={qrImageUrl(item.url)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3 py-2 rounded-lg text-sm border border-border hover:bg-muted inline-flex items-center gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Open QR
-                </a>
+                <Button variant="outline" size="sm" asChild>
+                  <a href={qrImageUrl(item.url)} target="_blank" rel="noreferrer">
+                    <Download className="mr-2 h-4 w-4" />
+                    Open QR
+                  </a>
+                </Button>
               </div>
             </div>
-          </div>
-        ))}
+          </SectionCard>
+          ))
+        )}
       </div>
-    </div>
+    </PageShell>
   );
 }

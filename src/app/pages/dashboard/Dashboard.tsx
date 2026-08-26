@@ -1,21 +1,30 @@
 // Tenant dashboard home with KPIs, charts, and upcoming appointments.
 
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
-import {
-  Plus,
-} from "lucide-react";
+import { CalendarClock, LinkIcon, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { BrandLoader } from "../../components/brand/BrandLoader";
 import { DashboardHomeHeader } from "../../components/dashboard-home/DashboardHomeHeader";
 import { DashboardMiniCalendar } from "../../components/dashboard-home/DashboardMiniCalendar";
 import { DashboardStatsRow } from "../../components/dashboard-home/DashboardStatsRow";
 import { DashboardInsights } from "../../components/dashboard-home/DashboardInsights";
+import { DashboardTodayTimeline } from "../../components/dashboard-home/DashboardTodayTimeline";
+import {
+  BrandAvatar,
+  ChartSkeleton,
+  EmptyState,
+  ErrorNote,
+  ListRow,
+  ListSkeleton,
+  PageShell,
+  SectionCard,
+  StatusBadge,
+} from "../../components/dashboard-ui";
 import { api, bookingClientLabel } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
+import { useChartTheme } from "../../../lib/charts/useChartTheme";
 import { consumeWelcomeAfterPayment } from "../../../lib/auth/welcome";
 
 const PUBLIC_UI_BASE_URL =
@@ -79,9 +88,11 @@ function buildUpcomingAppointments(
 
 export function Dashboard() {
   const [showWelcome, setShowWelcome] = useState(() => consumeWelcomeAfterPayment());
+  const chart = useChartTheme();
   const {
     data: summary,
     isError: summaryFailed,
+    isPending: summaryLoading,
   } = useQuery({
     queryKey: queryKeys.dashboardSummary,
     queryFn: () => api.dashboardSummary(),
@@ -121,29 +132,22 @@ export function Dashboard() {
   }, [summary?.upcoming_appointments, upcomingAppointments]);
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       {showWelcome && (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4 flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 rounded-xl border border-primary/30 bg-primary/8 px-5 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-emerald-800 dark:text-emerald-300">
-              Welcome to your account
-            </h2>
-            <p className="text-sm text-emerald-800/80 dark:text-emerald-300/90 mt-1">
+            <h2 className="text-base font-semibold text-foreground">Welcome to your account</h2>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
               Your plan is active and you&apos;re all set. Explore your dashboard, share your booking link, and start
               taking appointments.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowWelcome(false)}
-            className="text-sm text-emerald-800 dark:text-emerald-300 hover:underline shrink-0"
-          >
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowWelcome(false)}>
             Dismiss
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* Header */}
       <DashboardHomeHeader
         firstName={me?.full_name?.trim().split(/\s+/)[0] ?? null}
         action={
@@ -155,156 +159,175 @@ export function Dashboard() {
           </Button>
         }
       />
-      {summaryError && <p className="text-sm text-amber-700">{summaryError}</p>}
+      {summaryError && <ErrorNote tone="warning">{summaryError}</ErrorNote>}
 
       <DashboardStatsRow stats={homeStats} loading={homeStatsLoading} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Upcoming Appointments */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Upcoming Appointments</CardTitle>
-            <Button variant="link" className="text-primary" asChild>
-              <Link to="/dashboard/calendar">View all</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {loadingAppointments ? (
-                <BrandLoader label="Loading appointments" />
-              ) : (
-                displayedAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-accent/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-medium">
-                        {appointment.client
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .slice(0, 2)}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium">{appointment.client}</h4>
-                          <span
-                            className={`px-2 py-0.5 text-xs rounded-full capitalize ${
-                              appointment.status === "confirmed"
-                                ? "bg-primary/10 text-primary"
-                                : "bg-accent/20 text-accent-foreground"
-                            }`}
-                          >
-                            {appointment.status}
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{appointment.service}</p>
-                        {appointment.product && (
-                          <p className="text-xs text-muted-foreground">Product: {appointment.product}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{appointment.time}</p>
-                      <p className="text-sm text-muted-foreground">{appointment.date}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-              {!loadingAppointments && appointmentsError && (
-                <p className="text-sm text-red-600">{appointmentsError}</p>
-              )}
-              {!loadingAppointments && !appointmentsError && displayedAppointments.length === 0 && (
-                <p className="text-sm text-muted-foreground">No upcoming appointments yet.</p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <DashboardTodayTimeline bookings={bookings} loading={loadingAppointments} />
         <DashboardMiniCalendar bookings={bookings} />
       </div>
 
+      <SectionCard
+        title="Upcoming appointments"
+        description="The next confirmed and pending bookings on your calendar."
+        actions={
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/dashboard/calendar">View calendar</Link>
+          </Button>
+        }
+      >
+        {loadingAppointments ? (
+          <ListSkeleton rows={4} />
+        ) : appointmentsError ? (
+          <ErrorNote>{appointmentsError}</ErrorNote>
+        ) : displayedAppointments.length === 0 ? (
+          <EmptyState
+            icon={CalendarClock}
+            title="No upcoming appointments"
+            description="Once clients book through your link, their appointments appear here."
+            action={
+              <Button size="sm" asChild>
+                <Link to="/dashboard/calendar?new=1">
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Add a booking
+                </Link>
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-2.5">
+            {displayedAppointments.map((appointment) => (
+              <ListRow key={appointment.id} to={`/dashboard/calendar?booking=${appointment.id}`}>
+                <BrandAvatar name={appointment.client} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate font-medium text-foreground">{appointment.client}</p>
+                    <StatusBadge status={appointment.status} />
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {appointment.service}
+                    {appointment.product ? ` · ${appointment.product}` : ""}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-sm font-medium tabular-nums text-foreground">{appointment.time}</p>
+                  <p className="text-xs text-muted-foreground">{appointment.date}</p>
+                </div>
+              </ListRow>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
       <DashboardInsights homeStats={homeStats} />
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Revenue Overview</CardTitle>
-          </CardHeader>
-          <CardContent>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <SectionCard title="Revenue overview" description="Collected revenue by month.">
+          {summaryLoading ? (
+            <ChartSkeleton height={250} />
+          ) : (
             <ResponsiveContainer width="100%" height={250}>
               <LineChart data={revenueData}>
-                <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis key="x" dataKey="month" stroke="#888888" />
-                <YAxis key="y" stroke="#888888" />
+                <CartesianGrid key="grid" strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis key="x" dataKey="month" stroke={chart.axis} fontSize={12} />
+                <YAxis key="y" stroke={chart.axis} fontSize={12} />
                 <Tooltip
                   key="tooltip"
-                  contentStyle={{
-                    backgroundColor: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
-                  }}
+                  contentStyle={chart.tooltipStyle}
+                  itemStyle={chart.tooltipItemStyle}
+                  labelStyle={chart.tooltipLabelStyle}
                 />
                 <Line
                   key="revenue"
                   type="monotone"
                   dataKey="revenue"
-                  stroke="var(--color-primary)"
+                  stroke="var(--color-chart-1)"
                   strokeWidth={2}
-                  dot={{ fill: "var(--color-primary)", r: 4 }}
+                  dot={{ fill: "var(--color-chart-1)", r: 3 }}
                 />
               </LineChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          )}
+        </SectionCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Weekly Bookings</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionCard title="Weekly bookings" description="Booking volume across the week.">
+          {summaryLoading ? (
+            <ChartSkeleton height={250} />
+          ) : (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={bookingsData}>
-                <CartesianGrid key="grid" strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis key="x" dataKey="day" stroke="#888888" />
-                <YAxis key="y" stroke="#888888" />
+                <CartesianGrid key="grid" strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis key="x" dataKey="day" stroke={chart.axis} fontSize={12} />
+                <YAxis key="y" stroke={chart.axis} fontSize={12} />
                 <Tooltip
                   key="tooltip"
-                  contentStyle={{
-                    backgroundColor: "white",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: "8px",
-                  }}
+                  cursor={{ fill: "var(--color-chart-grid)" }}
+                  contentStyle={chart.tooltipStyle}
+                  itemStyle={chart.tooltipItemStyle}
+                  labelStyle={chart.tooltipLabelStyle}
                 />
-                <Bar key="bookings" dataKey="bookings" fill="var(--color-accent)" radius={[8, 8, 0, 0]} />
+                <Bar key="bookings" dataKey="bookings" fill="var(--color-chart-2)" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
+          )}
+        </SectionCard>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Public Booking Links</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div>
-            <p className="text-sm text-muted-foreground mb-1">Main booking page (all services)</p>
-            <a href={bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : undefined} target="_blank" rel="noreferrer" className="text-sm text-primary break-all">
-              {bookingLinks?.business_url ? normalizeToCurrentOrigin(bookingLinks.business_url) : "Loading..."}
+      <SectionCard
+        title="Public booking links"
+        description="Share these anywhere clients can reach you."
+        actions={
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/dashboard/booking-links">Manage links</Link>
+          </Button>
+        }
+        contentClassName="space-y-4"
+      >
+        <div>
+          <p className="mb-1 text-xs font-medium text-muted-foreground">Main booking page</p>
+          {bookingLinks?.business_url ? (
+            <a
+              href={normalizeToCurrentOrigin(bookingLinks.business_url)}
+              target="_blank"
+              rel="noreferrer"
+              className="break-all text-sm text-primary hover:underline"
+            >
+              {normalizeToCurrentOrigin(bookingLinks.business_url)}
             </a>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </div>
+        {bookingLinks?.service_urls?.length ? (
+          <div className="space-y-3 border-t border-border pt-4">
+            {bookingLinks.service_urls.slice(0, 5).map((link) => (
+              <div key={link.service_id}>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">{link.service_name}</p>
+                <a
+                  href={normalizeToCurrentOrigin(link.url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all text-sm text-primary hover:underline"
+                >
+                  {normalizeToCurrentOrigin(link.url)}
+                </a>
+              </div>
+            ))}
           </div>
-          {bookingLinks?.service_urls?.slice(0, 5).map((link) => (
-            <div key={link.service_id}>
-              <p className="text-sm text-muted-foreground mb-1">{link.service_name}</p>
-              <a href={normalizeToCurrentOrigin(link.url)} target="_blank" rel="noreferrer" className="text-sm text-primary break-all">
-                {normalizeToCurrentOrigin(link.url)}
-              </a>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-    </div>
+        ) : bookingLinks ? (
+          <EmptyState
+            icon={LinkIcon}
+            title="No service links yet"
+            description="Add a service to generate a direct booking link for it."
+            action={
+              <Button size="sm" asChild>
+                <Link to="/dashboard/services">Add a service</Link>
+              </Button>
+            }
+          />
+        ) : null}
+      </SectionCard>
+    </PageShell>
   );
 }

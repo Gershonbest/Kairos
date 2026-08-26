@@ -1,33 +1,26 @@
 // Dashboard Orion hub: Chat | Knowledge | Onboarding.
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { Textarea } from "../../components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { Upload, Trash2, RefreshCw, FileText } from "lucide-react";
 import { api } from "../../../lib/api/client";
+import { queryKeys } from "../../../lib/queryClient";
 import { OrionChatPane } from "../../components/orion/OrionChatPane";
 import { OrionAvatar } from "../../components/orion/OrionAvatar";
-import { ORION_BUSINESS_INTRO, ORION_ONBOARDING_INTRO } from "../../components/orion/orion-chat-shared";
-
-type KnowledgeDoc = {
-  id: string;
-  title: string;
-  filename: string;
-  content_type: string;
-  status: string;
-  error_message?: string | null;
-  byte_size: number;
-  created_at?: string | null;
-};
-
-type FaqItem = {
-  id: string;
-  question: string;
-  answer: string;
-};
+import { ORION_ONBOARDING_INTRO } from "../../components/orion/orion-chat-shared";
+import {
+  EmptyState,
+  ErrorNote,
+  ListSkeleton,
+  PageHeader,
+  PageShell,
+} from "../../components/dashboard-ui";
 
 function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -36,57 +29,71 @@ function formatBytes(size: number): string {
 }
 
 function KnowledgePane() {
+  const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
-  const [limit, setLimit] = useState(20);
-  const [faqs, setFaqs] = useState<FaqItem[]>([]);
-  const [cancellationPolicy, setCancellationPolicy] = useState("");
-  const [bookingPolicies, setBookingPolicies] = useState("");
   const [faqQuestion, setFaqQuestion] = useState("");
   const [faqAnswer, setFaqAnswer] = useState("");
+  const [cancellationPolicy, setCancellationPolicy] = useState("");
+  const [bookingPolicies, setBookingPolicies] = useState("");
+  const [policiesHydrated, setPoliciesHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
 
-  const load = async () => {
-    setError("");
-    try {
-      const [docRes, faqRes, tenant] = await Promise.all([
-        api.listKnowledgeDocuments(),
-        api.listKnowledgeFaqs(),
-        api.myTenant().catch(() => null),
-      ]);
-      setDocs(docRes.documents);
-      setLimit(docRes.limit);
-      setFaqs(faqRes);
-      if (tenant) {
-        setCancellationPolicy(tenant.cancellation_policy || "");
-        setBookingPolicies(tenant.booking_policies || "");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load knowledge library.");
-    }
-  };
+  const docsQuery = useQuery({
+    queryKey: queryKeys.knowledgeDocuments,
+    queryFn: () => api.listKnowledgeDocuments(),
+  });
+  const faqsQuery = useQuery({
+    queryKey: queryKeys.knowledgeFaqs,
+    queryFn: () => api.listKnowledgeFaqs(),
+  });
+  const tenantQuery = useQuery({
+    queryKey: queryKeys.tenant,
+    queryFn: () => api.myTenant(),
+  });
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (!tenantQuery.data || policiesHydrated) return;
+    setCancellationPolicy(tenantQuery.data.cancellation_policy || "");
+    setBookingPolicies(tenantQuery.data.booking_policies || "");
+    setPoliciesHydrated(true);
+  }, [tenantQuery.data, policiesHydrated]);
+
+  const docs = docsQuery.data?.documents ?? [];
+  const limit = docsQuery.data?.limit ?? 20;
+  const faqs = faqsQuery.data ?? [];
+  const loadError =
+    docsQuery.isError || faqsQuery.isError
+      ? docsQuery.error instanceof Error
+        ? docsQuery.error.message
+        : faqsQuery.error instanceof Error
+          ? faqsQuery.error.message
+          : "Unable to load knowledge library."
+      : "";
+
+  async function invalidateKnowledge() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeDocuments }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeFaqs }),
+    ]);
+  }
 
   const onUpload = async (file: File | null) => {
     if (!file || busy) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     setMessage("");
     try {
       const doc = await api.uploadKnowledgeDocument(file);
       if (doc.status === "failed") {
-        setError(doc.error_message || "Upload failed to extract text.");
+        setActionError(doc.error_message || "Upload failed to extract text.");
       } else {
         setMessage(`Indexed “${doc.title}”.`);
       }
-      await load();
+      await invalidateKnowledge();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed.");
+      setActionError(err instanceof Error ? err.message : "Upload failed.");
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -96,13 +103,13 @@ function KnowledgePane() {
   const onDeleteDoc = async (id: string) => {
     if (busy) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       await api.deleteKnowledgeDocument(id);
       setMessage("Document removed and knowledge reindexed.");
-      await load();
+      await invalidateKnowledge();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delete failed.");
+      setActionError(err instanceof Error ? err.message : "Delete failed.");
     } finally {
       setBusy(false);
     }
@@ -111,12 +118,12 @@ function KnowledgePane() {
   const onReindex = async () => {
     if (busy) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       const result = await api.reindexKnowledge();
       setMessage(`Reindexed ${result.chunks} knowledge chunks.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Reindex failed.");
+      setActionError(err instanceof Error ? err.message : "Reindex failed.");
     } finally {
       setBusy(false);
     }
@@ -125,15 +132,16 @@ function KnowledgePane() {
   const onSavePolicies = async () => {
     if (busy) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       await api.updateKnowledgePolicies({
         cancellation_policy: cancellationPolicy,
         booking_policies: bookingPolicies,
       });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.tenant });
       setMessage("Policies saved and reindexed.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save policies.");
+      setActionError(err instanceof Error ? err.message : "Could not save policies.");
     } finally {
       setBusy(false);
     }
@@ -142,7 +150,7 @@ function KnowledgePane() {
   const onAddFaq = async () => {
     if (!faqQuestion.trim() || !faqAnswer.trim() || busy) return;
     setBusy(true);
-    setError("");
+    setActionError("");
     try {
       await api.upsertKnowledgeFaq({
         question: faqQuestion.trim(),
@@ -151,9 +159,9 @@ function KnowledgePane() {
       setFaqQuestion("");
       setFaqAnswer("");
       setMessage("FAQ saved.");
-      await load();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeFaqs });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save FAQ.");
+      setActionError(err instanceof Error ? err.message : "Could not save FAQ.");
     } finally {
       setBusy(false);
     }
@@ -164,9 +172,9 @@ function KnowledgePane() {
     setBusy(true);
     try {
       await api.deleteKnowledgeFaq(id);
-      await load();
+      await queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeFaqs });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete FAQ.");
+      setActionError(err instanceof Error ? err.message : "Could not delete FAQ.");
     } finally {
       setBusy(false);
     }
@@ -174,29 +182,27 @@ function KnowledgePane() {
 
   return (
     <div className="space-y-6">
-      {(message || error) && (
-        <p className={`text-sm ${error ? "text-destructive" : "text-muted-foreground"}`}>
-          {error || message}
-        </p>
-      )}
+      {loadError && <ErrorNote>{loadError}</ErrorNote>}
+      {actionError && <ErrorNote>{actionError}</ErrorNote>}
+      {message && !actionError && <ErrorNote tone="success">{message}</ErrorNote>}
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
           <div>
             <CardTitle className="text-lg">Business documents</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="mt-1 text-sm text-muted-foreground">
               Upload PDF, TXT, or Markdown. These train Orion on your dashboard and the public
               booking chat. {docs.length}/{limit} used · max 10MB each.
             </p>
           </div>
           <Button variant="outline" size="sm" disabled={busy} onClick={() => void onReindex()}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+            <RefreshCw className="mr-2 h-4 w-4" />
             Reindex
           </Button>
         </CardHeader>
         <CardContent className="space-y-4">
           <div
-            className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center cursor-pointer hover:bg-muted/40 transition-colors"
+            className="cursor-pointer rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center transition-colors hover:bg-muted/40"
             onClick={() => fileRef.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -205,9 +211,9 @@ function KnowledgePane() {
               void onUpload(file);
             }}
           >
-            <Upload className="w-8 h-8 mx-auto text-muted-foreground mb-2" />
+            <Upload className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm font-medium">Drop a file or click to upload</p>
-            <p className="text-xs text-muted-foreground mt-1">PDF · TXT · MD</p>
+            <p className="mt-1 text-xs text-muted-foreground">PDF · TXT · MD</p>
             <input
               ref={fileRef}
               type="file"
@@ -218,24 +224,28 @@ function KnowledgePane() {
             />
           </div>
 
-          {docs.length === 0 ? (
-            <div className="rounded-lg border border-border px-4 py-6 text-sm text-muted-foreground text-center">
-              No documents yet. Add service menus, house rules, or FAQs so the AI answers accurately.
-            </div>
+          {docsQuery.isPending ? (
+            <ListSkeleton rows={3} />
+          ) : docs.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="No documents yet"
+              description="Add service menus, house rules, or FAQs so Orion answers accurately."
+            />
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border">
               {docs.map((doc) => (
                 <li key={doc.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                  <div className="min-w-0 flex gap-3">
-                    <FileText className="w-4 h-4 mt-1 text-muted-foreground shrink-0" />
+                  <div className="flex min-w-0 gap-3">
+                    <FileText className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{doc.title}</p>
+                      <p className="truncate text-sm font-medium">{doc.title}</p>
                       <p className="text-xs text-muted-foreground">
                         {doc.filename} · {formatBytes(doc.byte_size)} ·{" "}
                         <span
                           className={
                             doc.status === "ready"
-                              ? "text-emerald-700 dark:text-emerald-400"
+                              ? "text-primary"
                               : doc.status === "failed"
                                 ? "text-destructive"
                                 : ""
@@ -254,7 +264,7 @@ function KnowledgePane() {
                     onClick={() => void onDeleteDoc(doc.id)}
                     aria-label={`Delete ${doc.title}`}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </li>
               ))}
@@ -263,7 +273,7 @@ function KnowledgePane() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Policies</CardTitle>
@@ -274,21 +284,21 @@ function KnowledgePane() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="cancelPolicy">Cancellation policy</Label>
-              <textarea
+              <Textarea
                 id="cancelPolicy"
                 value={cancellationPolicy}
                 onChange={(e) => setCancellationPolicy(e.target.value)}
-                className="mt-1 w-full min-h-[90px] px-3 py-2 border border-input rounded-lg bg-background text-sm"
+                className="mt-1 min-h-[90px]"
                 disabled={busy}
               />
             </div>
             <div>
               <Label htmlFor="bookingPolicies">Booking policies</Label>
-              <textarea
+              <Textarea
                 id="bookingPolicies"
                 value={bookingPolicies}
                 onChange={(e) => setBookingPolicies(e.target.value)}
-                className="mt-1 w-full min-h-[90px] px-3 py-2 border border-input rounded-lg bg-background text-sm"
+                className="mt-1 min-h-[90px]"
                 disabled={busy}
               />
             </div>
@@ -318,24 +328,26 @@ function KnowledgePane() {
             </div>
             <div>
               <Label htmlFor="faqA">Answer</Label>
-              <textarea
+              <Textarea
                 id="faqA"
                 value={faqAnswer}
                 onChange={(e) => setFaqAnswer(e.target.value)}
-                className="mt-1 w-full min-h-[70px] px-3 py-2 border border-input rounded-lg bg-background text-sm"
+                className="mt-1 min-h-[70px]"
                 disabled={busy}
               />
             </div>
             <Button disabled={busy} onClick={() => void onAddFaq()}>
               Add FAQ
             </Button>
-            {faqs.length > 0 && (
+            {faqsQuery.isPending ? (
+              <ListSkeleton rows={2} />
+            ) : faqs.length > 0 ? (
               <ul className="divide-y divide-border rounded-lg border border-border">
                 {faqs.map((faq) => (
-                  <li key={faq.id} className="px-3 py-2 flex justify-between gap-2">
+                  <li key={faq.id} className="flex justify-between gap-2 px-3 py-2">
                     <div className="min-w-0">
-                      <p className="text-sm font-medium truncate">{faq.question}</p>
-                      <p className="text-xs text-muted-foreground line-clamp-2">{faq.answer}</p>
+                      <p className="truncate text-sm font-medium">{faq.question}</p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground">{faq.answer}</p>
                     </div>
                     <Button
                       variant="ghost"
@@ -343,11 +355,16 @@ function KnowledgePane() {
                       disabled={busy}
                       onClick={() => void onDeleteFaq(faq.id)}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </li>
                 ))}
               </ul>
+            ) : (
+              <EmptyState
+                title="No FAQs yet"
+                description="Add short questions clients often ask so Orion can answer them."
+              />
             )}
           </CardContent>
         </Card>
@@ -360,18 +377,17 @@ export function AIAssistant() {
   const [tab, setTab] = useState("chat");
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold flex items-center gap-3">
-          <OrionAvatar size="md" />
-          Orion
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Chat with Orion, upload knowledge documents, or onboard your business. Use the floating bot
-          on any dashboard page for quick questions — this workspace adds knowledge and onboarding
-          tools.
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Assistant"
+        title={
+          <span className="inline-flex items-center gap-3">
+            <OrionAvatar size="md" />
+            Orion
+          </span>
+        }
+        description="Chat with Orion, upload knowledge documents, or onboard your business. Use the floating bot on any dashboard page for quick questions — this workspace adds knowledge and onboarding tools."
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -403,6 +419,6 @@ export function AIAssistant() {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

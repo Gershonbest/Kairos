@@ -4,9 +4,10 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { Calendar, Clock, DollarSign, Sparkles, TrendingUp } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
-import { BrandLoader } from "../brand/BrandLoader";
+import { ErrorNote } from "../dashboard-ui/ErrorNote";
+import { ListSkeleton } from "../dashboard-ui/skeletons";
+import { SectionCard } from "../dashboard-ui/SectionCard";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 
@@ -115,7 +116,7 @@ function buildInsightCards(
       title: "Pending Confirmations",
       body: `You have ${homeStats.pending_confirmations} booking${homeStats.pending_confirmations === 1 ? "" : "s"} awaiting confirmation.`,
       icon: Clock,
-      iconClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+      iconClass: "bg-[var(--warning-surface)] text-[var(--warning-on-surface)]",
     });
   }
 
@@ -156,43 +157,42 @@ export function DashboardInsights({ homeStats }: DashboardInsightsProps) {
   );
 
   return (
-    <Card className="bg-gradient-to-br from-primary/5 via-background to-accent/10 border-primary/20">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
-        <CardTitle className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          AI-Generated Insights
-        </CardTitle>
-        <Button variant="link" className="text-primary shrink-0" asChild>
+    <SectionCard
+      title={
+        <span className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          Insights from Orion
+        </span>
+      }
+      description="Patterns Orion spotted in your schedule this fortnight."
+      actions={
+        <Button variant="ghost" size="sm" asChild>
           <Link to="/dashboard/orion">Ask Orion</Link>
         </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isPending && <BrandLoader label="Analyzing your schedule" />}
-        {isError && (
-          <p className="text-sm text-muted-foreground">
-            Unable to load scheduling insights right now. Check your availability settings and try again.
-          </p>
-        )}
-        {!isPending &&
-          !isError &&
-          cards.map((card) => (
-            <div key={card.title} className="p-4 bg-card rounded-lg border border-primary/10">
-              <div className="flex items-start gap-3">
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${card.iconClass}`}
-                >
-                  <card.icon className="w-3 h-3" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-medium mb-1">{card.title}</h4>
-                  <p className="text-sm text-muted-foreground">{card.body}</p>
-                </div>
-              </div>
+      }
+      contentClassName="space-y-3"
+    >
+      {isPending && <ListSkeleton rows={3} />}
+      {isError && (
+        <ErrorNote tone="info">
+          Unable to load scheduling insights right now. Check your availability settings and try again.
+        </ErrorNote>
+      )}
+      {!isPending &&
+        !isError &&
+        cards.map((card) => (
+          <div key={card.title} className="flex items-start gap-3 rounded-xl border border-border p-4">
+            <div
+              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${card.iconClass}`}
+            >
+              <card.icon className="h-3.5 w-3.5" />
             </div>
-          ))}
-      </CardContent>
-    </Card>
+            <div className="min-w-0 flex-1">
+              <h4 className="text-sm font-semibold text-foreground">{card.title}</h4>
+              <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{card.body}</p>
+            </div>
+          </div>
+        ))}
+    </SectionCard>
   );
 }

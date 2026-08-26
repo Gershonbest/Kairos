@@ -6,6 +6,8 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Checkbox } from "../../components/ui/checkbox";
 import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound, ArrowRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +21,13 @@ import {
   type SchedulingMode,
 } from "../../components/services/ServiceSchedulingFields";
 import { ImageUpload } from "../../components/forms/ImageUpload";
+import {
+  CardGridSkeleton,
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  PageShell,
+} from "../../components/dashboard-ui";
 import {
   appointmentTypeLabels,
   bookingTypeLabels,
@@ -68,7 +77,7 @@ export function ServicesManagement() {
 
   const [formData, setFormData] = useState(emptyForm);
 
-  const { data: serviceRows = [], isError: servicesFailed } = useQuery({
+  const { data: serviceRows = [], isError: servicesFailed, isPending: servicesLoading } = useQuery({
     queryKey: queryKeys.services,
     queryFn: () => api.listServices(),
   });
@@ -233,17 +242,15 @@ export function ServicesManagement() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold">Services Management</h1>
-          <p className="text-muted-foreground mt-1">Create and manage your service offerings</p>
-        </div>
+    <PageShell>
+      <PageHeader
+        eyebrow="Catalogue"
+        title="Services"
+        description="Create and manage your service offerings."
+        actions={
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button
-              className="bg-primary hover:bg-primary/90"
               onClick={() => {
                 setEditingService(null);
                 setFormData(emptyForm());
@@ -289,22 +296,25 @@ export function ServicesManagement() {
 
               <div className="space-y-2 rounded-lg border border-border p-4">
                 <Label htmlFor="booking_type">Booking Type</Label>
-                <select
-                  id="booking_type"
+                <Select
                   value={formData.bookingType}
-                  onChange={(e) =>
+                  onValueChange={(value) =>
                     setFormData((prev) => ({
                       ...prev,
-                      bookingType: e.target.value as BookingType,
-                      listingIds: e.target.value === "listing" ? prev.listingIds : [],
+                      bookingType: value as BookingType,
+                      listingIds: value === "listing" ? prev.listingIds : [],
                     }))
                   }
-                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   disabled={isSubmitting}
                 >
-                  <option value="general">{bookingTypeLabels.general}</option>
-                  <option value="listing">{bookingTypeLabels.listing}</option>
-                </select>
+                  <SelectTrigger id="booking_type" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="general">{bookingTypeLabels.general}</SelectItem>
+                    <SelectItem value="listing">{bookingTypeLabels.listing}</SelectItem>
+                  </SelectContent>
+                </Select>
                 {formData.bookingType === "listing" && (
                   <div className="space-y-2 pt-1">
                     <p className="text-xs text-muted-foreground">
@@ -312,7 +322,7 @@ export function ServicesManagement() {
                     </p>
                     {listings.length === 0 ? (
                       <div className="space-y-2">
-                        <p className="text-xs text-amber-600">
+                        <p className="text-xs text-[var(--warning-on-surface)]">
                           No products yet. Create at least one product in the Products tab first.
                         </p>
                         <Button
@@ -330,13 +340,12 @@ export function ServicesManagement() {
                           const checked = formData.listingIds.includes(listing.id);
                           return (
                             <label key={listing.id} className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
+                              <Checkbox
                                 checked={checked}
-                                onChange={(e) =>
+                                onCheckedChange={(next) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    listingIds: e.target.checked
+                                    listingIds: next
                                       ? [...prev.listingIds, listing.id]
                                       : prev.listingIds.filter((id) => id !== listing.id),
                                   }))
@@ -432,7 +441,8 @@ export function ServicesManagement() {
             </form>
           </DialogContent>
         </Dialog>
-      </div>
+      }
+      />
 
       <Card className="border-dashed">
         <CardContent className="pt-6">
@@ -453,8 +463,30 @@ export function ServicesManagement() {
       </Card>
 
       {/* Services Grid */}
-      {displayError && <p className="text-sm text-red-600">{displayError}</p>}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {displayError && <ErrorNote>{displayError}</ErrorNote>}
+      {servicesLoading ? (
+        <CardGridSkeleton />
+      ) : services.length === 0 ? (
+        <EmptyState
+          icon={Briefcase}
+          title="No services yet"
+          description="Add your first service so clients can book you."
+          action={
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingService(null);
+                setFormData(emptyForm());
+                setIsDialogOpen(true);
+              }}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              Add service
+            </Button>
+          }
+        />
+      ) : (
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {services.map((service) => (
           <Card key={service.id} className={`overflow-hidden ${!service.active ? "opacity-60" : ""} ${service.imageUrl ? "gap-0" : ""}`}>
             {service.imageUrl && (
@@ -464,8 +496,8 @@ export function ServicesManagement() {
             )}
             <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
               <div className="flex items-start gap-3 flex-1">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-[#086a82] flex items-center justify-center">
-                  <Briefcase className="w-5 h-5 text-white" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[var(--brand-gradient-to)]">
+                  <Briefcase className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="flex-1">
                   <CardTitle className="text-lg">{service.name}</CardTitle>
@@ -506,7 +538,7 @@ export function ServicesManagement() {
                   loading={deletingId === service.id}
                   disabled={deletingId !== null || togglingId !== null}
                 >
-                  <Trash2 className="w-4 h-4 text-red-500" />
+                  <Trash2 className="h-4 w-4 text-destructive" />
                 </Button>
               </div>
             </CardHeader>
@@ -582,6 +614,7 @@ export function ServicesManagement() {
           </Card>
         ))}
       </div>
-    </div>
+      )}
+    </PageShell>
   );
 }

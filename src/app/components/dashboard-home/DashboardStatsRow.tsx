@@ -1,7 +1,7 @@
 // Dashboard home metric cards row.
 
 import { CalendarCheck2, Clock3, Coins, UserPlus } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { StatCard } from "../dashboard-ui/StatCard";
 
 type DashboardStatsRowProps = {
   stats: {
@@ -30,15 +30,15 @@ export function DashboardStatsRow({ stats, loading = false }: DashboardStatsRowP
       title: "Today's bookings",
       value: stats ? String(stats.todays_bookings) : "—",
       icon: CalendarCheck2,
-      highlight: false,
+      emphasis: false,
       note: "",
     },
     {
-      key: "revenue_week",
+      key: "revenue_month",
       title: "Monthly revenue",
       value: stats ? formatCurrency(stats.revenue_month, stats.currency) : "—",
       icon: Coins,
-      highlight: false,
+      emphasis: false,
       note: "",
     },
     {
@@ -46,18 +46,15 @@ export function DashboardStatsRow({ stats, loading = false }: DashboardStatsRowP
       title: "Pending confirmations",
       value: stats ? String(stats.pending_confirmations) : "—",
       icon: Clock3,
-      highlight: Boolean(stats && stats.pending_confirmations > 0),
-      note:
-        stats && stats.pending_confirmations > 0
-          ? "Needs attention"
-          : "All clear",
+      emphasis: Boolean(stats && stats.pending_confirmations > 0),
+      note: stats && stats.pending_confirmations > 0 ? "Needs attention" : "All clear",
     },
     {
       key: "new_clients",
       title: "New clients",
       value: stats ? String(stats.new_clients) : "—",
       icon: UserPlus,
-      highlight: false,
+      emphasis: false,
       note: stats ? `This ${stats.new_clients_period}` : "",
     },
   ];
@@ -65,20 +62,15 @@ export function DashboardStatsRow({ stats, loading = false }: DashboardStatsRowP
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {rows.map((item) => (
-        <Card key={item.key} className={item.highlight ? "border-amber-400/70" : ""}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center justify-between gap-2">
-              <span>{item.title}</span>
-              <item.icon className={`h-4 w-4 ${item.highlight ? "text-amber-500" : "text-muted-foreground"}`} />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className={`text-3xl font-semibold ${item.highlight ? "text-amber-500" : ""}`}>
-              {loading ? "…" : item.value}
-            </p>
-            {item.note && <p className="mt-1 text-xs text-muted-foreground">{item.note}</p>}
-          </CardContent>
-        </Card>
+        <StatCard
+          key={item.key}
+          label={item.title}
+          value={item.value}
+          hint={item.note || undefined}
+          icon={item.icon}
+          loading={loading}
+          emphasis={item.emphasis}
+        />
       ))}
     </section>
   );
