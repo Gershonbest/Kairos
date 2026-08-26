@@ -208,23 +208,24 @@ export function BookingLinksManagement() {
         ) : (
           links.map((item) => (
           <SectionCard key={item.url}>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <LinkIcon className="w-4 h-4" />
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <LinkIcon className="h-4 w-4 text-muted-foreground" />
                   {item.label}
                 </p>
                 <a
                   href={item.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm text-primary break-all mt-2 inline-flex items-center gap-1"
+                  title="Open booking page"
+                  className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2 font-mono text-[12px] leading-relaxed text-foreground/80 transition-colors hover:border-foreground/20 hover:bg-muted hover:text-foreground"
                 >
-                  {item.url}
-                  <ExternalLink className="w-3 h-3" />
+                  <span className="min-w-0 break-all">{item.url}</span>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </a>
               </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                 <Button variant="outline" size="sm" onClick={() => void handleCopy(item.url)}>
                   <Copy className="mr-2 h-4 w-4" />
                   {copied === item.url ? "Copied" : "Copy"}
