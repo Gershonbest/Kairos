@@ -124,8 +124,8 @@ export function ChoosePlan() {
     setSuccess("");
     const plan = plans.find((item) => item.code === selectedPlan);
     if (!plan) return;
-    if (!plan.self_serve) {
-      setError("This plan requires a sales conversation. Email support@orheobookings.com");
+    if (!plan.self_serve || plan.contact_admin) {
+      setError("This plan requires a conversation with Orheo admin. Email support@orheobookings.com");
       return;
     }
 
@@ -266,8 +266,14 @@ export function ChoosePlan() {
                   )}
                 </CardTitle>
                 <p className="text-2xl font-semibold">
-                  {formatPrice(plan.monthly_price)}
-                  <span className="text-sm font-normal text-muted-foreground">/month</span>
+                  {plan.contact_admin || !plan.self_serve ? (
+                    "Contact Admin"
+                  ) : (
+                    <>
+                      {formatPrice(plan.monthly_price)}
+                      <span className="text-sm font-normal text-muted-foreground">/month</span>
+                    </>
+                  )}
                 </p>
                 <p className="text-sm text-muted-foreground">{plan.description}</p>
               </CardHeader>
@@ -279,7 +285,7 @@ export function ChoosePlan() {
                   </div>
                 ))}
                 {!plan.self_serve && (
-                  <p className="text-xs text-muted-foreground pt-2">Contact sales for Enterprise onboarding.</p>
+                  <p className="text-xs text-muted-foreground pt-2">Contact admin for Enterprise onboarding.</p>
                 )}
               </CardContent>
             </Card>
@@ -292,18 +298,26 @@ export function ChoosePlan() {
           <div>
             <p className="font-medium">Selected plan: {plans.find((p) => p.code === selectedPlan)?.name ?? "—"}</p>
             <p className="text-sm text-muted-foreground">
-              Secure Paystack checkout — card, bank transfer, OPay, USSD, and more. Your plan activates for 30 days after payment.
+              {plans.find((p) => p.code === selectedPlan)?.self_serve
+                ? "Secure Paystack checkout — card, bank transfer, OPay, USSD, and more. Your plan activates for 30 days after payment."
+                : "Enterprise is provisioned by Orheo admin. Email support@orheobookings.com to get started."}
             </p>
           </div>
-          <Button
-            className="bg-primary hover:bg-primary/90"
-            onClick={handleActivate}
-            loading={isActivating}
-            loadingLabel="Redirecting..."
-            disabled={!plans.find((p) => p.code === selectedPlan)?.self_serve || paymentVerified}
-          >
-            Pay now
-          </Button>
+          {plans.find((p) => p.code === selectedPlan)?.self_serve ? (
+            <Button
+              className="bg-primary hover:bg-primary/90"
+              onClick={handleActivate}
+              loading={isActivating}
+              loadingLabel="Redirecting..."
+              disabled={paymentVerified}
+            >
+              Pay now
+            </Button>
+          ) : (
+            <Button className="bg-primary hover:bg-primary/90" asChild>
+              <a href="mailto:support@orheobookings.com">Contact Admin</a>
+            </Button>
+          )}
         </CardContent>
       </Card>
 

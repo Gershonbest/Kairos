@@ -1,6 +1,7 @@
 """Helpers for resolving service appointment display details."""
 
 from app.infra.models import AppointmentFormat, AppointmentType, Service, Tenant
+from app.modules.team.staff import is_bookable_user
 from app.modules.tenants.helpers import tenant_display_location
 
 
@@ -52,6 +53,16 @@ def service_to_dict(service: Service, *, include_meeting_link: bool = False) -> 
         "buffer_minutes": service.buffer_minutes,
         "image_url": service.image_url,
         "listing_ids": [listing.id for listing in getattr(service, "listings", [])],
+        "staff_ids": [member.id for member in getattr(service, "staff", [])],
+        "staff": [
+            {
+                "id": member.id,
+                "full_name": member.full_name,
+                "job_title": member.job_title,
+                "is_bookable": is_bookable_user(member),
+            }
+            for member in getattr(service, "staff", [])
+        ],
     }
     if include_meeting_link:
         payload["online_meeting_link"] = service.online_meeting_link

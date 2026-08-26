@@ -18,6 +18,7 @@ class PublicBookingCreateRequest(BaseModel):
     notes: str | None = None
     appointment_format: Literal["online", "onsite"] | None = None
     idempotency_key: str = Field(min_length=6, max_length=120)
+    assigned_user_id: str | None = None
 
     @model_validator(mode="after")
     def resolve_visit_names(self) -> "PublicBookingCreateRequest":
@@ -54,6 +55,7 @@ class ManualBookingCreateRequest(BaseModel):
     send_confirmation: bool = True
     payment_status: Literal["unpaid", "paid_external"] = "unpaid"
     override_availability: bool = False
+    assigned_user_id: str
 
     @model_validator(mode="after")
     def resolve_client_choice(self) -> "ManualBookingCreateRequest":
@@ -100,6 +102,9 @@ class BookingOut(BaseModel):
     service_duration_minutes: int | None = None
     host_name: str | None = None
     host_title: str | None = None
+    assigned_user_id: str | None = None
+    assigned_name: str | None = None
+    assigned_title: str | None = None
     appointment_format: str | None = None
     location: str | None = None
     business_name: str | None = None
@@ -120,6 +125,10 @@ class RecordBalancePaymentRequest(BaseModel):
     method: Literal["cash", "bank_transfer", "pos", "other"]
     paid_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=500)
+
+
+class ReassignBookingRequest(BaseModel):
+    assigned_user_id: str
 
 
 class RescheduleBookingRequest(BaseModel):

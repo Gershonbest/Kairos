@@ -75,7 +75,7 @@ class RedisCache:
 
     async def invalidate_admin_overview(self) -> None:
         """Drop platform metrics + subscriber directory caches."""
-        await self.invalidate_admin("metrics", "subscribers", "plans")
+        await self.invalidate_admin("metrics", "subscribers", "plans", "plan_catalog")
 
     async def invalidate_admin_payments(self) -> None:
         """Drop all filtered payment hub caches (summary, rollups, logs)."""

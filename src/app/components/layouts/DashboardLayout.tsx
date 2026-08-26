@@ -44,7 +44,7 @@ const SIDEBAR_COLLAPSED_KEY = "orheo_sidebar_collapsed";
 
 const NAV_GROUPS: Array<{
   label: string;
-  items: Array<{ path: string; icon: typeof Calendar; label: string }>;
+  items: Array<{ path: string; icon: typeof Calendar; label: string; permission?: string }>;
 }> = [
   {
     label: "Overview",
@@ -60,15 +60,15 @@ const NAV_GROUPS: Array<{
   {
     label: "Catalogue",
     items: [
-      { path: "/dashboard/services", icon: Briefcase, label: "Services" },
-      { path: "/dashboard/products", icon: Package, label: "Products" },
+      { path: "/dashboard/services", icon: Briefcase, label: "Services", permission: "services:write" },
+      { path: "/dashboard/products", icon: Package, label: "Products", permission: "services:write" },
     ],
   },
   {
     label: "Customers",
     items: [
       { path: "/dashboard/clients", icon: Users, label: "Clients" },
-      { path: "/dashboard/payments", icon: DollarSign, label: "Payments" },
+      { path: "/dashboard/payments", icon: DollarSign, label: "Payments", permission: "payments:manage" },
       { path: "/dashboard/booking-links", icon: LinkIcon, label: "Booking Links" },
     ],
   },
@@ -78,7 +78,10 @@ const NAV_GROUPS: Array<{
   },
   {
     label: "Settings",
-    items: [{ path: "/dashboard/settings", icon: Settings, label: "Settings" }],
+    items: [
+      { path: "/dashboard/settings", icon: Settings, label: "Settings" },
+      { path: "/dashboard/team", icon: Users, label: "Team", permission: "team:manage" },
+    ],
   },
 ];
 
@@ -92,6 +95,7 @@ const PAGE_TITLES: Array<{ match: string; title: string }> = [
   { match: "/dashboard/payments", title: "Payments" },
   { match: "/dashboard/booking-links", title: "Booking Links" },
   { match: "/dashboard/settings", title: "Settings" },
+  { match: "/dashboard/team", title: "Team" },
   { match: "/dashboard/orion", title: "Orion" },
   { match: "/dashboard/ai-assistant", title: "Orion" },
   { match: "/dashboard/choose-plan", title: "Choose a plan" },
@@ -114,7 +118,12 @@ export function DashboardLayout() {
   const paymentReference = readPlatformPaymentReference(searchParams);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsedPreference);
-  const [user, setUser] = useState<{ full_name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{
+    full_name: string;
+    email: string;
+    permissions?: string[];
+    is_owner?: boolean;
+  } | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionStatus | null>(null);
 
   useEffect(() => {
@@ -274,13 +283,18 @@ export function DashboardLayout() {
         </div>
 
         <nav className="workspace-scroll flex-1 overflow-y-auto px-3 py-4">
-          {NAV_GROUPS.map((group) => (
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter(
+              (item) => !item.permission || user?.permissions?.includes(item.permission)
+            );
+            if (items.length === 0) return null;
+            return (
             <div key={group.label} className="mb-5 last:mb-0">
               <p className={`workspace-nav-group-label ${collapsed ? "lg:hidden" : ""}`}>
                 {group.label}
               </p>
               <div className="space-y-1">
-                {group.items.map((item) => (
+                {items.map((item) => (
                   <NavLink
                     key={item.path}
                     to={item.path}
@@ -303,7 +317,8 @@ export function DashboardLayout() {
                 ))}
               </div>
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         <div className="shrink-0 border-t border-sidebar-border p-3">
@@ -402,7 +417,7 @@ export function DashboardLayout() {
           <Outlet />
         </main>
         <OrionFloatingWidget />
-        <CommandPalette />
+        <CommandPalette permissions={user?.permissions} />
       </div>
     </div>
   );

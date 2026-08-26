@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ArrowLeft, Ban, CheckCircle, Download, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle, Download, Package, Search, Trash2 } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -222,6 +222,10 @@ export function SubscriberManagement() {
         <Link to="/admin" className={adminGhostLinkClass}>
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard
+        </Link>
+        <Link to="/admin/plans" className={adminNavLinkClass}>
+          <Package className="w-4 h-4" />
+          Plans
         </Link>
         <Link to="/admin/payments" className={adminNavLinkClass}>
           Payment Hub

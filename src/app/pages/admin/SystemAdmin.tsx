@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Download, Receipt, RefreshCw, Users } from "lucide-react";
+import { Download, Package, Receipt, RefreshCw, Users } from "lucide-react";
 import { api } from "../../../lib/api/client";
 import { AdminHeader, adminNavLinkClass } from "../../components/layouts/AdminHeader";
 
@@ -51,6 +51,10 @@ export function SystemAdmin() {
           <Download className="w-4 h-4" />
           Export
         </button>
+        <Link to="/admin/plans" className={adminNavLinkClass}>
+          <Package className="w-4 h-4" />
+          Plans
+        </Link>
         <Link to="/admin/payments" className={adminNavLinkClass}>
           <Receipt className="w-4 h-4" />
           Payment Hub

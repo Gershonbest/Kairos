@@ -9,13 +9,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.plans import (
+    CATALOG_REVISION,
     PLAN_CATALOG,
     PlanCode,
+    PlanDefinition,
     PlanFeature,
+    capability_flags,
+    catalog_capabilities,
     coerce_plan_code,
+    definition_from_row,
+    features_from_flags,
+    hydrate_runtime_catalog,
+    load_plan_definition,
     plan_code_value,
     plan_definition,
-    plan_has_feature,
     require_plan_code,
 )
 from app.infra.models import SubscriptionPlan, Tenant, User
@@ -23,23 +30,33 @@ from app.infra.models import SubscriptionPlan, Tenant, User
 settings = get_settings()
 
 
-def serialize_plan(plan: SubscriptionPlan, *, include_admin_fields: bool = False) -> dict:
-    definition = plan_definition(plan.code)
+def _definition_for_plan(plan: SubscriptionPlan | object) -> PlanDefinition:
+    if getattr(plan, "features", None) is not None and getattr(plan, "monthly_price", None) is not None:
+        return definition_from_row(plan)
+    return plan_definition(getattr(plan, "code", None))
+
+
+def serialize_plan(plan: SubscriptionPlan | object, *, include_admin_fields: bool = False) -> dict:
+    definition = _definition_for_plan(plan)
     payload = {
         "code": definition.code.value,
         "name": definition.name,
         "monthly_price": float(definition.monthly_price),
+        "contact_admin": definition.contact_admin(),
         "description": definition.description,
         "features": definition.feature_labels(),
         "feature_codes": definition.feature_codes(),
         "entitlements": definition.entitlements(),
         "self_serve": definition.self_serve,
         "is_featured": definition.is_featured,
+        "flags": capability_flags(definition),
+        "bookings_per_month": definition.bookings_per_month,
+        "team_members": definition.team_members,
     }
     if include_admin_fields:
         payload.update(
             {
-                "id": plan.id,
+                "id": getattr(plan, "id", None),
                 "is_active": definition.is_active,
                 "sort_order": definition.sort_order,
             }
@@ -166,9 +183,27 @@ def tenant_has_active_access(tenant: Tenant, *, now: datetime | None = None) -> 
     return not subscription_status_payload(tenant, now=now)["requires_plan_selection"]
 
 
+def _plan_is_admin_managed(plan: SubscriptionPlan) -> bool:
+    entitlements = plan.entitlements or {}
+    return bool(entitlements.get("_admin"))
+
+
+def _apply_seed(plan: SubscriptionPlan, seed: dict) -> None:
+    plan.name = seed["name"]
+    plan.monthly_price = seed["monthly_price"]
+    plan.description = seed["description"]
+    plan.features = seed["features"]
+    plan.entitlements = seed["entitlements"]
+    plan.self_serve = seed["self_serve"]
+    plan.is_active = seed["is_active"]
+    plan.is_featured = seed["is_featured"]
+    plan.sort_order = seed["sort_order"]
+
+
 async def ensure_default_plans(session: AsyncSession) -> None:
     existing = (await session.execute(select(SubscriptionPlan))).scalars().all()
     existing_by_code = {coerce_plan_code(plan.code): plan for plan in existing}
+    dirty = False
     for definition in PLAN_CATALOG.values():
         seed = definition.seed_dict()
         plan = existing_by_code.get(definition.code)
@@ -187,17 +222,18 @@ async def ensure_default_plans(session: AsyncSession) -> None:
                     sort_order=seed["sort_order"],
                 )
             )
+            dirty = True
             continue
-        plan.name = seed["name"]
-        plan.monthly_price = seed["monthly_price"]
-        plan.description = seed["description"]
-        plan.features = seed["features"]
-        plan.entitlements = seed["entitlements"]
-        plan.self_serve = seed["self_serve"]
-        plan.is_active = seed["is_active"]
-        plan.is_featured = seed["is_featured"]
-        plan.sort_order = seed["sort_order"]
-    await session.commit()
+        if _plan_is_admin_managed(plan):
+            continue
+        entitlements = plan.entitlements or {}
+        if entitlements.get("_revision") == CATALOG_REVISION:
+            continue
+        _apply_seed(plan, seed)
+        dirty = True
+    if dirty:
+        await session.commit()
+    await hydrate_runtime_catalog(session)
 
 
 async def list_public_plans(session: AsyncSession) -> list[dict]:
@@ -222,6 +258,52 @@ async def list_admin_plans(session: AsyncSession) -> list[dict]:
     return [serialize_plan(plan, include_admin_fields=True) for plan in plans]
 
 
+async def admin_plan_catalog(session: AsyncSession) -> dict:
+    return {
+        "capabilities": catalog_capabilities(),
+        "plans": await list_admin_plans(session),
+    }
+
+
+def apply_admin_plan_update(plan: SubscriptionPlan, update) -> PlanDefinition:
+    flags = dict(getattr(update, "flags", None) or {})
+    self_serve = bool(flags.get("self_serve", update.self_serve))
+    definition = PlanDefinition(
+        code=require_plan_code(update.code),
+        name=str(update.name).strip() or plan_definition(update.code).name,
+        monthly_price=float(update.monthly_price or 0),
+        description=str(update.description or "").strip(),
+        features=features_from_flags(flags),
+        bookings_per_month=update.bookings_per_month,
+        team_members=update.team_members,
+        self_serve=self_serve,
+        is_featured=bool(update.is_featured),
+        sort_order=plan_definition(update.code).sort_order,
+        is_active=bool(getattr(update, "is_active", True)),
+    )
+    seed = definition.seed_dict()
+    seed["entitlements"]["_admin"] = True
+    _apply_seed(plan, seed)
+    return definition
+
+
+async def replace_admin_plans(session: AsyncSession, updates: list) -> dict:
+    await ensure_default_plans(session)
+    codes = [require_plan_code(item.code) for item in updates]
+    if set(codes) != set(PlanCode) or len(codes) != len(PlanCode):
+        raise ValueError("All three plans (standard, premium, enterprise) must be included")
+    existing = (await session.execute(select(SubscriptionPlan))).scalars().all()
+    by_code = {coerce_plan_code(plan.code): plan for plan in existing}
+    for update in updates:
+        plan = by_code.get(require_plan_code(update.code))
+        if plan is None:
+            raise ValueError(f"Unknown subscription plan: {update.code}")
+        apply_admin_plan_update(plan, update)
+    await session.commit()
+    await hydrate_runtime_catalog(session)
+    return await admin_plan_catalog(session)
+
+
 async def activate_plan(
     session: AsyncSession,
     tenant: Tenant,
@@ -230,7 +312,6 @@ async def activate_plan(
     now: datetime | None = None,
 ) -> dict:
     code = require_plan_code(plan_code)
-    definition = plan_definition(code)
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
@@ -241,8 +322,9 @@ async def activate_plan(
     ).scalar_one_or_none()
     if not plan:
         raise ValueError("Unknown subscription plan")
+    definition = definition_from_row(plan)
     if not definition.self_serve:
-        raise ValueError("This plan requires sales assistance. Please contact us for Enterprise pricing.")
+        raise ValueError("This plan requires sales assistance. Please contact admin for Enterprise pricing.")
 
     now = now or datetime.now(UTC)
     tenant.plan_code = code
@@ -354,7 +436,6 @@ async def create_subscription_checkout(
     from app.modules.payments.service import platform_payment_callback_url
 
     code = require_plan_code(plan_code)
-    definition = plan_definition(code)
     plan = (
         await session.execute(
             select(SubscriptionPlan).where(
@@ -365,8 +446,9 @@ async def create_subscription_checkout(
     ).scalar_one_or_none()
     if not plan:
         raise ValueError("Unknown subscription plan")
+    definition = definition_from_row(plan)
     if not definition.self_serve:
-        raise ValueError("This plan requires sales assistance. Please contact us for Enterprise pricing.")
+        raise ValueError("This plan requires sales assistance. Please contact admin for Enterprise pricing.")
     if not paystack_client.is_configured():
         raise ValueError("Paystack is not configured on the server")
 
@@ -428,7 +510,8 @@ async def tenant_allows_payment_processing(session: AsyncSession, tenant: Tenant
     status = subscription_status_payload(tenant)
     if status.get("is_trial"):
         return True
-    return plan_has_feature(tenant.plan_code, PlanFeature.payment_processing)
+    definition = await load_plan_definition(session, tenant.plan_code)
+    return definition.has(PlanFeature.payment_processing)
 
 
 async def maybe_send_trial_warning(

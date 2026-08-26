@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,11 +32,11 @@ def generate_slots(
     from_dt: datetime,
     to_dt: datetime,
     service: Service,
-    rules: list[AvailabilityRule],
+    rules: Sequence[Any],
     existing_bookings: list[Booking],
     calendar_blocks: list[CalendarBlock] | None = None,
 ) -> list[str]:
-    rules_by_day: dict[int, list[AvailabilityRule]] = defaultdict(list)
+    rules_by_day: dict[int, list[Any]] = defaultdict(list)
     for rule in rules:
         if rule.is_enabled:
             rules_by_day[rule.day_of_week].append(rule)

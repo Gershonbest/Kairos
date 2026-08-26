@@ -22,11 +22,13 @@ from app.infra.models import (
     NotificationType,
     PaymentTransaction,
     Service,
+    StaffRole,
     Tenant,
     User,
     UserRole,
 )
 from app.modules.clients.names import visit_display_name
+from app.modules.team.staff import booking_host_name, booking_host_title
 from app.modules.notifications.receipt import (
     BookingReceiptData,
     build_receipt_html,
@@ -213,6 +215,37 @@ def send_password_reset_google_hint_email(*, to: str, full_name: str) -> None:
         logger.exception("notifications.password_reset_google_hint_failed", to=to)
 
 
+def send_team_invite_email(*, to: str, full_name: str, business_name: str, raw_token: str) -> None:
+    frontend = get_settings().frontend_base_url.rstrip("/")
+    invite_url = f"{frontend}/invite/{raw_token}"
+    subject = f"Join {business_name} on Orheo"
+    html = wrap_email_html(
+        inner_html=f"""
+    {email_h1("You're invited")}
+    {email_p(f"Hi {full_name},")}
+    {email_p(f"You've been invited to join {business_name} on Orheo Bookings.")}
+    {email_p("Set a password to accept the invite and start using the dashboard.")}
+    {email_button(invite_url, "Join the team")}
+    {email_p("If the button does not work, copy and paste this link into your browser:", muted=True)}
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;word-break:break-all;">{escape(invite_url)}</p>
+    {email_p("This invite expires in 7 days.", muted=True)}
+    """,
+        preheader=subject,
+    )
+    text = (
+        f"Hi {full_name},\n\n"
+        f"You've been invited to join {business_name} on Orheo Bookings.\n"
+        f"Accept the invite: {invite_url}\n\n"
+        "This invite expires in 7 days.\n\n"
+        "— Orheo Bookings"
+    )
+    try:
+        email_service.send(to=to, subject=subject, html_body=html, text_body=text)
+        logger.info("notifications.team_invite_email_sent", to=to, frontend_base_url=frontend)
+    except Exception:
+        logger.exception("notifications.team_invite_email_failed", to=to)
+
+
 def build_booking_receipt_data(
     *,
     tenant: Tenant,
@@ -238,8 +271,8 @@ def build_booking_receipt_data(
         is_all_day=bool(booking.is_all_day),
         appointment_format=appointment_format,
         location=location,
-        host_name=service.host_name,
-        host_title=service.host_title,
+        host_name=booking_host_name(booking, service),
+        host_title=booking_host_title(booking, service),
         client_instructions=service.client_instructions,
         online_meeting_link=(
             service.online_meeting_link
@@ -464,7 +497,18 @@ async def create_booking_notifications(
     title = f"New booking: {service.name}"
     body = f"{visit_display_name(booking, client)} booked {service.name} for {when}."
 
+    recipients: list[User] = []
+    seen: set[str] = set()
     for user in users:
+        is_owner = user.role == UserRole.tenant_admin
+        is_manager = user.staff_role == StaffRole.manager
+        is_assignee = bool(booking.assigned_user_id) and user.id == booking.assigned_user_id
+        if not (is_owner or is_manager or is_assignee):
+            continue
+        if user.id in seen:
+            continue
+        seen.add(user.id)
+        recipients.append(user)
         session.add(
             Notification(
                 tenant_id=tenant.id,
@@ -476,7 +520,9 @@ async def create_booking_notifications(
             )
         )
 
-    owner = next((user for user in users if user.role == UserRole.tenant_admin), users[0])
+    if not recipients:
+        return None
+    owner = next((user for user in recipients if user.role == UserRole.tenant_admin), recipients[0])
     return owner
 
 

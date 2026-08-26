@@ -48,6 +48,7 @@ def test_manual_booking_accepts_existing_or_new_client() -> None:
         client_id="client-1",
         service_id="svc-1",
         start_at="2026-08-18T10:00:00+00:00",
+        assigned_user_id="staff-1",
     )
     new = ManualBookingCreateRequest(
         new_client_first_name="Ada",
@@ -55,6 +56,7 @@ def test_manual_booking_accepts_existing_or_new_client() -> None:
         new_client_email="ada@example.com",
         service_id="svc-1",
         start_at="2026-08-18T10:00:00+00:00",
+        assigned_user_id="staff-1",
     )
     assert existing.client_id == "client-1"
     assert new.new_client_email == "ada@example.com"

@@ -12,7 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.plans import PlanFeature, plan_has_feature
+from app.core.plans import PlanFeature, hydrate_runtime_catalog, plan_has_feature
 from app.infra.cache import redis_cache
 from app.infra.db import SessionLocal
 from app.infra.messaging import ProviderResult, get_adapter
@@ -235,7 +235,7 @@ def plan_reminder_jobs(
                         "body": body,
                         "subject": subject,
                         "template_key": TEMPLATE_KEY,
-                        "business_logo_url": tenant.public_logo_url,
+                        "business_logo_url": getattr(tenant, "public_logo_url", None),
                     },
                 )
             )
@@ -288,6 +288,7 @@ async def schedule_booking_reminders(
         await cancel_pending_reminders(session, booking.id)
         return []
 
+    await hydrate_runtime_catalog(session)
     prefs = await _get_or_create_prefs(session, tenant.id)
     desired = plan_reminder_jobs(
         tenant=tenant,
@@ -414,6 +415,7 @@ async def queue_booking_confirmations(
 ) -> list[OutboundMessage]:
     if booking.status != BookingStatus.confirmed:
         return []
+    await hydrate_runtime_catalog(session)
     prefs = await _get_or_create_prefs(session, tenant.id)
     channels = enabled_confirmation_channels(prefs, tenant=tenant)
     if not channels:

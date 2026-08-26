@@ -31,6 +31,8 @@ from app.infra.models import (
     PaymentTransaction,
     RefreshToken,
     Service,
+    StaffAvailabilityRule,
+    TeamInvite,
     Tenant,
     TenantFaq,
     TenantKnowledgeDocument,
@@ -38,10 +40,16 @@ from app.infra.models import (
     UserRole,
     WebhookEvent,
     service_listings,
+    service_staff,
 )
 from app.modules.ai.vector.factory import get_vector_store
 from app.modules.audit.service import record_audit_event
-from app.modules.subscriptions.service import grant_plan_to_tenant, list_admin_plans
+from app.modules.subscriptions.service import (
+    admin_plan_catalog,
+    grant_plan_to_tenant,
+    replace_admin_plans,
+)
+from app.schemas.subscriptions import AdminPlansReplaceRequest
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -347,10 +355,15 @@ async def delete_subscriber(
     await session.execute(delete(ClientCommunication).where(ClientCommunication.tenant_id == tenant_id))
     await session.execute(delete(PaymentTransaction).where(PaymentTransaction.tenant_id == tenant_id))
     await session.execute(delete(Booking).where(Booking.tenant_id == tenant_id))
+    await session.execute(delete(TeamInvite).where(TeamInvite.tenant_id == tenant_id))
+    await session.execute(delete(StaffAvailabilityRule).where(StaffAvailabilityRule.tenant_id == tenant_id))
     if listing_ids:
         await session.execute(delete(service_listings).where(service_listings.c.listing_id.in_(listing_ids)))
     if service_ids:
         await session.execute(delete(service_listings).where(service_listings.c.service_id.in_(service_ids)))
+        await session.execute(delete(service_staff).where(service_staff.c.service_id.in_(service_ids)))
+    if user_ids:
+        await session.execute(delete(service_staff).where(service_staff.c.user_id.in_(user_ids)))
     await session.execute(delete(Listing).where(Listing.tenant_id == tenant_id))
     await session.execute(delete(ClientEmailTemplate).where(ClientEmailTemplate.tenant_id == tenant_id))
     await session.execute(delete(TenantFaq).where(TenantFaq.tenant_id == tenant_id))
@@ -390,14 +403,40 @@ async def delete_subscriber(
 async def list_subscription_plans(
     _: CurrentUser = Depends(require_roles("platform_admin")),
     session: AsyncSession = Depends(get_db_session),
-) -> list[dict]:
-    cache_key = redis_cache.admin_key("plans")
+) -> dict:
+    cache_key = redis_cache.admin_key("plan_catalog")
     cached = await redis_cache.get_json(cache_key)
     if cached is not None:
         return cached
-    payload = await list_admin_plans(session)
+    payload = await admin_plan_catalog(session)
     await redis_cache.set_json(cache_key, payload)
     return payload
+
+
+@router.put("/plans")
+async def update_subscription_plans(
+    payload: AdminPlansReplaceRequest,
+    request: Request,
+    actor: CurrentUser = Depends(require_roles("platform_admin")),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    try:
+        catalog = await replace_admin_plans(session, payload.plans)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await redis_cache.invalidate_admin("plans", "plan_catalog")
+    await record_audit_event(
+        session,
+        action="plans.updated",
+        entity_type="subscription_plan",
+        entity_id="catalog",
+        tenant_id=None,
+        actor=actor,
+        metadata={"codes": [item.code.value for item in payload.plans]},
+        request=request,
+    )
+    await session.commit()
+    return catalog
 
 
 def _date_filters(date_from: datetime | None, date_to: datetime | None) -> list:

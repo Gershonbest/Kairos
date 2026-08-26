@@ -118,6 +118,9 @@ def test_booking_serializer_includes_product_context() -> None:
         client_id="client-1",
         service_id="service-1",
         listing_id="prod-1",
+        assigned_user_id=None,
+        assigned_name=None,
+        assigned_title=None,
         notes=None,
         is_all_day=False,
         appointment_format=AppointmentFormat.onsite,
@@ -142,3 +145,4 @@ def test_booking_serializer_includes_product_context() -> None:
     assert payload["listing_id"] == "prod-1"
     assert payload["listing_name"] == "Vehicle Unit 14"
     assert payload["listing_image_url"] == "https://img.example/p1.jpg"
+    assert payload["assigned_user_id"] is None

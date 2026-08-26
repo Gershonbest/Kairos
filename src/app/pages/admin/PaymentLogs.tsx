@@ -12,6 +12,7 @@ import {
   CreditCard,
   Download,
   Eye,
+  Package,
   Receipt,
   Search,
   Users,
@@ -283,6 +284,10 @@ export function PaymentLogs() {
         <Link to="/admin" className={adminGhostLinkClass}>
           <ArrowLeft className="w-4 h-4" />
           Dashboard
+        </Link>
+        <Link to="/admin/plans" className={adminNavLinkClass}>
+          <Package className="w-4 h-4" />
+          Plans
         </Link>
         <button
           onClick={exportCsv}

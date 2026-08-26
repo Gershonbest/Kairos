@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, get_current_user, require_active_subscription, require_permission
+from app.core.permissions import PAYMENTS_MANAGE, SETTINGS_DANGER
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import AvailabilityRule, Listing, Service, ServiceBookingType, Tenant, User
@@ -453,7 +454,7 @@ async def resolve_settlement_account(
 @router.post("/me/payment-provider")
 async def connect_payment_provider(
     payload: PaymentProviderConnectRequest,
-    current_user: CurrentUser = Depends(require_active_subscription),
+    current_user: CurrentUser = Depends(require_permission(PAYMENTS_MANAGE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     if not current_user.tenant_id:
@@ -549,7 +550,7 @@ async def get_payment_provider(
 
 @router.delete("/me/payment-provider")
 async def disconnect_payment_provider(
-    current_user: CurrentUser = Depends(require_active_subscription),
+    current_user: CurrentUser = Depends(require_permission(PAYMENTS_MANAGE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     if not current_user.tenant_id:
@@ -578,7 +579,7 @@ async def disconnect_payment_provider(
 
 @router.post("/me/deactivate")
 async def deactivate_tenant(
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_permission(SETTINGS_DANGER)),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     if not current_user.tenant_id:

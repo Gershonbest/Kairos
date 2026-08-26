@@ -11,6 +11,7 @@ import structlog
 from app.core.crypto import sha256_text
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user
+from app.core.permissions import permissions_for
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -25,6 +26,8 @@ from app.modules.notifications.service import (
     send_password_reset_google_hint_email,
     send_tenant_verification_email,
 )
+from app.modules.team.service import TeamServiceError, accept_invite, get_invite_by_token
+from app.schemas.team import AcceptInviteRequest
 from app.modules.subscriptions.service import start_tenant_trial, subscription_status_payload
 from app.schemas.auth import (
     AdminLoginRequest,
@@ -492,6 +495,11 @@ async def me(
         "email": user.email,
         "tenant_id": user.tenant_id,
         "role": user.role.value,
+        "staff_role": user.staff_role.value if user.staff_role else None,
+        "is_owner": user.role == UserRole.tenant_admin,
+        "job_title": user.job_title,
+        "is_bookable": bool(user.is_bookable),
+        "permissions": list(permissions_for(role=user.role, staff_role=user.staff_role)),
         "email_verified": user.email_verified,
         "has_password": bool(user.password_hash),
         "onboarding_completed": onboarding_completed,
@@ -567,3 +575,34 @@ async def update_me(
         "email": user.email,
         "email_verified": user.email_verified,
     }
+
+
+@router.get("/invite/{token}")
+async def preview_invite(token: str, session: AsyncSession = Depends(get_db_session)) -> dict:
+    invite = await get_invite_by_token(session, token)
+    if not invite or invite.revoked_at or invite.accepted_at or invite.expires_at <= datetime.now(UTC):
+        raise HTTPException(status_code=404, detail="This invite is invalid or has expired")
+    tenant = (await session.execute(select(Tenant).where(Tenant.id == invite.tenant_id))).scalar_one()
+    return {
+        "email": invite.email,
+        "full_name": invite.full_name,
+        "staff_role": invite.staff_role.value,
+        "business_name": tenant.name,
+        "expires_at": invite.expires_at.isoformat(),
+    }
+
+
+@router.post("/invite/{token}/accept", response_model=TokenPair)
+async def accept_team_invite(
+    token: str,
+    payload: AcceptInviteRequest,
+    session: AsyncSession = Depends(get_db_session),
+) -> TokenPair:
+    invite = await get_invite_by_token(session, token)
+    if not invite:
+        raise HTTPException(status_code=404, detail="This invite is invalid or has expired")
+    try:
+        user = await accept_invite(session, invite=invite, password=payload.password)
+    except TeamServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return await _issue_tokens(session, user)

@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+Allow: /pricing
+Allow: /faq
+Allow: /privacy
+Allow: /terms
+
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /auth
+Disallow: /login
+Disallow: /signup
+Disallow: /invite
+Disallow: /onboarding
+Disallow: /verify-email
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /book/
+
+Sitemap: https://www.orheo.com/sitemap.xml

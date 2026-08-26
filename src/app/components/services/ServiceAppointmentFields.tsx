@@ -23,6 +23,7 @@ interface ServiceAppointmentFieldsProps {
   businessLocation?: string;
   disabled?: boolean;
   idPrefix?: string;
+  staffOptions?: Array<{ id: string; full_name: string; job_title?: string | null; is_bookable?: boolean }>;
 }
 
 export function ServiceAppointmentFields({
@@ -31,6 +32,7 @@ export function ServiceAppointmentFields({
   businessLocation,
   disabled = false,
   idPrefix = "service",
+  staffOptions = [],
 }: ServiceAppointmentFieldsProps) {
   const showOnsiteFields = value.appointment_type === "onsite" || value.appointment_type === "hybrid";
   const showOnlineFields = value.appointment_type === "online" || value.appointment_type === "hybrid";
@@ -69,31 +71,40 @@ export function ServiceAppointmentFields({
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <Label htmlFor={`${idPrefix}-host-name`} className="flex items-center gap-1.5">
-            <Users className="w-3.5 h-3.5 text-muted-foreground" />
-            Person to see
-          </Label>
-          <Input
-            id={`${idPrefix}-host-name`}
-            value={value.host_name}
-            onChange={(e) => onChange({ ...value, host_name: e.target.value })}
-            placeholder="e.g., Dr. Sarah Mensah"
-            className="mt-1 bg-input-background"
-            disabled={disabled}
-          />
-        </div>
-        <div>
-          <Label htmlFor={`${idPrefix}-host-title`}>Role / title</Label>
-          <Input
-            id={`${idPrefix}-host-title`}
-            value={value.host_title}
-            onChange={(e) => onChange({ ...value, host_title: e.target.value })}
-            placeholder="e.g., Senior Consultant"
-            className="mt-1 bg-input-background"
-            disabled={disabled}
-          />
+      <div>
+        <Label className="flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5 text-muted-foreground" />
+          Who can deliver this
+        </Label>
+        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+          Clients can pick Anyone or a named person when two or more people are selected.
+        </p>
+        <div className="space-y-2 rounded-md border border-border bg-input-background p-3">
+          {staffOptions.length === 0 && (
+            <p className="text-sm text-muted-foreground">The owner is assigned until you add team members.</p>
+          )}
+          {staffOptions.map((member) => {
+            const checked = value.staff_ids.includes(member.id);
+            return (
+              <label key={member.id} className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={checked}
+                  disabled={disabled}
+                  onCheckedChange={(next) => {
+                    const on = next === true;
+                    const staff_ids = on
+                      ? [...value.staff_ids, member.id]
+                      : value.staff_ids.filter((id) => id !== member.id);
+                    onChange({ ...value, staff_ids });
+                  }}
+                />
+                <span>
+                  {member.full_name}
+                  {member.job_title ? ` · ${member.job_title}` : ""}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </div>
 

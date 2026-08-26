@@ -41,6 +41,12 @@ class UserRole(str, enum.Enum):
     platform_admin = "platform_admin"
 
 
+class StaffRole(str, enum.Enum):
+    manager = "manager"
+    staff = "staff"
+    front_desk = "front_desk"
+
+
 class BookingStatus(str, enum.Enum):
     pending = "pending"
     confirmed = "confirmed"
@@ -117,6 +123,13 @@ service_listings = Table(
     Column("listing_id", String(36), ForeignKey("listings.id"), primary_key=True, index=True),
 )
 
+service_staff = Table(
+    "service_staff",
+    Base.metadata,
+    Column("service_id", String(36), ForeignKey("services.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Tenant(Base):
     __tablename__ = "tenants"
@@ -175,6 +188,9 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     google_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.tenant_admin, nullable=False)
+    staff_role: Mapped[StaffRole | None] = mapped_column(Enum(StaffRole, native_enum=False, length=20))
+    job_title: Mapped[str | None] = mapped_column(String(80))
+    is_bookable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -243,6 +259,7 @@ class Service(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     listings: Mapped[list["Listing"]] = relationship(secondary=service_listings, back_populates="services")
+    staff: Mapped[list["User"]] = relationship(secondary=service_staff)
 
 
 class Listing(Base):
@@ -274,6 +291,39 @@ class AvailabilityRule(Base):
     start_time: Mapped[str] = mapped_column(String(5), nullable=False)
     end_time: Mapped[str] = mapped_column(String(5), nullable=False)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class StaffAvailabilityRule(Base):
+    __tablename__ = "staff_availability_rules"
+    __table_args__ = (Index("ix_staff_availability_user_day", "user_id", "day_of_week"),)
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class TeamInvite(Base):
+    __tablename__ = "team_invites"
+    __table_args__ = (
+        Index("ix_team_invites_tenant_email", "tenant_id", "email"),
+        Index("ix_team_invites_token_hash", "token_hash", unique=True),
+    )
+
+    id: Mapped[str] = uuid_pk()
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    staff_role: Mapped[StaffRole] = mapped_column(Enum(StaffRole, native_enum=False, length=20), nullable=False)
+    invited_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class CalendarBlock(Base):
@@ -312,10 +362,13 @@ class Booking(Base):
         Index(
             "uq_booking_slot_general",
             "tenant_id",
-            "service_id",
+            "assigned_user_id",
             "start_at",
             unique=True,
-            postgresql_where=text("listing_id IS NULL AND status IN ('pending'::bookingstatus, 'confirmed'::bookingstatus)"),
+            postgresql_where=text(
+                "listing_id IS NULL AND assigned_user_id IS NOT NULL "
+                "AND status IN ('pending'::bookingstatus, 'confirmed'::bookingstatus)"
+            ),
         ),
         Index(
             "uq_booking_slot_listing",
@@ -333,6 +386,9 @@ class Booking(Base):
     client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), nullable=False)
     service_id: Mapped[str] = mapped_column(ForeignKey("services.id"), nullable=False)
     listing_id: Mapped[str | None] = mapped_column(ForeignKey("listings.id"))
+    assigned_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    assigned_name: Mapped[str | None] = mapped_column(String(120))
+    assigned_title: Mapped[str | None] = mapped_column(String(80))
     status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), default=BookingStatus.pending)
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     end_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -351,6 +407,7 @@ class Booking(Base):
     client: Mapped["Client"] = relationship()
     service: Mapped["Service"] = relationship()
     listing: Mapped["Listing | None"] = relationship()
+    assigned_user: Mapped["User | None"] = relationship(foreign_keys=[assigned_user_id])
 
 
 class PaymentTransaction(Base):

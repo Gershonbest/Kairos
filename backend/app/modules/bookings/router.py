@@ -8,7 +8,8 @@ from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, get_current_user, require_active_subscription
+from app.core.deps import CurrentUser, get_current_user, require_active_subscription, require_permission
+from app.core.permissions import BOOKINGS_REASSIGN, CALENDAR_ALL
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
@@ -52,8 +53,17 @@ from app.modules.payments.service import (
 )
 from app.modules.scheduling.service import booking_blocks_slot, generate_slots
 from app.modules.services.helpers import resolve_appointment_format, resolve_service_location
+from app.modules.team.staff import (
+    assignee_snapshot,
+    assert_staff_slot_available,
+    booking_host_name,
+    booking_host_title,
+    resolve_assignable_user,
+    union_slots_for_service,
+)
 from app.schemas.bookings import (
     ManualBookingCreateRequest,
+    ReassignBookingRequest,
     RecordBalancePaymentRequest,
     RescheduleBookingRequest,
     UpdateBookingStatusRequest,
@@ -121,8 +131,11 @@ def _serialize_booking(
         "appointment_format": (
             booking.appointment_format.value if booking.appointment_format else None
         ),
-        "host_name": service.host_name,
-        "host_title": service.host_title,
+        "host_name": booking_host_name(booking, service),
+        "host_title": booking_host_title(booking, service),
+        "assigned_user_id": getattr(booking, "assigned_user_id", None),
+        "assigned_name": getattr(booking, "assigned_name", None),
+        "assigned_title": getattr(booking, "assigned_title", None),
         "location": resolve_service_location(
             service,
             tenant,
@@ -133,6 +146,17 @@ def _serialize_booking(
     if payment is not None:
         payload["payment"] = payment
     return payload
+
+
+def _can_see_all_calendars(current_user: CurrentUser) -> bool:
+    return CALENDAR_ALL in current_user.permissions
+
+
+def _assert_booking_visible(current_user: CurrentUser, booking: Booking) -> None:
+    if _can_see_all_calendars(current_user):
+        return
+    if booking.assigned_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 def _normalize_booking_window(service: Service, requested_start: datetime) -> tuple[datetime, datetime, bool]:
@@ -178,46 +202,16 @@ async def _available_slots(
     listing: Listing | None,
     from_dt: datetime,
     to_dt: datetime,
+    assigned_user_id: str | None = None,
 ) -> list[str]:
-    rules = list(
-        (
-            await session.execute(
-                select(AvailabilityRule).where(
-                    AvailabilityRule.tenant_id == tenant_id,
-                    AvailabilityRule.is_enabled.is_(True),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    filters = [
-        Booking.tenant_id == tenant_id,
-        Booking.service_id == service.id,
-        Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-        Booking.start_at >= from_dt,
-        Booking.start_at <= to_dt + timedelta(days=1),
-        Booking.listing_id == listing.id if listing else Booking.listing_id.is_(None),
-    ]
-    existing = list((await session.execute(select(Booking).where(*filters))).scalars().all())
-    calendar_blocks = list(
-        (
-            await session.execute(
-                select(CalendarBlock).where(
-                    CalendarBlock.tenant_id == tenant_id,
-                    CalendarBlock.end_date >= from_dt.date(),
-                    CalendarBlock.start_date <= to_dt.date(),
-                )
-            )
-        ).scalars().all()
-    )
-    return generate_slots(
+    return await union_slots_for_service(
+        session,
+        tenant_id=tenant_id,
+        service=service,
         from_dt=from_dt,
         to_dt=to_dt,
-        service=service,
-        rules=rules,
-        existing_bookings=existing,
-        calendar_blocks=calendar_blocks,
+        listing_id=listing.id if listing else None,
+        assigned_user_id=assigned_user_id,
     )
 
 
@@ -227,6 +221,7 @@ async def get_manual_booking_availability(
     from_iso: datetime = Query(...),
     to_iso: datetime = Query(...),
     listing_id: str | None = Query(default=None),
+    assigned_user_id: str | None = Query(default=None),
     current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
@@ -260,6 +255,7 @@ async def get_manual_booking_availability(
         listing=listing,
         from_dt=from_dt.astimezone(UTC),
         to_dt=to_dt.astimezone(UTC),
+        assigned_user_id=assigned_user_id,
     )
     return {"slots": slots}
 
@@ -336,6 +332,16 @@ async def create_manual_booking(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    try:
+        assignee = await resolve_assignable_user(
+            session,
+            tenant_id=current_user.tenant_id,
+            service=service,
+            assigned_user_id=payload.assigned_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     start_at, end_at, is_all_day = _normalize_booking_window(service, payload.start_at)
     calendar_block = (
         await session.execute(
@@ -358,6 +364,7 @@ async def create_manual_booking(
             listing=listing,
             from_dt=day_start,
             to_dt=day_start,
+            assigned_user_id=assignee.id,
         )
         available = {datetime.fromisoformat(slot.replace("Z", "+00:00")).astimezone(UTC) for slot in slots}
         if start_at not in available:
@@ -366,37 +373,29 @@ async def create_manual_booking(
                 detail="That time is outside availability or no longer open. Refresh the slots or use the override.",
             )
 
-    buffer_minutes = service.buffer_minutes or 0
-    nearby = (
-        await session.execute(
-            select(Booking).where(
-                and_(
-                    Booking.tenant_id == current_user.tenant_id,
-                    Booking.service_id == service.id,
-                    Booking.status.in_([BookingStatus.pending, BookingStatus.confirmed]),
-                    Booking.start_at < end_at + timedelta(minutes=buffer_minutes),
-                    Booking.end_at > start_at - timedelta(minutes=buffer_minutes),
-                )
-            )
+    try:
+        await assert_staff_slot_available(
+            session,
+            tenant_id=current_user.tenant_id,
+            service=service,
+            user=assignee,
+            start_at=start_at,
+            end_at=end_at,
+            listing_id=listing.id if listing else None,
         )
-    ).scalars().all()
-    if any(
-        (
-            row.listing_id == listing.id
-            if service.booking_type == ServiceBookingType.listing and listing
-            else row.listing_id is None
-        )
-        and booking_blocks_slot(row, start_at, end_at, buffer_minutes)
-        for row in nearby
-    ):
-        raise HTTPException(status_code=409, detail="That slot is already booked")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    assigned_name, assigned_title = assignee_snapshot(assignee)
     profile_first, profile_last = split_person_name(client.full_name)
     booking = Booking(
         tenant_id=current_user.tenant_id,
         client_id=client.id,
         service_id=service.id,
         listing_id=listing.id if listing else None,
+        assigned_user_id=assignee.id,
+        assigned_name=assigned_name,
+        assigned_title=assigned_title,
         start_at=start_at,
         end_at=end_at,
         is_all_day=is_all_day,
@@ -464,8 +463,8 @@ async def create_manual_booking(
             start_at=booking.start_at,
             end_at=booking.end_at,
             location=location,
-            host_name=service.host_name,
-            host_title=service.host_title,
+            host_name=booking.assigned_name,
+            host_title=booking.assigned_title,
             appointment_format=appointment_format.value,
             client_instructions=service.client_instructions,
             online_meeting_link=service.online_meeting_link,
@@ -499,7 +498,11 @@ async def list_bookings(
     if not current_user.tenant_id:
         raise HTTPException(status_code=400, detail="No tenant assigned")
 
-    cache_key = redis_cache.tenant_key(current_user.tenant_id, BOOKINGS_CACHE)
+    scoped = not _can_see_all_calendars(current_user)
+    cache_key = redis_cache.tenant_key(
+        current_user.tenant_id,
+        f"{BOOKINGS_CACHE}:user:{current_user.id}" if scoped else BOOKINGS_CACHE,
+    )
     cached = await redis_cache.get_json(cache_key)
     if isinstance(cached, list):
         return cached
@@ -507,16 +510,17 @@ async def list_bookings(
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     ).scalar_one()
-    rows = (
-        await session.execute(
-            select(Booking, Client, Service, Listing)
-            .join(Client, Booking.client_id == Client.id)
-            .join(Service, Booking.service_id == Service.id)
-            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
-            .where(Booking.tenant_id == current_user.tenant_id)
-            .order_by(Booking.start_at.asc())
-        )
-    ).all()
+    query = (
+        select(Booking, Client, Service, Listing)
+        .join(Client, Booking.client_id == Client.id)
+        .join(Service, Booking.service_id == Service.id)
+        .join(Listing, Booking.listing_id == Listing.id, isouter=True)
+        .where(Booking.tenant_id == current_user.tenant_id)
+        .order_by(Booking.start_at.asc())
+    )
+    if scoped:
+        query = query.where(Booking.assigned_user_id == current_user.id)
+    rows = (await session.execute(query)).all()
     booking_ids = [booking.id for booking, _, _, _ in rows]
     tx_map: dict[str, list[PaymentTransaction]] = {booking_id: [] for booking_id in booking_ids}
     if booking_ids:
@@ -581,6 +585,7 @@ async def update_booking_status(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     booking, client, service, listing = row
+    _assert_booking_visible(current_user, booking)
     payment = await booking_payment_summary(session, booking=booking, service=service)
     if booking.status == next_status:
         return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
@@ -629,6 +634,8 @@ async def record_booking_balance(
     if not row:
         raise HTTPException(status_code=404, detail="Booking not found")
     booking, client, service, listing, tenant = row
+    if CALENDAR_ALL not in current_user.permissions:
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         await record_balance_payment(
             session,
@@ -678,6 +685,8 @@ async def waive_booking_balance_endpoint(
     if not row:
         raise HTTPException(status_code=404, detail="Booking not found")
     booking, client, service, listing, tenant = row
+    if CALENDAR_ALL not in current_user.permissions:
+        raise HTTPException(status_code=403, detail="Forbidden")
     try:
         await waive_booking_balance(
             session,
@@ -700,6 +709,61 @@ async def waive_booking_balance_endpoint(
     return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
 
 
+@router.patch("/{booking_id}/assign")
+async def reassign_booking(
+    booking_id: str,
+    payload: ReassignBookingRequest,
+    current_user: CurrentUser = Depends(require_permission(BOOKINGS_REASSIGN)),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    if not current_user.tenant_id:
+        raise HTTPException(status_code=400, detail="No tenant assigned")
+    tenant = (
+        await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one()
+    row = (
+        await session.execute(
+            select(Booking, Client, Service, Listing)
+            .join(Client, Booking.client_id == Client.id)
+            .join(Service, Booking.service_id == Service.id)
+            .join(Listing, Booking.listing_id == Listing.id, isouter=True)
+            .where(Booking.id == booking_id, Booking.tenant_id == current_user.tenant_id)
+        )
+    ).one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    booking, client, service, listing = row
+    try:
+        assignee = await resolve_assignable_user(
+            session,
+            tenant_id=current_user.tenant_id,
+            service=service,
+            assigned_user_id=payload.assigned_user_id,
+        )
+        await assert_staff_slot_available(
+            session,
+            tenant_id=current_user.tenant_id,
+            service=service,
+            user=assignee,
+            start_at=booking.start_at,
+            end_at=booking.end_at,
+            listing_id=booking.listing_id,
+            ignore_booking_id=booking.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    assigned_name, assigned_title = assignee_snapshot(assignee)
+    booking.assigned_user_id = assignee.id
+    booking.assigned_name = assigned_name
+    booking.assigned_title = assigned_title
+    await session.commit()
+    await redis_cache.invalidate_tenant(
+        current_user.tenant_id, BOOKINGS_CACHE, CLIENTS_CACHE, "transactions:list", "dashboard:summary"
+    )
+    payment = await booking_payment_summary(session, booking=booking, service=service)
+    return _serialize_booking(booking, client, service, tenant, listing, payment=payment)
+
+
 @router.post("/{booking_id}/reschedule")
 async def reschedule_booking(
     booking_id: str,
@@ -712,6 +776,14 @@ async def reschedule_booking(
     tenant = (
         await session.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
     ).scalar_one()
+    existing = (
+        await session.execute(
+            select(Booking).where(Booking.id == booking_id, Booking.tenant_id == current_user.tenant_id)
+        )
+    ).scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    _assert_booking_visible(current_user, existing)
     try:
         booking = await reschedule_booking_service(
             session,

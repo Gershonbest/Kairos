@@ -22,19 +22,29 @@ import {
 
 export function AvailabilitySettings() {
   const queryClient = useQueryClient();
+  const { data: me } = useQuery({ queryKey: queryKeys.me, queryFn: () => api.me() });
+  const canEditBusiness = Boolean(me?.permissions?.includes("availability:business"));
+  const [tab, setTab] = useState<"business" | "mine">("business");
   const [availability, setAvailability] = useState<Record<WeekDayKey, DayAvailability>>(DEFAULT_WEEKLY_AVAILABILITY);
   const [hydrated, setHydrated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  const scope = canEditBusiness && tab === "business" ? "business" : "mine";
   const {
     data: rules,
     isPending,
     isError,
   } = useQuery({
-    queryKey: queryKeys.availability,
-    queryFn: () => api.listAvailability(),
+    queryKey: [...queryKeys.availability, scope, me?.id],
+    queryFn: () =>
+      scope === "business" || !me?.id
+        ? api.listAvailability()
+        : api.listStaffAvailability(me.id).then((rows) =>
+            rows.length ? rows : api.listAvailability()
+          ),
+    enabled: Boolean(me),
   });
 
   useEffect(() => {
@@ -42,6 +52,14 @@ export function AvailabilitySettings() {
     setAvailability(rulesToWeeklyAvailability(rules));
     setHydrated(true);
   }, [rules, hydrated]);
+
+  useEffect(() => {
+    setHydrated(false);
+  }, [scope]);
+
+  useEffect(() => {
+    if (!canEditBusiness) setTab("mine");
+  }, [canEditBusiness]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -57,9 +75,17 @@ export function AvailabilitySettings() {
     setIsSaving(true);
     try {
       const nextRules = weeklyAvailabilityToRules(availability);
-      await api.replaceAvailability({ rules: nextRules });
-      queryClient.setQueryData(queryKeys.availability, nextRules);
-      setSuccess("Weekly hours saved. Your public booking page will use the updated schedule.");
+      if (scope === "business") {
+        await api.replaceAvailability({ rules: nextRules });
+      } else if (me?.id) {
+        await api.replaceStaffAvailability(me.id, { rules: nextRules });
+      }
+      queryClient.setQueryData([...queryKeys.availability, scope, me?.id], nextRules);
+      setSuccess(
+        scope === "business"
+          ? "Business hours saved. Your public booking page will use the updated schedule."
+          : "Your hours were saved. Bookings assigned to you will use this schedule."
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save availability.");
     } finally {
@@ -75,8 +101,23 @@ export function AvailabilitySettings() {
       <PageHeader
         eyebrow="Schedule"
         title="Weekly availability"
-        description="Set when clients can book you. Changes apply immediately to your public booking page."
+        description={
+          scope === "business"
+            ? "Set when the business is open. Staff without their own hours inherit this schedule."
+            : "Set when clients can book you. Leave this empty to inherit business hours."
+        }
       />
+
+      {canEditBusiness && (
+        <div className="mb-4 flex gap-2">
+          <Button type="button" variant={tab === "business" ? "default" : "outline"} onClick={() => setTab("business")}>
+            Business hours
+          </Button>
+          <Button type="button" variant={tab === "mine" ? "default" : "outline"} onClick={() => setTab("mine")}>
+            My hours
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard label="Open days" value={`${enabledDays} / 7`} icon={Calendar} />
@@ -90,7 +131,7 @@ export function AvailabilitySettings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Your weekly hours</CardTitle>
+          <CardTitle>{scope === "business" ? "Business hours" : "My hours"}</CardTitle>
         </CardHeader>
         <CardContent>
           {isPending && !hydrated ? (
