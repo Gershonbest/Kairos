@@ -1,7 +1,7 @@
 // Public multi-step booking flow for clients.
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { useParams, useSearchParams, useLocation } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Check,
@@ -38,6 +38,7 @@ import { MonogramThumb } from "../../components/public-booking/MonogramThumb";
 import { ServiceRow } from "../../components/public-booking/ServiceRow";
 import { StepTrail } from "../../components/public-booking/StepTrail";
 import { useForceLightTheme } from "../../components/theme/ThemeProvider";
+import { usePageMeta } from "../../components/marketing/usePageMeta";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ interface Service {
   host_title?: string;
   client_instructions?: string;
   buffer_minutes: number;
+  staff?: Array<{ id: string; full_name: string; job_title?: string | null; is_bookable?: boolean }>;
 }
 
 interface ListingOption {
@@ -122,7 +124,7 @@ function handlePublicStreamEvent(
   }
 }
 
-type StepId = "service" | "listing" | "datetime" | "details" | "payment" | "confirmation";
+type StepId = "service" | "listing" | "staff" | "datetime" | "details" | "payment" | "confirmation";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +154,9 @@ function getUpcomingDates(totalDays = 56) {
 }
 
 const BASE_STEP_LABELS = ["Service", "Date & Time", "Your Details", "Payment"];
+const STAFF_STEP_LABELS = ["Service", "Who you'll see", "Date & Time", "Your Details", "Payment"];
 const LISTING_STEP_LABELS = ["Service", "Product", "Date & Time", "Your Details", "Payment"];
+const LISTING_STAFF_STEP_LABELS = ["Service", "Product", "Who you'll see", "Date & Time", "Your Details", "Payment"];
 const PENDING_PAYMENT_KEY = "orheo_pending_public_payment";
 
 function serviceDurationLabel(service: { scheduling_mode: string; duration: number }): string {
@@ -181,6 +185,13 @@ function localPhoneFromStored(stored: string | null | undefined, dialCode: strin
 
 export function PublicBooking() {
   useForceLightTheme();
+  const { pathname } = useLocation();
+  usePageMeta({
+    title: "Book an appointment",
+    description: "Schedule a service appointment online.",
+    path: pathname,
+    noindex: true,
+  });
   const { businessId } = useParams<{ businessId: string }>();
   const [searchParams] = useSearchParams();
   const [services, setServices] = useState<Service[]>([]);
@@ -191,6 +202,7 @@ export function PublicBooking() {
   const [serviceListings, setServiceListings] = useState<ListingOption[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
   const [selectedListing, setSelectedListing] = useState<ListingOption | null>(null);
+  const [selectedStaffId, setSelectedStaffId] = useState<string | "anyone">("anyone");
   const [dateOffset, setDateOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlotIso, setSelectedSlotIso] = useState("");
@@ -264,10 +276,30 @@ export function PublicBooking() {
   }
 
   const usesListingFlow = service?.booking_type === "listing";
-  const stepOrder: StepId[] = usesListingFlow
-    ? ["service", "listing", "datetime", "details", "payment", "confirmation"]
-    : ["service", "datetime", "details", "payment", "confirmation"];
-  const stepLabels = usesListingFlow ? LISTING_STEP_LABELS : BASE_STEP_LABELS;
+  const bookableStaff = (service?.staff ?? []).filter((person) => person.is_bookable !== false);
+  const usesStaffPicker = bookableStaff.length >= 2;
+  const assignedQueryId =
+    selectedStaffId !== "anyone"
+      ? selectedStaffId
+      : bookableStaff.length === 1
+        ? bookableStaff[0].id
+        : undefined;
+  const stepOrder: StepId[] = [
+    "service",
+    ...(usesListingFlow ? (["listing"] as StepId[]) : []),
+    ...(usesStaffPicker ? (["staff"] as StepId[]) : []),
+    "datetime",
+    "details",
+    "payment",
+    "confirmation",
+  ];
+  const stepLabels = usesListingFlow
+    ? usesStaffPicker
+      ? LISTING_STAFF_STEP_LABELS
+      : LISTING_STEP_LABELS
+    : usesStaffPicker
+      ? STAFF_STEP_LABELS
+      : BASE_STEP_LABELS;
   const stepIndex = stepOrder.indexOf(step);
   const allDates = useMemo(() => getUpcomingDates(56), []);
   const visibleDates = allDates.slice(dateOffset, dateOffset + 7);
@@ -412,6 +444,7 @@ export function PublicBooking() {
             host_title: row.host_title,
             client_instructions: row.client_instructions,
             buffer_minutes: row.buffer_minutes ?? 0,
+            staff: row.staff ?? [],
             image: row.image_url || "",
           }));
           setServices(mapped);
@@ -420,7 +453,13 @@ export function PublicBooking() {
             if (selected) {
               setService(selected);
               setSelectedListing(null);
-              setStep(selected.booking_type === "listing" ? "listing" : "datetime");
+              setStep(
+                selected.booking_type === "listing"
+                  ? "listing"
+                  : (selected.staff?.length ?? 0) >= 2
+                    ? "staff"
+                    : "datetime"
+              );
             }
           }
         }
@@ -455,7 +494,8 @@ export function PublicBooking() {
         service.id,
         from.toISOString(),
         to.toISOString(),
-        service.booking_type === "listing" ? selectedListing?.id : undefined
+        service.booking_type === "listing" ? selectedListing?.id : undefined,
+        assignedQueryId
       )
       .then((res) => {
         if (cancelled) return;
@@ -476,7 +516,7 @@ export function PublicBooking() {
     return () => {
       cancelled = true;
     };
-  }, [businessId, service, selectedDate, selectedListing]);
+  }, [businessId, service, selectedDate, selectedListing, assignedQueryId]);
 
   useEffect(() => {
     if (!businessId) return;
@@ -733,6 +773,7 @@ export function PublicBooking() {
       const booking = await api.createPublicBooking(businessId, {
         service_id: service.id,
         ...(selectedListing ? { listing_id: selectedListing.id } : {}),
+        ...(assignedQueryId ? { assigned_user_id: assignedQueryId } : {}),
         start_at: selectedSlotIso,
         client_first_name: firstName,
         client_last_name: lastName,
@@ -794,7 +835,19 @@ export function PublicBooking() {
       ? resolvePublicLocation(service, businessProfile.location, resolvedAppointmentFormat)
       : null;
 
-  const hostLabel = service ? formatHostLabel(service.host_name, service.host_title) : null;
+  const selectedPerson =
+    selectedStaffId !== "anyone"
+      ? bookableStaff.find((person) => person.id === selectedStaffId)
+      : bookableStaff.length === 1
+        ? bookableStaff[0]
+        : undefined;
+  const hostLabel = selectedPerson
+    ? formatHostLabel(selectedPerson.full_name, selectedPerson.job_title)
+    : usesStaffPicker && selectedStaffId === "anyone"
+      ? "Anyone available"
+      : service
+        ? formatHostLabel(service.host_name, service.host_title)
+        : null;
 
   const dateLabel = selectedDateObj
     ? `${selectedDateObj.day}, ${selectedDateObj.month} ${selectedDateObj.num}`
@@ -919,9 +972,16 @@ export function PublicBooking() {
                           setService(svc);
                           setAppointmentFormat("");
                           setSelectedListing(null);
+                          setSelectedStaffId("anyone");
                           setSelectedDate("");
                           setSelectedSlotIso("");
-                          setStep(svc.booking_type === "listing" ? "listing" : "datetime");
+                          setStep(
+                            svc.booking_type === "listing"
+                              ? "listing"
+                              : (svc.staff?.length ?? 0) >= 2
+                                ? "staff"
+                                : "datetime"
+                          );
                         }}
                       />
                     ))}
@@ -975,11 +1035,90 @@ export function PublicBooking() {
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="booking-btn-primary mt-6"
-                      onClick={() => setStep("datetime")}
+                      onClick={() => setStep(usesStaffPicker ? "staff" : "datetime")}
                     >
-                      Continue to date & time
+                      {usesStaffPicker ? "Continue to who you'll see" : "Continue to date & time"}
                     </motion.button>
                   )}
+                </motion.div>
+              )}
+
+              {step === "staff" && service && (
+                <motion.div
+                  key="staff"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -12 }}
+                  className="booking-panel"
+                >
+                  <button
+                    type="button"
+                    className="booking-btn-ghost mb-4"
+                    onClick={() => setStep(usesListingFlow ? "listing" : "service")}
+                  >
+                    <ArrowLeft size={15} /> Back
+                  </button>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Who you'll see</p>
+                  <h2 className="mt-2 font-display text-2xl font-semibold">Choose someone</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Pick a person, or choose Anyone and we’ll match the first available staff member.
+                  </p>
+                  <div className="mt-6 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStaffId("anyone")}
+                      className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${
+                        selectedStaffId === "anyone"
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card hover:border-foreground/20"
+                      }`}
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">
+                        ?
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">Anyone</p>
+                        <p className="text-xs text-muted-foreground">First available at your chosen time</p>
+                      </div>
+                    </button>
+                    {bookableStaff.map((person) => {
+                      const initials = person.full_name
+                        .split(" ")
+                        .map((part) => part[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase();
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() => setSelectedStaffId(person.id)}
+                          className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${
+                            selectedStaffId === person.id
+                              ? "border-primary bg-primary/5"
+                              : "border-border bg-card hover:border-foreground/20"
+                          }`}
+                        >
+                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                            {initials}
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold">{person.full_name}</p>
+                            {person.job_title ? (
+                              <p className="text-xs text-muted-foreground">{person.job_title}</p>
+                            ) : null}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <motion.button
+                    type="button"
+                    className="booking-btn-primary mt-6"
+                    onClick={() => setStep("datetime")}
+                  >
+                    Continue to date & time
+                  </motion.button>
                 </motion.div>
               )}
 
@@ -995,7 +1134,9 @@ export function PublicBooking() {
                   <button
                     type="button"
                     className="booking-btn-ghost"
-                    onClick={() => setStep(service.booking_type === "listing" ? "listing" : "service")}
+                    onClick={() =>
+                      setStep(usesStaffPicker ? "staff" : usesListingFlow ? "listing" : "service")
+                    }
                   >
                     <ArrowLeft size={15} /> Back
                   </button>
@@ -1003,6 +1144,7 @@ export function PublicBooking() {
                   <p className="mt-2 text-sm text-muted-foreground">
                     {service.name}
                     {selectedListing ? ` · ${selectedListing.name}` : ""}
+                    {hostLabel ? ` · ${hostLabel}` : ""}
                   </p>
 
                   <div className="booking-panel mt-7">
@@ -1488,11 +1630,10 @@ export function PublicBooking() {
                               confirmedBooking?.appointment_format ||
                               (resolvedAppointmentFormat === "online" ? "online" : "onsite");
                             const confHost =
-                              confirmedBooking?.host_name ||
-                              (confirmedBooking?.host_title
-                                ? confirmedBooking.host_title
-                                : hostLabel) ||
-                              hostLabel;
+                              formatHostLabel(
+                                confirmedBooking?.assigned_name || confirmedBooking?.host_name,
+                                confirmedBooking?.assigned_title || confirmedBooking?.host_title
+                              ) || hostLabel;
                             const confLocation = confirmedBooking?.location || appointmentLocation;
                             const confStart = confirmedBooking?.start_at || selectedSlotIso;
                             const confDate = confStart

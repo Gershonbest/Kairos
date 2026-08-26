@@ -29,6 +29,37 @@ import { api, bookingClientLabel, type BookingListItem } from "../../../lib/api/
 import { queryKeys } from "../../../lib/queryClient";
 import { statusBlockClass } from "../../../lib/bookings/status";
 
+const ASSIGNEE_BORDERS = [
+  "border-l-4 border-l-sky-500",
+  "border-l-4 border-l-violet-500",
+  "border-l-4 border-l-amber-500",
+  "border-l-4 border-l-emerald-500",
+  "border-l-4 border-l-rose-500",
+  "border-l-4 border-l-cyan-500",
+  "border-l-4 border-l-fuchsia-500",
+  "border-l-4 border-l-orange-500",
+];
+
+const ASSIGNEE_DOTS = [
+  "bg-sky-500",
+  "bg-violet-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-rose-500",
+  "bg-cyan-500",
+  "bg-fuchsia-500",
+  "bg-orange-500",
+];
+
+function assigneeColorIndex(userId: string | null | undefined): number {
+  if (!userId) return 0;
+  let hash = 0;
+  for (let i = 0; i < userId.length; i += 1) {
+    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
+  }
+  return hash % ASSIGNEE_BORDERS.length;
+}
+
 type CalendarView = "month" | "week" | "day";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 8);
@@ -118,6 +149,12 @@ export function BookingCalendar() {
     balanceDue: number;
   } | null>(null);
   const [outcomeError, setOutcomeError] = useState("");
+  const [staffFilter, setStaffFilter] = useState<string>("all");
+
+  const { data: me } = useQuery({ queryKey: queryKeys.me, queryFn: () => api.me() });
+  const { data: team } = useQuery({ queryKey: queryKeys.team, queryFn: () => api.getTeam() });
+  const canSeeAll = Boolean(me?.permissions?.includes("calendar:all"));
+  const canReassign = Boolean(me?.permissions?.includes("bookings:reassign"));
 
   const { data: bookings = [], isPending: bookingsLoading } = useQuery({
     queryKey: queryKeys.bookings,
@@ -169,9 +206,20 @@ export function BookingCalendar() {
     setBlockDialogOpen(true);
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!me) return;
+    if (!canSeeAll) setStaffFilter("me");
+  }, [me, canSeeAll]);
+
+  const visibleBookings = useMemo(() => {
+    if (staffFilter === "all" || !canSeeAll) return bookings;
+    if (staffFilter === "me") return bookings.filter((row) => row.assigned_user_id === me?.id);
+    return bookings.filter((row) => row.assigned_user_id === staffFilter);
+  }, [bookings, staffFilter, canSeeAll, me?.id]);
+
   const bookingsByDate = useMemo(() => {
     const mapped: Record<string, BookingListItem[]> = {};
-    for (const row of bookings) {
+    for (const row of visibleBookings) {
       const key = localDateKey(new Date(row.start_at));
       if (!mapped[key]) mapped[key] = [];
       mapped[key].push(row);
@@ -180,7 +228,7 @@ export function BookingCalendar() {
       mapped[key].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
     }
     return mapped;
-  }, [bookings]);
+  }, [visibleBookings]);
 
   const weekDays = useMemo(() => {
     const start = startOfWeek(currentDate);
@@ -316,7 +364,7 @@ export function BookingCalendar() {
       }}
       className={`w-full rounded-lg border text-left transition-shadow hover:shadow-sm ${statusBlockClass(
         booking.status,
-      )} ${compact ? "mb-1 px-2 py-1.5" : "mb-2 p-2.5"}`}
+      )} ${ASSIGNEE_BORDERS[assigneeColorIndex(booking.assigned_user_id)]} ${compact ? "mb-1 px-2 py-1.5" : "mb-2 p-2.5"}`}
     >
       <div className="flex items-center gap-1.5">
         <User className={compact ? "h-3 w-3 shrink-0" : "h-3.5 w-3.5 shrink-0"} />
@@ -325,6 +373,7 @@ export function BookingCalendar() {
       {compact ? (
         <div className="mt-0.5 truncate text-xs opacity-80">
           {isAllDayBooking(booking) ? "All day" : formatTime(booking.start_at)} · {booking.service_name}
+          {canSeeAll && booking.assigned_name ? ` · ${booking.assigned_name}` : ""}
         </div>
       ) : (
         <>
@@ -332,6 +381,9 @@ export function BookingCalendar() {
           {booking.listing_name && (
             <div className="truncate text-xs opacity-70">{booking.listing_name}</div>
           )}
+          {canSeeAll && booking.assigned_name ? (
+            <div className="truncate text-xs opacity-70">{booking.assigned_name}</div>
+          ) : null}
           <div className="mt-1 flex items-center gap-1 text-xs opacity-80">
             <Clock className="h-3 w-3 shrink-0" />
             {bookingWhenLabel(booking)}
@@ -355,6 +407,23 @@ export function BookingCalendar() {
         description="Everything booked, blocked, and open — across the month, week, or day."
         actions={
           <>
+            {canSeeAll && (team?.members?.length ?? 0) > 1 && (
+              <select
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                value={staffFilter}
+                onChange={(event) => setStaffFilter(event.target.value)}
+              >
+                <option value="all">All staff</option>
+                <option value="me">Me</option>
+                {(team?.members ?? [])
+                  .filter((member) => member.is_active)
+                  .map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.full_name}
+                    </option>
+                  ))}
+              </select>
+            )}
             <Button onClick={() => openManualBooking(new Date())}>
               <Plus className="mr-2 h-4 w-4" />
               New booking
@@ -370,6 +439,21 @@ export function BookingCalendar() {
           </>
         }
       />
+
+      {canSeeAll && (team?.members?.length ?? 0) > 1 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          {(team?.members ?? [])
+            .filter((member) => member.is_active)
+            .map((member) => (
+              <span key={member.id} className="inline-flex items-center gap-1.5">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${ASSIGNEE_DOTS[assigneeColorIndex(member.id)]}`}
+                />
+                {member.full_name}
+              </span>
+            ))}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-2">
@@ -837,6 +921,30 @@ export function BookingCalendar() {
                         Host: {selectedBooking.host_name}
                         {selectedBooking.host_title ? ` (${selectedBooking.host_title})` : ""}
                       </p>
+                    )}
+                    {canReassign && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1">Reassign</p>
+                        <select
+                          className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                          value={selectedBooking.assigned_user_id || ""}
+                          onChange={async (event) => {
+                            const nextId = event.target.value;
+                            if (!nextId) return;
+                            const updated = await api.reassignBooking(selectedBooking.id, nextId);
+                            setSelectedBooking(updated);
+                            await queryClient.invalidateQueries({ queryKey: queryKeys.bookings });
+                          }}
+                        >
+                          {(team?.members ?? [])
+                            .filter((member) => member.is_active && member.is_bookable)
+                            .map((member) => (
+                              <option key={member.id} value={member.id}>
+                                {member.full_name}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
                     )}
                     {selectedBooking.location && (
                       <div className="flex items-start gap-2 text-sm text-foreground/80">

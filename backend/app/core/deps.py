@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and authorization."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.permissions import is_owner_role, permissions_for
 from app.infra.db import get_db_session
 from app.infra.models import Tenant, User
 from app.modules.subscriptions.service import tenant_has_active_access
@@ -18,6 +19,9 @@ class CurrentUser:
     id: str
     tenant_id: str | None
     role: str
+    staff_role: str | None = None
+    is_owner: bool = False
+    permissions: tuple[str, ...] = field(default_factory=tuple)
 
 
 async def get_current_user(
@@ -45,7 +49,16 @@ async def get_current_user(
     ).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return CurrentUser(id=user.id, tenant_id=user.tenant_id, role=user.role.value)
+    role = user.role.value
+    staff_role = user.staff_role.value if user.staff_role else None
+    return CurrentUser(
+        id=user.id,
+        tenant_id=user.tenant_id,
+        role=role,
+        staff_role=staff_role,
+        is_owner=is_owner_role(role),
+        permissions=permissions_for(role=role, staff_role=user.staff_role),
+    )
 
 
 async def require_active_subscription(
@@ -72,6 +85,17 @@ async def require_active_subscription(
 def require_roles(*roles: str):
     async def _guard(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if current_user.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+        return current_user
+
+    return _guard
+
+
+def require_permission(*permissions: str):
+    async def _guard(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if current_user.role == "platform_admin":
+            return current_user
+        if not any(permission in current_user.permissions for permission in permissions):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return current_user
 

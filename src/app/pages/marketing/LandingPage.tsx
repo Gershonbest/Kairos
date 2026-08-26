@@ -1,23 +1,18 @@
 // Marketing homepage for Orheo.
 
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { useEffect } from "react";
+import { Link, useNavigate } from "react-router";
 import { motion, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import {
   Calendar,
   Users,
-  CheckCircle2,
   ArrowRight,
   Star,
   Smartphone,
   Brain,
   CreditCard,
   BarChart3,
-  Menu,
-  X,
 } from "lucide-react";
-import { api } from "../../../lib/api/client";
-import orheoLogo from "../../../assets/branding/logo.png";
 import heroBookingImage from "../../../assets/marketing/landing-hero-booking.jpg";
 import featureCalendar from "../../../assets/marketing/feature-calendar.png";
 import featureAi from "../../../assets/marketing/feature-ai.png";
@@ -31,26 +26,9 @@ import stepAcceptBookings from "../../../assets/marketing/step-accept-bookings.p
 import testimonialNigeria from "../../../assets/marketing/testimonial-nigeria.jpg";
 import testimonialGhana from "../../../assets/marketing/testimonial-ghana.jpg";
 import testimonialKenya from "../../../assets/marketing/testimonial-kenya.jpg";
-
-interface PricingTier {
-  code: string;
-  name: string;
-  price: string;
-  period: string;
-  description: string;
-  features: string[];
-  highlighted?: boolean;
-  cta: string;
-  ctaHref: string;
-}
-
-function formatPrice(amount: number): string {
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
+import { MarketingChrome } from "./MarketingChrome";
+import { usePageMeta } from "../../components/marketing/usePageMeta";
+import { DEFAULT_DESCRIPTION } from "../../../lib/seo";
 
 const features = [
   {
@@ -164,10 +142,22 @@ const inViewProps = {
 } as const;
 
 export function LandingPage() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
-  const [plansLoading, setPlansLoading] = useState(true);
+  const navigate = useNavigate();
   const shouldReduceMotion = useReducedMotion();
+  usePageMeta({
+    title: "Smart Bookings for Service Businesses",
+    description: DEFAULT_DESCRIPTION,
+    path: "/",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: "Orheo",
+      applicationCategory: "BusinessApplication",
+      operatingSystem: "Web",
+      description: DEFAULT_DESCRIPTION,
+      url: "https://www.orheo.com/",
+    },
+  });
   const { scrollYProgress } = useScroll();
   const progressScaleX = useSpring(scrollYProgress, {
     stiffness: 140,
@@ -186,125 +176,17 @@ export function LandingPage() {
   );
 
   useEffect(() => {
-    api
-      .listSubscriptionPlans()
-      .then((plans) => {
-        setPricingTiers(
-          plans.map((plan) => ({
-            code: plan.code,
-            name: plan.name,
-            price: formatPrice(plan.monthly_price),
-            period: "/month",
-            description: plan.description,
-            features: plan.features,
-            highlighted: plan.is_featured,
-            cta: plan.self_serve ? "Start Free Trial" : "Contact Sales",
-            ctaHref: plan.self_serve ? "/signup" : "mailto:support@orheobookings.com",
-          }))
-        );
-      })
-      .catch(() => setPricingTiers([]))
-      .finally(() => setPlansLoading(false));
-  }, []);
+    if (window.location.hash === "#pricing") {
+      navigate("/pricing", { replace: true });
+    }
+  }, [navigate]);
 
   return (
-    <div className="min-h-screen bg-white">
+    <MarketingChrome>
       <motion.div
         className="fixed top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-accent z-[60] origin-left"
         style={{ scaleX: progressScaleX }}
       />
-      {/* Navigation */}
-      <motion.nav
-        initial={{ y: -24, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.45, ease: "easeOut" }}
-        className="fixed top-0 left-0 right-0 z-50 bg-white/85 backdrop-blur-xl border-b border-gray-100"
-      >
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <motion.div
-              className="flex items-center gap-2"
-              whileHover={shouldReduceMotion ? undefined : { scale: 1.02 }}
-              transition={{ type: "spring", stiffness: 300, damping: 22 }}
-            >
-              <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
-              <span className="text-xl font-bold text-gray-900">
-                Orheo
-              </span>
-            </motion.div>
-            <div className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-sm text-gray-600 hover:text-primary transition-colors duration-200">
-                Features
-              </a>
-              <a href="#pricing" className="text-sm text-gray-600 hover:text-primary transition-colors duration-200">
-                Pricing
-              </a>
-              <a href="#testimonials" className="text-sm text-gray-600 hover:text-primary transition-colors duration-200">
-                Testimonials
-              </a>
-              <Link to="/login" className="text-sm text-gray-600 hover:text-primary transition-colors duration-200">
-                Sign In
-              </Link>
-              <motion.div whileHover={shouldReduceMotion ? undefined : { y: -1 }}>
-                <Link
-                to="/signup"
-                className="px-5 py-2.5 bg-primary text-white text-sm font-medium rounded-xl hover:bg-primary/90 transition-colors"
-              >
-                Start Free Trial
-              </Link>
-              </motion.div>
-            </div>
-            <button
-              type="button"
-              className="md:hidden inline-flex items-center justify-center rounded-xl p-2 text-gray-700 hover:bg-gray-100"
-              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-              aria-expanded={mobileMenuOpen}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-            >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
-          {mobileMenuOpen && (
-            <div className="md:hidden flex flex-col gap-1 pb-2 pt-3 border-t border-gray-100 mt-3">
-              <a
-                href="#features"
-                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Features
-              </a>
-              <a
-                href="#pricing"
-                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Pricing
-              </a>
-              <a
-                href="#testimonials"
-                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Testimonials
-              </a>
-              <Link
-                to="/login"
-                className="rounded-lg px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Sign In
-              </Link>
-              <Link
-                to="/signup"
-                className="mt-1 px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-xl text-center"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Start Free Trial
-              </Link>
-            </div>
-          )}
-        </div>
-      </motion.nav>
 
       {/* Hero Section */}
       <section className="relative isolate overflow-hidden pt-32 pb-20 px-6 bg-[#050508]">
@@ -369,7 +251,14 @@ export function LandingPage() {
               </a>
             </div>
             <p className="text-sm text-white/55">
-              No credit card required · 7-day free trial · Cancel anytime
+              No credit card required · 7-day free trial ·{" "}
+              <Link to="/pricing" className="text-white underline underline-offset-2">
+                See pricing
+              </Link>
+              {" · "}
+              <Link to="/faq" className="text-white underline underline-offset-2">
+                FAQ
+              </Link>
             </p>
           </motion.div>
 
@@ -556,120 +445,6 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="scroll-mt-24 py-16 md:py-24 bg-gradient-to-b from-gray-50 to-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center max-w-3xl mx-auto mb-16">
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-              Simple, transparent{" "}
-              <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-                pricing
-              </span>
-            </h2>
-            <p className="text-xl text-gray-600 mb-8">
-              Choose the perfect plan for your business. All plans include a 7-day free trial.
-            </p>
-          </div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={inViewProps}
-            className="max-w-5xl mx-auto mb-10 rounded-2xl overflow-hidden border border-gray-200"
-          >
-            <div className="relative">
-              <img
-                src={featureAnalytics}
-                alt="Analytics dashboard preview for Orheo growth plans"
-                className="w-full h-56 md:h-64 object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
-              <div className="absolute left-6 md:left-8 bottom-6 text-white">
-                <p className="text-xs uppercase tracking-[0.16em] text-white/85">Revenue-ready plans</p>
-                <p className="text-xl md:text-2xl font-semibold mt-1">
-                  Pick the plan that matches your current growth stage.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-
-          <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {plansLoading && (
-              <p className="md:col-span-3 text-center text-gray-500">Loading plans...</p>
-            )}
-            {!plansLoading && pricingTiers.length === 0 && (
-              <p className="md:col-span-3 text-center text-gray-500">Pricing plans are currently unavailable.</p>
-            )}
-            {pricingTiers.map((tier, index) => (
-              <motion.div
-                key={tier.code}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={inViewProps}
-                transition={{ delay: index * 0.1 }}
-                whileHover={shouldReduceMotion ? undefined : { y: -8 }}
-                className={`relative bg-white rounded-2xl border-2 p-8 ${
-                  tier.highlighted
-                    ? "border-primary shadow-2xl shadow-primary/20 md:scale-105"
-                    : "border-gray-200"
-                }`}
-              >
-                {tier.highlighted && (
-                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-primary to-accent text-white text-sm font-semibold rounded-full">
-                    Most Popular
-                  </div>
-                )}
-                <div className="mb-6">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{tier.name}</h3>
-                  <p className="text-gray-600 text-sm mb-4">{tier.description}</p>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-5xl font-bold text-gray-900">{tier.price}</span>
-                    <span className="text-gray-500">{tier.period}</span>
-                  </div>
-                </div>
-
-                {tier.ctaHref.startsWith("/") ? (
-                  <Link
-                    to={tier.ctaHref}
-                    className={`block w-full py-3 px-6 rounded-xl font-semibold text-center mb-6 transition-all ${
-                      tier.highlighted
-                        ? "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20"
-                        : "bg-gray-100 text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    {tier.cta}
-                  </Link>
-                ) : (
-                  <a
-                    href={tier.ctaHref}
-                    className={`block w-full py-3 px-6 rounded-xl font-semibold text-center mb-6 transition-all ${
-                      tier.highlighted
-                        ? "bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/20"
-                        : "bg-gray-100 text-gray-900 hover:bg-gray-200"
-                    }`}
-                  >
-                    {tier.cta}
-                  </a>
-                )}
-
-                <div className="space-y-3">
-                  {tier.features.map((feature) => (
-                    <div key={feature} className="flex items-start gap-3">
-                      <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-                      <span className="text-sm text-gray-600">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          <p className="text-center text-gray-600 mt-12">
-            All plans include 7-day free trial · No credit card required · Cancel anytime
-          </p>
-        </div>
-      </section>
-
       {/* Testimonials Section */}
       <section id="testimonials" className="scroll-mt-24 py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6">
@@ -741,125 +516,26 @@ export function LandingPage() {
                 Start Your 7-Day Free Trial
                 <ArrowRight className="w-5 h-5" />
               </Link>
-              <a
-                href="#pricing"
+              <Link
+                to="/pricing"
                 className="px-8 py-4 bg-black/15 text-white text-lg font-semibold rounded-xl hover:bg-black/25 transition-all border-2 border-white/20"
               >
                 View Pricing
-              </a>
+              </Link>
             </div>
             <p className="text-white/75 mt-6 text-sm">
-              ✨ No credit card required · 7-day free trial · Cancel anytime
+              ✨ No credit card required ·{" "}
+              <Link to="/faq" className="underline underline-offset-2 text-white">
+                Read the FAQ
+              </Link>
+              {" · "}
+              <Link to="/privacy" className="underline underline-offset-2 text-white">
+                Privacy
+              </Link>
             </p>
           </motion.div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-300 py-16">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-4 gap-8 mb-12">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <img src={orheoLogo} alt="Orheo logo" className="h-10 w-auto rounded-lg bg-black p-1" />
-                <span className="text-xl font-bold text-white">Orheo</span>
-              </div>
-              <p className="text-sm text-gray-400">
-                Create Order. Unlock Flow.
-              </p>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-4">Product</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#features" className="hover:text-white transition-colors">
-                    Features
-                  </a>
-                </li>
-                <li>
-                  <a href="#pricing" className="hover:text-white transition-colors">
-                    Pricing
-                  </a>
-                </li>
-                <li>
-                  <a href="#demo" className="hover:text-white transition-colors">
-                    Demo
-                  </a>
-                </li>
-                <li>
-                  <Link to="/signup" className="hover:text-white transition-colors">
-                    Sign Up
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-4">Company</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#about" className="hover:text-white transition-colors">
-                    About Us
-                  </a>
-                </li>
-                <li>
-                  <a href="#contact" className="hover:text-white transition-colors">
-                    Contact
-                  </a>
-                </li>
-                <li>
-                  <a href="#careers" className="hover:text-white transition-colors">
-                    Careers
-                  </a>
-                </li>
-                <li>
-                  <a href="#blog" className="hover:text-white transition-colors">
-                    Blog
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-white mb-4">Support</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <a href="#help" className="hover:text-white transition-colors">
-                    Help Center
-                  </a>
-                </li>
-                <li>
-                  <a href="#docs" className="hover:text-white transition-colors">
-                    Documentation
-                  </a>
-                </li>
-                <li>
-                  <a href="#privacy" className="hover:text-white transition-colors">
-                    Privacy Policy
-                  </a>
-                </li>
-                <li>
-                  <a href="#terms" className="hover:text-white transition-colors">
-                    Terms of Service
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-gray-800 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-gray-400">© 2026 Orheo. All rights reserved.</p>
-            <div className="flex gap-6">
-              <a href="#twitter" className="text-gray-400 hover:text-white transition-colors">
-                Twitter
-              </a>
-              <a href="#linkedin" className="text-gray-400 hover:text-white transition-colors">
-                LinkedIn
-              </a>
-              <a href="#instagram" className="text-gray-400 hover:text-white transition-colors">
-                Instagram
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </MarketingChrome>
   );
 }

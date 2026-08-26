@@ -90,6 +90,11 @@ export function ServicesManagement() {
     queryKey: queryKeys.listings,
     queryFn: () => api.listListings(),
   });
+  const { data: team } = useQuery({
+    queryKey: queryKeys.team,
+    queryFn: () => api.getTeam(),
+  });
+  const staffOptions = (team?.members ?? []).filter((member) => member.is_active);
 
   const services = useMemo(
     () =>
@@ -110,6 +115,7 @@ export function ServicesManagement() {
           use_business_location: row.use_business_location ?? true,
           host_name: row.host_name ?? "",
           host_title: row.host_title ?? "",
+          staff_ids: row.staff_ids ?? [],
           online_meeting_link: row.online_meeting_link ?? "",
           client_instructions: row.client_instructions ?? "",
           buffer_minutes: String(row.buffer_minutes ?? 0),
@@ -137,6 +143,7 @@ export function ServicesManagement() {
     use_business_location: formData.appointment.use_business_location,
     host_name: formData.appointment.host_name || undefined,
     host_title: formData.appointment.host_title || undefined,
+    staff_ids: formData.appointment.staff_ids,
     online_meeting_link: formData.appointment.online_meeting_link || undefined,
     client_instructions: formData.appointment.client_instructions || undefined,
     buffer_minutes: Number(formData.appointment.buffer_minutes || 0),
@@ -224,6 +231,7 @@ export function ServicesManagement() {
         use_business_location: service.appointment.use_business_location,
         host_name: service.appointment.host_name || undefined,
         host_title: service.appointment.host_title || undefined,
+        staff_ids: service.appointment.staff_ids,
         online_meeting_link: service.appointment.online_meeting_link || undefined,
         client_instructions: service.appointment.client_instructions || undefined,
         buffer_minutes: Number(service.appointment.buffer_minutes || 0),
@@ -408,6 +416,7 @@ export function ServicesManagement() {
                 onChange={(appointment) => setFormData({ ...formData, appointment })}
                 businessLocation={businessLocation}
                 disabled={isSubmitting}
+                staffOptions={staffOptions}
               />
 
               <ImageUpload

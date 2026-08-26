@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, get_current_user, require_active_subscription
-from app.core.plans import PlanFeature, plan_has_feature
+from app.core.plans import PlanFeature, load_plan_definition
 from app.infra.cache import redis_cache
 from app.infra.db import SessionLocal, get_db_session
 from app.infra.models import Booking, Client, Service, Tenant, TenantFaq
@@ -93,7 +93,8 @@ async def _require_ai_tenant(
     ).scalar_one()
     if allow_standard_onboarding and agent_key == "onboarding":
         return tenant.id
-    if not plan_has_feature(tenant.plan_code, PlanFeature.ai_assistant):
+    definition = await load_plan_definition(session, tenant.plan_code)
+    if not definition.has(PlanFeature.ai_assistant):
         raise HTTPException(
             status_code=402,
             detail="AI assistant is available on Premium and Enterprise plans",

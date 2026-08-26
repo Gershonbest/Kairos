@@ -16,6 +16,7 @@ from app.modules.public.router import router as public_router
 from app.modules.scheduling.router import router as scheduling_router
 from app.modules.services.router import router as services_router
 from app.modules.subscriptions.router import router as subscriptions_router
+from app.modules.team.router import router as team_router
 from app.modules.tenants.router import router as tenants_router
 from app.modules.uploads.router import router as uploads_router
 api_router = APIRouter(prefix="/api/v1")
@@ -34,4 +35,5 @@ api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboar
 api_router.include_router(payments_router, prefix="/payments", tags=["payments"])
 api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+api_router.include_router(team_router, prefix="/team", tags=["team"])
 api_router.include_router(admin_router, prefix="/admin", tags=["admin"])

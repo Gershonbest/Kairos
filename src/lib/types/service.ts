@@ -10,6 +10,7 @@ export interface ServiceAppointmentDetails {
   use_business_location: boolean;
   host_name: string;
   host_title: string;
+  staff_ids: string[];
   online_meeting_link: string;
   client_instructions: string;
   buffer_minutes: string;
@@ -21,6 +22,7 @@ export const defaultServiceAppointmentDetails = (): ServiceAppointmentDetails =>
   use_business_location: true,
   host_name: "",
   host_title: "",
+  staff_ids: [],
   online_meeting_link: "",
   client_instructions: "",
   buffer_minutes: "0",

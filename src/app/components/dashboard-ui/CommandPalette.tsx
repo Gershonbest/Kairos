@@ -32,19 +32,21 @@ type PaletteEntry = {
   to: string;
   icon: typeof Calendar;
   keywords?: string;
+  permission?: string;
 };
 
 const NAVIGATE: PaletteEntry[] = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, keywords: "home overview" },
   { label: "Calendar", to: "/dashboard/calendar", icon: Calendar, keywords: "bookings schedule" },
   { label: "Availability", to: "/dashboard/availability", icon: Clock, keywords: "hours opening" },
-  { label: "Services", to: "/dashboard/services", icon: Briefcase, keywords: "offerings pricing" },
-  { label: "Products", to: "/dashboard/products", icon: Package, keywords: "listings inventory" },
+  { label: "Services", to: "/dashboard/services", icon: Briefcase, keywords: "offerings pricing", permission: "services:write" },
+  { label: "Products", to: "/dashboard/products", icon: Package, keywords: "listings inventory", permission: "services:write" },
   { label: "Clients", to: "/dashboard/clients", icon: Users, keywords: "customers people" },
-  { label: "Payments", to: "/dashboard/payments", icon: DollarSign, keywords: "revenue transactions" },
+  { label: "Payments", to: "/dashboard/payments", icon: DollarSign, keywords: "revenue transactions", permission: "payments:manage" },
   { label: "Booking links", to: "/dashboard/booking-links", icon: LinkIcon, keywords: "share public url" },
   { label: "Orion", to: "/dashboard/orion", icon: Bot, keywords: "ai assistant chat" },
   { label: "Settings", to: "/dashboard/settings", icon: Settings, keywords: "account business profile" },
+  { label: "Team", to: "/dashboard/team", icon: Users, keywords: "staff invite seats", permission: "team:manage" },
 ];
 
 const ACTIONS: PaletteEntry[] = [
@@ -61,9 +63,10 @@ export function openCommandPalette() {
   window.dispatchEvent(new Event(OPEN_EVENT));
 }
 
-export function CommandPalette() {
+export function CommandPalette({ permissions }: { permissions?: string[] }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const allowed = (entry: PaletteEntry) => !entry.permission || permissions?.includes(entry.permission);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -97,7 +100,7 @@ export function CommandPalette() {
       <CommandList>
         <CommandEmpty>Nothing matched that search.</CommandEmpty>
         <CommandGroup heading="Quick actions">
-          {ACTIONS.map((entry) => (
+          {ACTIONS.filter(allowed).map((entry) => (
             <CommandItem
               key={entry.label}
               value={`${entry.label} ${entry.keywords ?? ""}`}
@@ -110,7 +113,7 @@ export function CommandPalette() {
         </CommandGroup>
         <CommandSeparator />
         <CommandGroup heading="Go to">
-          {NAVIGATE.map((entry) => (
+          {NAVIGATE.filter(allowed).map((entry) => (
             <CommandItem
               key={entry.to}
               value={`${entry.label} ${entry.keywords ?? ""}`}

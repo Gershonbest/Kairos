@@ -106,6 +106,7 @@ export function ServiceCreation() {
               use_business_location: row.use_business_location ?? true,
               host_name: row.host_name ?? "",
               host_title: row.host_title ?? "",
+              staff_ids: row.staff_ids ?? [],
               online_meeting_link: row.online_meeting_link ?? "",
               client_instructions: row.client_instructions ?? "",
               buffer_minutes: String(row.buffer_minutes ?? 0),

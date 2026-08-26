@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.deps import CurrentUser, require_active_subscription
+from app.core.deps import CurrentUser, require_active_subscription, require_permission
+from app.core.permissions import PAYMENTS_MANAGE
 from app.infra.cache import redis_cache
 from app.infra.db import get_db_session
 from app.infra.models import (
@@ -115,7 +116,7 @@ async def payment_public_config() -> dict:
 
 @router.get("/transactions")
 async def list_transactions(
-    current_user: CurrentUser = Depends(require_active_subscription),
+    current_user: CurrentUser = Depends(require_permission(PAYMENTS_MANAGE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
     if not current_user.tenant_id:
@@ -180,7 +181,7 @@ async def list_transactions(
 
 @router.get("/balance-tracking")
 async def list_balance_tracking(
-    current_user: CurrentUser = Depends(require_active_subscription),
+    current_user: CurrentUser = Depends(require_permission(PAYMENTS_MANAGE)),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[dict]:
     """Bookings with deposit paid and an outstanding or recently closed balance."""

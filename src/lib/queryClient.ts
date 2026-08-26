@@ -19,6 +19,7 @@ export const queryKeys = {
   paymentProvider: ["payment-provider"] as const,
   paymentConfig: ["payments", "config"] as const,
   me: ["me"] as const,
+  team: ["team"] as const,
   tenant: ["tenant"] as const,
   notificationPrefs: ["notification-prefs"] as const,
   subscriptionStatus: ["subscription-status"] as const,

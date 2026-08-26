@@ -128,8 +128,8 @@ async def get_business_profile() -> str:
 
 
 @tool
-async def check_availability(service_id: str, day: str) -> str:
-    """Check open booking slots for a service on a YYYY-MM-DD day."""
+async def check_availability(service_id: str, day: str, assigned_user_id: str = "") -> str:
+    """Check open booking slots for a service on a YYYY-MM-DD day. Optionally pass assigned_user_id for a specific staff member."""
     _ctx, session, tenant_id = _require_session_tenant()
     try:
         day_date = datetime.strptime(day, "%Y-%m-%d").date()
@@ -148,16 +148,15 @@ async def check_availability(service_id: str, day: str) -> str:
         return "Service not found"
     from_dt = datetime.combine(day_date, datetime.min.time(), tzinfo=UTC)
     to_dt = from_dt + timedelta(days=1)
-    rules, bookings, services, calendar_blocks = await load_scheduling_context(
-        session, tenant_id, from_dt=from_dt, to_dt=to_dt
-    )
-    slots = generate_slots(
+    from app.modules.team.staff import union_slots_for_service
+
+    slots = await union_slots_for_service(
+        session,
+        tenant_id=tenant_id,
+        service=service,
         from_dt=from_dt,
         to_dt=to_dt,
-        service=service,
-        rules=rules,
-        existing_bookings=bookings,
-        calendar_blocks=calendar_blocks,
+        assigned_user_id=assigned_user_id or None,
     )
     if not slots:
         return f"No open slots on {day}."
@@ -203,6 +202,7 @@ async def execute_booking_action(
             notes=str(args.get("notes") or "") or None,
             guest_first_name=str(args.get("client_first_name") or "") or None,
             guest_last_name=str(args.get("client_last_name") or "") or None,
+            assigned_user_id=str(args.get("assigned_user_id") or "") or None,
         )
         payment_note = ""
         amount = booking_payment_amount(service)
@@ -259,8 +259,9 @@ async def create_booking(
     client_last_name: str = "",
     client_phone: str = "",
     notes: str = "",
+    assigned_user_id: str = "",
 ) -> str:
-    """Create a confirmed booking. start_at must be ISO-8601 datetime."""
+    """Create a confirmed booking. start_at must be ISO-8601 datetime. assigned_user_id is optional; omit to pick the first free staff member."""
     queued = _queue_hitl(
         "create_booking",
         {
@@ -271,6 +272,7 @@ async def create_booking(
             "client_last_name": client_last_name,
             "client_phone": client_phone,
             "notes": notes,
+            "assigned_user_id": assigned_user_id,
         },
     )
     if queued:
@@ -289,6 +291,7 @@ async def create_booking(
                 "client_last_name": client_last_name,
                 "client_phone": client_phone,
                 "notes": notes,
+                "assigned_user_id": assigned_user_id,
             },
         )
     except BookingServiceError as exc:
