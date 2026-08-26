@@ -12,8 +12,10 @@ import { GoogleSignInButton, isGoogleSignInEnabled } from "../../components/auth
 import { PasswordInput } from "../../components/forms/PasswordInput";
 import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 import orheoLogo from "../../../assets/branding/logo.png";
+import { useForceLightTheme } from "../../components/theme/ThemeProvider";
 
 export function Login() {
+  useForceLightTheme();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");

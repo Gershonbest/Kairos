@@ -37,6 +37,7 @@ import { BookingSummary } from "../../components/public-booking/BookingSummary";
 import { MonogramThumb } from "../../components/public-booking/MonogramThumb";
 import { ServiceRow } from "../../components/public-booking/ServiceRow";
 import { StepTrail } from "../../components/public-booking/StepTrail";
+import { useForceLightTheme } from "../../components/theme/ThemeProvider";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,7 @@ function localPhoneFromStored(stored: string | null | undefined, dialCode: strin
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function PublicBooking() {
+  useForceLightTheme();
   const { businessId } = useParams<{ businessId: string }>();
   const [searchParams] = useSearchParams();
   const [services, setServices] = useState<Service[]>([]);
