@@ -5,6 +5,7 @@ import { ImagePlus, Loader2, X } from "lucide-react";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { api } from "../../../lib/api/client";
+import { resolveMediaUrl } from "../../../lib/media";
 
 interface ImageUploadProps {
   label: string;
@@ -54,7 +55,7 @@ export function ImageUpload({ label, value, onChange, uploadKind, disabled, hint
         >
           {value ? (
             <img
-              src={value}
+              src={resolveMediaUrl(value)}
               alt=""
               className="w-full h-full object-contain bg-muted/30 p-1"
             />

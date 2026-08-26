@@ -1,5 +1,7 @@
 // Thumbnail with image or initials monogram fallback.
 
+import { resolveMediaUrl } from "../../../lib/media";
+
 type MonogramThumbProps = {
   name: string;
   imageUrl?: string | null;
@@ -24,7 +26,7 @@ export function MonogramThumb({ name, imageUrl, size = "md", className = "" }: M
   if (imageUrl) {
     return (
       <img
-        src={imageUrl}
+        src={resolveMediaUrl(imageUrl)}
         alt=""
         className={`shrink-0 rounded-xl object-cover ${sizeClass[size]} ${className}`}
       />
