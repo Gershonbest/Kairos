@@ -274,4 +274,153 @@
   .orion-avatar-pulse {
     animation: orion-avatar-pulse 3.5s ease-in-out infinite;
   }
+
+  /* Public booking — editorial studio shell */
+  .booking-page {
+    position: relative;
+    isolation: isolate;
+    min-height: 100vh;
+    font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 520px at 8% -10%, rgba(16, 185, 129, 0.14), transparent 55%),
+      radial-gradient(900px 480px at 100% 0%, rgba(37, 99, 235, 0.1), transparent 50%),
+      linear-gradient(180deg, #f1f5f9 0%, #f8fafc 42%, #eef2f7 100%);
+  }
+
+  .booking-page::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.45;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+    mix-blend-mode: soft-light;
+  }
+
+  .booking-page h1,
+  .booking-page h2,
+  .booking-page h3 {
+    font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  .booking-hero-name {
+    font-size: clamp(2.15rem, 4.5vw, 3.25rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    color: var(--color-foreground);
+  }
+
+  .booking-field {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-card) 88%, white);
+    padding: 0.7rem 0.9rem;
+    font-size: 0.875rem;
+    color: var(--color-foreground);
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+
+  .booking-field:focus {
+    border-color: var(--color-primary);
+  }
+
+  .booking-field-icon {
+    padding-left: 2.35rem;
+  }
+
+  .booking-btn-primary {
+    display: inline-flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.85rem;
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    padding: 0.85rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, opacity 0.15s ease;
+  }
+
+  .booking-btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-primary) 88%, #0f172a);
+  }
+
+  .booking-btn-primary:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .booking-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: none;
+    background: transparent;
+    color: var(--color-muted-foreground);
+    font-size: 0.8125rem;
+    cursor: pointer;
+    padding: 0;
+    margin-bottom: 1.25rem;
+  }
+
+  .booking-btn-ghost:hover {
+    color: var(--color-foreground);
+  }
+
+  .booking-panel {
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--color-border) 90%, transparent);
+    background: color-mix(in srgb, var(--color-card) 86%, transparent);
+    padding: 1.15rem 1.2rem;
+  }
+
+  .booking-slot {
+    border-radius: 0.65rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-foreground);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .booking-slot[data-selected="true"] {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+
+  .booking-date {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 0.75rem;
+    border: 1px solid transparent;
+    padding: 0.65rem 0.25rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .booking-date[data-selected="true"] {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+
+  .booking-date:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+  }
 }
