@@ -40,8 +40,8 @@ export function useSessionGuard({
         if (
           localStorage.getItem("orheo_access_token") ||
           localStorage.getItem("orheo_refresh_token") ||
-          localStorage.getItem("kairos_access_token") ||
-          localStorage.getItem("kairos_refresh_token")
+          localStorage.getItem("orheo_access_token") ||
+          localStorage.getItem("orheo_refresh_token")
         ) {
           endSession();
         } else {

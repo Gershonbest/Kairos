@@ -20,7 +20,6 @@ export function SignUp() {
     lastName: "",
     email: "",
     password: "",
-    businessName: "",
   });
 
   const [error, setError] = useState("");
@@ -35,7 +34,6 @@ export function SignUp() {
       const result = await api.signup({
         first_name: formData.firstName,
         last_name: formData.lastName,
-        business_name: formData.businessName,
         email: formData.email,
         password: formData.password,
       });
@@ -109,7 +107,7 @@ export function SignUp() {
 
           {isGoogleSignInEnabled() && (
             <div className="mb-6">
-              <GoogleSignInButton businessName={formData.businessName} label="signup" />
+              <GoogleSignInButton label="signup" />
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t border-border" />
@@ -149,20 +147,6 @@ export function SignUp() {
                   disabled={isLoading}
                 />
               </div>
-            </div>
-
-            <div>
-              <Label htmlFor="businessName">Business Name</Label>
-              <Input
-                id="businessName"
-                type="text"
-                placeholder="Acme Consultancy"
-                value={formData.businessName}
-                onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                className="mt-1"
-                required
-                disabled={isLoading}
-              />
             </div>
 
             <div>

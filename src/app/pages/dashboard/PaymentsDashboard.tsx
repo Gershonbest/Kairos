@@ -145,7 +145,7 @@ export function PaymentsDashboard() {
         method:
           row.purpose === "balance"
             ? row.provider.replace("_", " ")
-            : row.provider === "orheo" || row.provider === "kairos"
+            : row.provider === "orheo" || row.provider === "orheo"
               ? "Demo"
               : "Paystack",
         purpose: row.purpose,

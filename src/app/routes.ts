@@ -1,7 +1,6 @@
 // Application route definitions for public, auth, dashboard, and admin areas.
 
-import { createElement } from "react";
-import { Navigate, createBrowserRouter } from "react-router";
+import { createBrowserRouter } from "react-router";
 import { SignUp } from "./pages/auth/SignUp";
 import { Login } from "./pages/auth/Login";
 import { VerifyEmail } from "./pages/auth/VerifyEmail";
@@ -22,6 +21,11 @@ import { BookingLinksManagement } from "./pages/dashboard/BookingLinksManagement
 import { ListingsManagement } from "./pages/dashboard/ListingsManagement";
 import { TeamManagement } from "./pages/dashboard/TeamManagement";
 import { PublicBooking } from "./pages/public/PublicBooking";
+import { BusinessSetup } from "./pages/onboarding/BusinessSetup";
+import { ServiceCreation } from "./pages/onboarding/ServiceCreation";
+import { AvailabilityScheduling } from "./pages/onboarding/AvailabilityScheduling";
+import { PaymentIntegration } from "./pages/onboarding/PaymentIntegration";
+import { OnboardingComplete } from "./pages/onboarding/OnboardingComplete";
 import { LandingPage } from "./pages/marketing/LandingPage";
 import { PricingPage } from "./pages/marketing/PricingPage";
 import { FaqPage } from "./pages/marketing/FaqPage";
@@ -37,10 +41,6 @@ import { AdminLayout } from "./components/layouts/AdminLayout";
 import { DashboardLayout } from "./components/layouts/DashboardLayout";
 import { PublicLayout } from "./components/layouts/PublicLayout";
 import { AuthLayout } from "./components/layouts/AuthLayout";
-
-function RedirectToDashboard() {
-  return createElement(Navigate, { to: "/dashboard", replace: true });
-}
 
 export const router = createBrowserRouter([
   {
@@ -84,8 +84,17 @@ export const router = createBrowserRouter([
       { path: "plans", Component: PlanCatalog },
     ],
   },
-  { path: "/onboarding", Component: RedirectToDashboard },
-  { path: "/onboarding/*", Component: RedirectToDashboard },
+  {
+    path: "/onboarding",
+    Component: AuthLayout,
+    children: [
+      { index: true, Component: BusinessSetup },
+      { path: "services", Component: ServiceCreation },
+      { path: "availability", Component: AvailabilityScheduling },
+      { path: "payment", Component: PaymentIntegration },
+      { path: "completed", Component: OnboardingComplete },
+    ],
+  },
   {
     path: "/dashboard",
     Component: DashboardLayout,

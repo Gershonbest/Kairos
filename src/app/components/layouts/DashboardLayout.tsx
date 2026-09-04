@@ -201,7 +201,24 @@ export function DashboardLayout() {
             )
           ) {
             navigate("/dashboard/choose-plan", { replace: true });
+            return;
           }
+        }
+        if (profile.role === "tenant_admin" && profile.tenant_id) {
+          if (!profile.onboarding_completed) {
+            navigate("/onboarding", { replace: true });
+            return;
+          }
+          api
+            .myTenant()
+            .then((tenant) => {
+              if (!tenant.setup_progress?.has_payment_provider) {
+                navigate("/onboarding/payment", { replace: true });
+              }
+            })
+            .catch(() => {
+              navigate("/onboarding/payment", { replace: true });
+            });
         }
       })
       .catch(() => {

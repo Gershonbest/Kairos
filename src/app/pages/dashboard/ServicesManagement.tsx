@@ -8,13 +8,14 @@ import { Textarea } from "../../components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "../../components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { Checkbox } from "../../components/ui/checkbox";
-import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound, ArrowRight } from "lucide-react";
+import { Plus, Edit, Trash2, Clock, DollarSign, Briefcase, MapPin, Monitor, UserRound, ArrowRight, QrCode, Share2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
 import { ServiceAppointmentFields } from "../../components/services/ServiceAppointmentFields";
+import { ServiceBookingCardModal } from "../../components/services/ServiceBookingCardModal";
 import {
   ServiceSchedulingFields,
   formatServiceDurationLabel,
@@ -56,6 +57,7 @@ interface Service {
 export function ServicesManagement() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [cardModalService, setCardModalService] = useState<Service | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [error, setError] = useState("");
@@ -85,6 +87,10 @@ export function ServicesManagement() {
   const { data: tenant } = useQuery({
     queryKey: queryKeys.tenant,
     queryFn: () => api.myTenant(),
+  });
+  const { data: bookingLinks } = useQuery({
+    queryKey: queryKeys.bookingLinks,
+    queryFn: () => api.getBookingLinks(),
   });
   const businessLocation = tenant?.location ?? "";
   const { data: listings = [] } = useQuery({
@@ -537,7 +543,17 @@ export function ServicesManagement() {
                   </div>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCardModalService(service)}
+                  className="gap-1.5 font-medium text-xs border-primary/20 text-primary hover:bg-primary/5 shrink-0"
+                  title="Generate & share professional booking card with QR code"
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  Booking Card
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -628,6 +644,28 @@ export function ServicesManagement() {
           </Card>
         ))}
       </div>
+      )}
+
+      {cardModalService && (
+        <ServiceBookingCardModal
+          isOpen={!!cardModalService}
+          onClose={() => setCardModalService(null)}
+          businessName={tenant?.business_name || "Service Business"}
+          businessLogoUrl={tenant?.public_logo_url}
+          businessCategory={tenant?.business_category}
+          businessLocation={tenant?.location}
+          serviceName={cardModalService.name}
+          serviceDescription={cardModalService.description}
+          servicePrice={cardModalService.price}
+          serviceDeposit={cardModalService.deposit}
+          serviceDuration={cardModalService.duration}
+          serviceAppointmentType={cardModalService.appointment.appointment_type}
+          serviceImageUrl={cardModalService.imageUrl}
+          bookingUrl={
+            bookingLinks?.service_urls?.find((s) => s.service_id === cardModalService.id)?.url ||
+            (tenant?.slug ? `${window.location.origin}/book/${tenant.slug}?service=${cardModalService.id}` : window.location.href)
+          }
+        />
       )}
     </PageShell>
   );

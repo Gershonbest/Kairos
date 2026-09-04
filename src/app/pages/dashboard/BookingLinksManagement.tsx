@@ -1,7 +1,7 @@
 // Manage and copy public booking URLs.
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, ExternalLink, Link as LinkIcon, QrCode } from "lucide-react";
+import { Copy, Download, ExternalLink, Link as LinkIcon, QrCode, Share2, Sparkles } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../../lib/api/client";
 import { queryKeys } from "../../../lib/queryClient";
@@ -10,8 +10,10 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { ImageUpload } from "../../components/forms/ImageUpload";
 import { EmptyState, ErrorNote, PageHeader, PageShell, SectionCard } from "../../components/dashboard-ui";
+import { ServiceBookingCardModal } from "../../components/services/ServiceBookingCardModal";
 
 type BookingLink = {
+  serviceId?: string;
   label: string;
   url: string;
 };
@@ -46,6 +48,16 @@ export function BookingLinksManagement() {
   const [copied, setCopied] = useState("");
   const [busyQr, setBusyQr] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [activeCardModal, setActiveCardModal] = useState<{
+    serviceName: string;
+    serviceDescription?: string;
+    servicePrice: number;
+    serviceDeposit?: number;
+    serviceDuration: number | string;
+    serviceAppointmentType?: string;
+    serviceImageUrl?: string;
+    bookingUrl: string;
+  } | null>(null);
   const [profileForm, setProfileForm] = useState({
     public_tagline: "",
     public_description: "",
@@ -62,16 +74,51 @@ export function BookingLinksManagement() {
     queryFn: () => api.myTenant(),
   });
 
+  const { data: serviceRows = [] } = useQuery({
+    queryKey: queryKeys.services,
+    queryFn: () => api.listServices(),
+  });
+
   const links = useMemo<BookingLink[]>(() => {
     if (!bookingLinks) return [];
     return [
       { label: "Main booking link (all services)", url: normalizeToCurrentOrigin(bookingLinks.business_url) },
       ...bookingLinks.service_urls.map((item) => ({
+        serviceId: item.service_id,
         label: `Service: ${item.service_name}`,
         url: normalizeToCurrentOrigin(item.url),
       })),
     ];
   }, [bookingLinks]);
+
+  const openCardForLink = (linkItem: BookingLink) => {
+    if (linkItem.serviceId) {
+      const match = serviceRows.find((s) => s.id === linkItem.serviceId);
+      if (match) {
+        setActiveCardModal({
+          serviceName: match.name,
+          serviceDescription: match.description ?? "",
+          servicePrice: match.price_amount,
+          serviceDeposit: match.deposit_amount ?? 0,
+          serviceDuration: match.duration_minutes,
+          serviceAppointmentType: match.appointment_type ?? "onsite",
+          serviceImageUrl: match.image_url ?? undefined,
+          bookingUrl: linkItem.url,
+        });
+        return;
+      }
+    }
+    const firstService = serviceRows[0];
+    setActiveCardModal({
+      serviceName: tenant?.business_name ? `${tenant.business_name} Online Bookings` : "All Services Booking",
+      serviceDescription: tenant?.public_description || tenant?.public_tagline || "Schedule an appointment online in minutes.",
+      servicePrice: firstService ? firstService.price_amount : 0,
+      serviceDeposit: firstService ? firstService.deposit_amount ?? 0 : 0,
+      serviceDuration: firstService ? firstService.duration_minutes : 60,
+      serviceAppointmentType: "onsite",
+      bookingUrl: linkItem.url,
+    });
+  };
 
   useLayoutEffect(() => {
     if (!tenant || hydratedRef.current) return;
@@ -226,6 +273,15 @@ export function BookingLinksManagement() {
                 </a>
               </div>
               <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openCardForLink(item)}
+                  className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 font-semibold"
+                >
+                  <Share2 className="mr-1.5 h-4 w-4 text-emerald-600" />
+                  Share Booking Card
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => void handleCopy(item.url)}>
                   <Copy className="mr-2 h-4 w-4" />
                   {copied === item.url ? "Copied" : "Copy"}
@@ -253,6 +309,25 @@ export function BookingLinksManagement() {
           ))
         )}
       </div>
+
+      {activeCardModal && (
+        <ServiceBookingCardModal
+          isOpen={!!activeCardModal}
+          onClose={() => setActiveCardModal(null)}
+          businessName={tenant?.business_name || "Service Business"}
+          businessLogoUrl={tenant?.public_logo_url}
+          businessCategory={tenant?.business_category}
+          businessLocation={tenant?.location}
+          serviceName={activeCardModal.serviceName}
+          serviceDescription={activeCardModal.serviceDescription}
+          servicePrice={activeCardModal.servicePrice}
+          serviceDeposit={activeCardModal.serviceDeposit}
+          serviceDuration={activeCardModal.serviceDuration}
+          serviceAppointmentType={activeCardModal.serviceAppointmentType}
+          serviceImageUrl={activeCardModal.serviceImageUrl}
+          bookingUrl={activeCardModal.bookingUrl}
+        />
+      )}
     </PageShell>
   );
 }

@@ -23,7 +23,8 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
   };
 
   return (
-    <div className="space-y-3">
+    <fieldset className="space-y-3">
+      <legend className="sr-only">Weekly availability schedule</legend>
       {WEEK_DAYS.map(({ key, label }) => (
         <div
           key={key}
@@ -75,7 +76,7 @@ export function WeeklyAvailabilityEditor({ value, onChange, disabled }: WeeklyAv
           )}
         </div>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

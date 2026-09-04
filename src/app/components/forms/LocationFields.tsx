@@ -46,6 +46,7 @@ export function LocationFields({
 }: LocationFieldsProps) {
   const country = COUNTRIES.find((item) => item.code === value.country_code);
   const states = country?.states ?? [];
+  const stateIsRequired = states.length > 0;
   // Only treat a region as selected when it matches a real dropdown option.
   // Invalid / legacy labels (e.g. "Abuja" vs "Abuja FCT") become empty so the
   // placeholder shows instead of a filled-looking but unsaved value.
@@ -99,16 +100,20 @@ export function LocationFields({
         <div>
           <Label htmlFor={`${idPrefix}-state`}>
             State / region
-            {states.length > 0 && <span className="text-red-500 ml-0.5">*</span>}
+            {stateIsRequired && <span className="text-red-500 ml-0.5">*</span>}
           </Label>
-          {states.length > 0 ? (
+          {stateIsRequired ? (
             <Select
               key={`${idPrefix}-${value.country_code}-state`}
               value={resolvedState || undefined}
               onValueChange={(state) => onChange({ ...value, state })}
               disabled={disabled || !value.country_code}
             >
-              <SelectTrigger id={`${idPrefix}-state`} className="mt-1 bg-input-background">
+              <SelectTrigger
+                id={`${idPrefix}-state`}
+                className="mt-1 bg-input-background"
+                aria-required={stateIsRequired}
+              >
                 <SelectValue placeholder="Select state or region" />
               </SelectTrigger>
               <SelectContent>
@@ -127,6 +132,7 @@ export function LocationFields({
               placeholder="Region or city (optional)"
               className="mt-1"
               disabled={disabled || !value.country_code}
+              aria-required={false}
             />
           )}
         </div>

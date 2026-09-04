@@ -4,7 +4,7 @@ export type Theme = "light" | "dark" | "system";
 type ResolvedTheme = "light" | "dark";
 
 const THEME_STORAGE_KEY = "orheo_theme";
-const LEGACY_THEME_STORAGE_KEY = "kairos_theme";
+const LEGACY_THEME_STORAGE_KEY = "orheo_theme";
 
 type ThemeContextValue = {
   theme: Theme;

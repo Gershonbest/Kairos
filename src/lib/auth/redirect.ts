@@ -10,6 +10,19 @@ export async function resolvePostAuthPath(): Promise<string> {
     if (profile.subscription?.requires_plan_selection) {
       return "/dashboard/choose-plan";
     }
+    if (profile.role === "tenant_admin" && profile.tenant_id) {
+      if (!profile.onboarding_completed) {
+        return "/onboarding";
+      }
+      try {
+        const tenant = await api.myTenant();
+        if (!tenant.setup_progress?.has_payment_provider) {
+          return "/onboarding/payment";
+        }
+      } catch {
+        return "/onboarding/payment";
+      }
+    }
     return "/dashboard";
   } catch {
     return "/dashboard";

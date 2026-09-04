@@ -117,6 +117,10 @@ export function Dashboard() {
     queryKey: queryKeys.me,
     queryFn: () => api.me(),
   });
+  const { data: tenant = null } = useQuery({
+    queryKey: queryKeys.tenant,
+    queryFn: () => api.myTenant(),
+  });
 
   const summaryError = summaryFailed ? "Unable to load dashboard metrics." : "";
   const appointmentsError = appointmentsFailed ? "Unable to load upcoming appointments." : "";
@@ -138,9 +142,18 @@ export function Dashboard() {
           <div>
             <h2 className="text-base font-semibold text-foreground">Welcome to your account</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              Your plan is active and you&apos;re all set. Explore your dashboard, share your booking link, and start
-              taking appointments.
+              {tenant?.setup_progress?.has_services
+                ? "Your setup is complete. Share your booking link and start taking appointments."
+                : "Your setup is complete. Add your first service to start taking appointments."}
             </p>
+            {!tenant?.setup_progress?.has_services ? (
+              <Button asChild size="sm" className="mt-3">
+                <Link to="/dashboard/services">
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Add first service
+                </Link>
+              </Button>
+            ) : null}
           </div>
           <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowWelcome(false)}>
             Dismiss

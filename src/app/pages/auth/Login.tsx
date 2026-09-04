@@ -20,6 +20,7 @@ export function Login() {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
 
   const [error, setError] = useState("");
   const [sessionNotice, setSessionNotice] = useState("");
@@ -27,6 +28,14 @@ export function Login() {
   const [showResend, setShowResend] = useState(false);
   const [resendMessage, setResendMessage] = useState("");
   const [isResending, setIsResending] = useState(false);
+
+  useEffect(() => {
+    const storedEmail = localStorage.getItem('rememberedEmail');
+    if (storedEmail) {
+      setEmail(storedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (searchParams.get("payment") === "success") {
@@ -59,6 +68,11 @@ export function Login() {
     try {
       const tokens = await api.login({ email, password });
       setAuthTokens(tokens);
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email);
+      } else {
+        localStorage.removeItem('rememberedEmail');
+      }
       await finishSignIn();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to sign in. Please check your credentials.";
@@ -177,7 +191,7 @@ export function Login() {
 
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" className="rounded border-gray-300" disabled={isLoading} />
+                <input type="checkbox" className="rounded border-gray-300" disabled={isLoading} checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
                 <span className="text-muted-foreground">Remember me</span>
               </label>
               <Link to="/auth/forgot-password" className="text-primary hover:text-primary/80 font-medium">

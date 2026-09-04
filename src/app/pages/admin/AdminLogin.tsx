@@ -69,7 +69,7 @@ export function AdminLogin() {
               <Input
                 id="admin-email"
                 type="email"
-                placeholder="admin@orheobookings.com"
+                placeholder="admin@emails.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="mt-1"

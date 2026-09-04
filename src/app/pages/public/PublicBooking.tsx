@@ -33,7 +33,7 @@ import {
 import { resolveMediaUrl } from "../../../lib/media";
 import { PhoneInput } from "../../components/forms/PhoneInput";
 import { BrandLoader } from "../../components/brand/BrandLoader";
-import { getDialCodeForCountry } from "../../../lib/data/locations";
+import { googleMapsSearchUrl } from "../../../lib/data/locations";
 import { BookingSummary } from "../../components/public-booking/BookingSummary";
 import { MonogramThumb } from "../../components/public-booking/MonogramThumb";
 import { ServiceRow } from "../../components/public-booking/ServiceRow";
@@ -1290,8 +1290,19 @@ export function PublicBooking() {
                               <p className="mt-1 text-xs text-muted-foreground">
                                 {format === "online"
                                   ? "Video call link sent after booking"
-                                  : resolvePublicLocation(service, businessProfile.location, format) ||
-                                    "At the business location"}
+                                  : <>
+                                      {resolvePublicLocation(service, businessProfile.location, format) || "At the business location"}
+                                      {businessProfile.location && (
+                                        <a
+                                          href={googleMapsSearchUrl(businessProfile.location)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="ml-2 underline text-primary"
+                                        >
+                                          Get Directions
+                                        </a>
+                                      )}
+                                    </>}
                               </p>
                             </button>
                           );

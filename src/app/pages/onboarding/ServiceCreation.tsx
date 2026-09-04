@@ -5,10 +5,12 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
-import { ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, Plus, Trash2, Sparkles, Package } from "lucide-react";
 import { OnboardingShell } from "../../components/layouts/OnboardingShell";
 import { useEffect, useState } from "react";
 import { api } from "../../../lib/api/client";
+import { FormSelect } from "../../components/forms/FormSelect";
+import { OnboardingAlert } from "../../components/onboarding/OnboardingAlert";
 import { ServiceAppointmentFields } from "../../components/services/ServiceAppointmentFields";
 import {
   ServiceSchedulingFields,
@@ -21,6 +23,8 @@ import {
   type BookingType,
   type ServiceAppointmentDetails,
 } from "../../../lib/types/service";
+import { OPTIONAL_ONBOARDING_ROUTES } from "./flow";
+import { motion, AnimatePresence } from "motion/react";
 
 interface ServiceForm {
   id: string;
@@ -61,6 +65,11 @@ export function ServiceCreation() {
   const [newListingName, setNewListingName] = useState("");
   const [newListingDescription, setNewListingDescription] = useState("");
   const [businessLocation, setBusinessLocation] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("NGN");
+  const bookingTypeOptions = [
+    { value: "general", label: bookingTypeLabels.general },
+    { value: "listing", label: bookingTypeLabels.listing },
+  ];
 
   const addService = () => {
     setServices([...services, createEmptyService()]);
@@ -83,7 +92,14 @@ export function ServiceCreation() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    api.myTenant().then((tenant) => setBusinessLocation(tenant.location ?? "")).catch(() => undefined);
+    api
+      .myTenant()
+      .then((tenant) => {
+        setBusinessLocation(tenant.location ?? "");
+        const code = (tenant.country_code || "").toUpperCase();
+        setCurrencyCode(code === "GH" ? "GHS" : "NGN");
+      })
+      .catch(() => undefined);
     api
       .listServices()
       .then((rows) => {
@@ -195,209 +211,274 @@ export function ServiceCreation() {
 
   return (
     <OnboardingShell
-      step={2}
-      title="Add your services"
-      description="Define what clients can book and how appointments run."
+      step={3}
+      showProgress={false}
+      badge="Optional Setup"
+      title="Create Your Bookable Services"
+      description="Add consultation sessions or services clients can book on your page. You can also skip and configure services later."
+      previewData={{
+        servicesCount: services.length,
+        previewType: "services",
+      }}
     >
-          <form onSubmit={handleNext} className="space-y-6">
-            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-              <h3 className="font-medium">Products</h3>
-              <p className="text-sm text-muted-foreground">
-                Add products/properties/vehicles here, then link them to Product-Based services below.
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label htmlFor="listing-name">Product Name</Label>
-                  <Input
-                    id="listing-name"
-                    value={newListingName}
-                    onChange={(e) => setNewListingName(e.target.value)}
-                    placeholder="e.g., Apartment A1"
-                    disabled={isLoading || isCreatingListing}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="listing-description">Description (optional)</Label>
-                  <Input
-                    id="listing-description"
-                    value={newListingDescription}
-                    onChange={(e) => setNewListingDescription(e.target.value)}
-                    placeholder="2-bed serviced apartment"
-                    disabled={isLoading || isCreatingListing}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void createListing()}
-                  loading={isCreatingListing}
-                  loadingLabel="Adding..."
-                  disabled={isLoading || !newListingName.trim()}
-                >
-                  Add Product
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {listingsLoading ? "Loading products..." : `${listings.length} product(s) available`}
-                </span>
-              </div>
-            </div>
+      <form onSubmit={handleNext} className="space-y-6">
+        {error ? <OnboardingAlert tone="error" message={error} live="assertive" /> : null}
+        <OnboardingAlert
+          tone="info"
+          message="Essential onboarding is already complete once payment is connected. You can add services now or configure them anytime in Dashboard > Services."
+        />
 
-            {services.map((service, index) => (
-              <div key={service.id} className="p-4 border border-border rounded-lg space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium">Service {index + 1}</h3>
-                  {services.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => removeService(service.id)}>
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
+        {/* Product Catalog Quick Add */}
+        <div className="rounded-2xl border border-slate-200/90 bg-slate-50/60 p-5 space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3 text-xs font-bold uppercase tracking-wider text-slate-800">
+            <Package className="w-4 h-4 text-slate-900" />
+            <span>Product Catalog (Optional)</span>
+          </div>
+          <p className="text-xs text-slate-500 font-medium">
+            Add inventory items/properties/vehicles to attach to Product-Based services below.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <Label htmlFor="listing-name" className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                Product Name
+              </Label>
+              <Input
+                id="listing-name"
+                value={newListingName}
+                onChange={(e) => setNewListingName(e.target.value)}
+                placeholder="e.g., Suite 101 or Vehicle A"
+                className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm"
+                disabled={isLoading || isCreatingListing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="listing-description" className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                Description (Optional)
+              </Label>
+              <Input
+                id="listing-description"
+                value={newListingDescription}
+                onChange={(e) => setNewListingDescription(e.target.value)}
+                placeholder="e.g. 2-bed executive apartment"
+                className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm"
+                disabled={isLoading || isCreatingListing}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-xl border-slate-300 bg-white text-slate-700 hover:bg-slate-100 font-semibold shadow-sm"
+              onClick={() => void createListing()}
+              loading={isCreatingListing}
+              loadingLabel="Adding..."
+              disabled={isLoading || !newListingName.trim()}
+            >
+              Add Product
+            </Button>
+            <span className="text-xs text-slate-500 font-medium">
+              {listingsLoading ? "Loading products..." : `${listings.length} product(s) available`}
+            </span>
+          </div>
+        </div>
+
+        {/* Services List */}
+        <AnimatePresence>
+          {services.map((service, index) => (
+            <motion.div
+              key={service.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-slate-900" />
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Service #{index + 1}</h3>
+                </div>
+                {services.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => removeService(service.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <Label htmlFor={`name-${service.id}`} className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Service Title <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id={`name-${service.id}`}
+                    type="text"
+                    placeholder="e.g., Executive Strategy Session"
+                    value={service.name}
+                    onChange={(e) => updateService(service.id, { name: e.target.value })}
+                    className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor={`price-${service.id}`} className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Price ({currencyCode}) <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id={`price-${service.id}`}
+                    type="number"
+                    placeholder="25000"
+                    value={service.price}
+                    onChange={(e) => updateService(service.id, { price: e.target.value })}
+                    className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 shadow-sm font-mono"
+                    required
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="col-span-2 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                  <FormSelect
+                    id={`booking-type-${service.id}`}
+                    label="Booking Type"
+                    value={service.bookingType}
+                    options={bookingTypeOptions}
+                    placeholder="Select booking type"
+                    onChange={(next) =>
+                      updateService(service.id, {
+                        bookingType: next as BookingType,
+                        listingIds: next === "listing" ? service.listingIds : [],
+                      })
+                    }
+                    disabled={isLoading}
+                    required
+                  />
+                  {service.bookingType === "listing" && (
+                    <fieldset className="space-y-2 mt-2">
+                      <legend className="sr-only">Products available for this service</legend>
+                      <p className="text-xs text-slate-600 font-medium">Select products clients can choose from:</p>
+                      {listings.length === 0 ? (
+                        <p className="text-xs text-amber-700 font-medium">Add at least one product above first.</p>
+                      ) : (
+                        <div className="max-h-32 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
+                          {listings.map((listing) => (
+                            <label key={listing.id} className="flex items-center gap-2 text-xs text-slate-800 font-medium">
+                              <input
+                                type="checkbox"
+                                checked={service.listingIds.includes(listing.id)}
+                                onChange={(e) =>
+                                  updateService(service.id, {
+                                    listingIds: e.target.checked
+                                      ? [...service.listingIds, listing.id]
+                                      : service.listingIds.filter((id) => id !== listing.id),
+                                  })
+                                }
+                                disabled={isLoading}
+                                className="rounded text-slate-900 focus:ring-slate-900"
+                              />
+                              <span>{listing.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </fieldset>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <Label htmlFor={`name-${service.id}`}>Service Name</Label>
-                    <Input
-                      id={`name-${service.id}`}
-                      type="text"
-                      placeholder="e.g., Business Consultation"
-                      value={service.name}
-                      onChange={(e) => updateService(service.id, { name: e.target.value })}
-                      className="mt-1"
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor={`price-${service.id}`}>Price (NGN)</Label>
-                    <Input
-                      id={`price-${service.id}`}
-                      type="number"
-                      placeholder="100"
-                      value={service.price}
-                      onChange={(e) => updateService(service.id, { price: e.target.value })}
-                      className="mt-1"
-                      required
-                      disabled={isLoading}
-                    />
-                  </div>
-
-                  <div className="col-span-2 space-y-2 rounded-lg border border-border p-3">
-                    <Label htmlFor={`booking-type-${service.id}`}>Booking Type</Label>
-                    <select
-                      id={`booking-type-${service.id}`}
-                      value={service.bookingType}
-                      onChange={(e) =>
-                        updateService(service.id, {
-                          bookingType: e.target.value as BookingType,
-                          listingIds: e.target.value === "listing" ? service.listingIds : [],
-                        })
-                      }
-                      className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      disabled={isLoading}
-                    >
-                      <option value="general">{bookingTypeLabels.general}</option>
-                      <option value="listing">{bookingTypeLabels.listing}</option>
-                    </select>
-                    {service.bookingType === "listing" && (
-                      <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">
-                          Select one or more products customers can choose from.
-                        </p>
-                        {listings.length === 0 ? (
-                          <p className="text-xs text-amber-600">
-                            Add at least one product above to continue.
-                          </p>
-                        ) : (
-                          <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-border p-2">
-                            {listings.map((listing) => (
-                              <label key={listing.id} className="flex items-center gap-2 text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={service.listingIds.includes(listing.id)}
-                                  onChange={(e) =>
-                                    updateService(service.id, {
-                                      listingIds: e.target.checked
-                                        ? [...service.listingIds, listing.id]
-                                        : service.listingIds.filter((id) => id !== listing.id),
-                                    })
-                                  }
-                                  disabled={isLoading}
-                                />
-                                <span>{listing.name}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="col-span-2">
-                    <ServiceSchedulingFields
-                      schedulingMode={service.schedulingMode}
-                      duration={service.duration}
-                      disabled={isLoading}
-                      onChange={({ schedulingMode, duration }) =>
-                        updateService(service.id, {
-                          ...(schedulingMode ? { schedulingMode } : {}),
-                          ...(duration !== undefined ? { duration } : {}),
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <Label htmlFor={`description-${service.id}`}>Description</Label>
-                    <Textarea
-                      id={`description-${service.id}`}
-                      placeholder="Brief description of this service"
-                      value={service.description}
-                      onChange={(e) => updateService(service.id, { description: e.target.value })}
-                      className="mt-1"
-                      rows={3}
-                      disabled={isLoading}
-                    />
-                  </div>
+                <div className="col-span-2">
+                  <ServiceSchedulingFields
+                    schedulingMode={service.schedulingMode}
+                    duration={service.duration}
+                    disabled={isLoading}
+                    onChange={({ schedulingMode, duration }) =>
+                      updateService(service.id, {
+                        ...(schedulingMode ? { schedulingMode } : {}),
+                        ...(duration !== undefined ? { duration } : {}),
+                      })
+                    }
+                  />
                 </div>
 
-                <ImageUpload
-                  label="Service image"
-                  value={service.imageUrl}
-                  onChange={(imageUrl) => updateService(service.id, { imageUrl })}
-                  uploadKind="service-image"
-                  disabled={isLoading}
-                  hint="Shown on your public booking page."
-                />
-
-                <ServiceAppointmentFields
-                  idPrefix={service.id}
-                  value={service.appointment}
-                  onChange={(appointment) => updateService(service.id, { appointment })}
-                  businessLocation={businessLocation}
-                  disabled={isLoading}
-                />
+                <div className="col-span-2">
+                  <Label htmlFor={`description-${service.id}`} className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+                    Service Overview
+                  </Label>
+                  <Textarea
+                    id={`description-${service.id}`}
+                    placeholder="Briefly detail what clients get in this appointment..."
+                    value={service.description}
+                    onChange={(e) => updateService(service.id, { description: e.target.value })}
+                    className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 shadow-sm"
+                    rows={3}
+                    disabled={isLoading}
+                  />
+                </div>
               </div>
-            ))}
 
-            <Button type="button" variant="outline" onClick={addService} className="w-full" disabled={isLoading}>
-              <Plus className="w-4 h-4 mr-2" />
-              Add Another Service
+              <ImageUpload
+                label="Service Cover Banner"
+                value={service.imageUrl}
+                onChange={(imageUrl) => updateService(service.id, { imageUrl })}
+                uploadKind="service-image"
+                disabled={isLoading}
+                hint="Displayed on your client booking card."
+              />
+
+              <ServiceAppointmentFields
+                idPrefix={service.id}
+                value={service.appointment}
+                onChange={(appointment) => updateService(service.id, { appointment })}
+                businessLocation={businessLocation}
+                disabled={isLoading}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={addService}
+          className="w-full rounded-2xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50 py-3.5 font-semibold shadow-sm"
+          disabled={isLoading}
+        >
+          <Plus className="w-4 h-4 mr-2 text-slate-900" />
+          Add Another Service Card
+        </Button>
+
+        <div className="sticky bottom-4 rounded-2xl border border-slate-200 bg-white/95 p-4 backdrop-blur-xl shadow-lg space-y-2">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate(OPTIONAL_ONBOARDING_ROUTES.availability)}
+              className="flex-1 rounded-xl border-slate-200 bg-white text-slate-700 hover:bg-slate-100 font-semibold"
+              disabled={isLoading}
+            >
+              Skip to Availability
             </Button>
-
-            <div className="flex gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => navigate("/onboarding")} className="flex-1" disabled={isLoading}>
-                Back
-              </Button>
-              <Button type="submit" className="flex-1 bg-primary hover:bg-primary/90" loading={isLoading} loadingLabel="Saving...">
-                Continue
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </form>
+            <Button
+              type="submit"
+              className="flex-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold shadow-md shadow-slate-900/10"
+              loading={isLoading}
+              loadingLabel="Saving Services..."
+            >
+              <span>Save & Continue</span>
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </form>
     </OnboardingShell>
   );
 }
+
+

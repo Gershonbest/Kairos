@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/button";
 import { Calendar, ArrowLeft, MailCheck, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, setAuthTokens } from "../../../lib/api/client";
+import { resolvePostAuthPath } from "../../../lib/auth/redirect";
 
 export function VerifyEmail() {
   const [searchParams] = useSearchParams();
@@ -31,10 +32,11 @@ export function VerifyEmail() {
           refresh_token: result.refresh_token,
         });
         if (!cancelled) {
-          setRedirectPath("/dashboard");
+          const target = result.onboarding_completed ? await resolvePostAuthPath() : "/onboarding";
+          setRedirectPath(target);
           setStatus("success");
           window.setTimeout(() => {
-            if (!cancelled) navigate("/dashboard", { replace: true });
+            if (!cancelled) navigate(target, { replace: true });
           }, 1200);
         }
       } catch {
@@ -79,7 +81,9 @@ export function VerifyEmail() {
               <MailCheck className="w-7 h-7" />
             </div>
             <h1 className="text-2xl font-semibold mb-2">Email confirmed</h1>
-            <p className="text-gray-600 mb-6">Taking you to your dashboard...</p>
+            <p className="text-gray-600 mb-6">
+              {redirectPath.startsWith("/onboarding") ? "Taking you to setup..." : "Taking you to your dashboard..."}
+            </p>
             <Button
               className="w-full bg-primary hover:bg-primary/90"
               onClick={() => navigate(redirectPath, { replace: true })}

@@ -1,7 +1,7 @@
 // One-shot welcome flag after a successful plan payment.
 
 const WELCOME_AFTER_PAYMENT_KEY = "orheo_welcome_after_payment";
-const LEGACY_WELCOME_AFTER_PAYMENT_KEY = "kairos_welcome_after_payment";
+const LEGACY_WELCOME_AFTER_PAYMENT_KEY = "orheo_welcome_after_payment";
 
 export function markWelcomeAfterPayment(): void {
   if (typeof window === "undefined") return;

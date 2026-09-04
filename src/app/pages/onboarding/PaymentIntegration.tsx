@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
-import { CreditCard, Check } from "lucide-react";
+import { CreditCard, ShieldCheck, Zap } from "lucide-react";
 import { OnboardingShell } from "../../components/layouts/OnboardingShell";
 import { SettlementAccountFields, type VerifiedSettlementAccount } from "../../components/payments/SettlementAccountFields";
 import { api, SessionExpiredError, SubscriptionRequiredError } from "../../../lib/api/client";
+import { OnboardingAlert } from "../../components/onboarding/OnboardingAlert";
+import { OnboardingStepActions } from "../../components/onboarding/OnboardingStepActions";
+import { REQUIRED_ONBOARDING_TOTAL } from "./flow";
+import { markWelcomeAfterPayment } from "../../../lib/auth/welcome";
 
 export function PaymentIntegration() {
   const navigate = useNavigate();
@@ -52,6 +55,8 @@ export function PaymentIntegration() {
       .catch(() => null);
   }, []);
 
+  const selectedBankObj = banks.find((b) => b.code === settlementBank);
+
   const handleComplete = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -67,7 +72,8 @@ export function PaymentIntegration() {
         settlement_bank: settlementBank,
         account_number: accountNumber.trim(),
       });
-      navigate("/dashboard");
+      markWelcomeAfterPayment();
+      navigate(OPTIONAL_ONBOARDING_ROUTES.services);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to connect Paystack subaccount.");
     } finally {
@@ -75,44 +81,61 @@ export function PaymentIntegration() {
     }
   };
 
-  const handleSkip = () => {
-    navigate("/dashboard");
-  };
-
   return (
     <OnboardingShell
-      step={4}
-      title="Connect Paystack"
-      description="Connect Paystack so booking deposits collected through Orheo can settle to your bank account"
+      step={2}
+      totalSteps={REQUIRED_ONBOARDING_TOTAL}
+      title="Connect Settlement Account"
+      description="Connect your bank account to automatically receive client booking deposits directly to your bank."
+      previewData={{
+        businessName,
+        settlementBankName: selectedBankObj?.name,
+        accountNumber,
+        verifiedAccountName: verifiedAccount?.account_name,
+        previewType: "payment",
+      }}
     >
       <form onSubmit={handleComplete} className="space-y-6">
-        <div className="p-4 border-2 border-primary rounded-lg bg-primary/5">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+        {error ? <OnboardingAlert tone="error" message={error} live="assertive" /> : null}
+
+        {/* Paystack Merchant Trust Card */}
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5 shadow-sm">
+          <div className="flex items-start gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-slate-900 text-white flex items-center justify-center shrink-0 shadow-sm">
               <CreditCard className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium">Paystack</h3>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent-foreground">Required</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-slate-900 text-base">Paystack Merchant Settlement</h3>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Required Integration
+                </span>
               </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                Clients pay booking deposits through Orheo via Paystack. Your share settles to this bank account; a
-                merchant fee applies only to those deposits.
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed font-medium">
+                When clients book appointments on Orheo, deposits process via Paystack. Funds settle directly into your bank account with zero manual transfer delay.
               </p>
+              <div className="mt-3 flex items-center gap-4 text-[11px] text-slate-500 font-semibold">
+                <span className="flex items-center gap-1 text-emerald-700">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 256-bit Payout Encryption
+                </span>
+                <span className="flex items-center gap-1 text-slate-700">
+                  <Zap className="w-3.5 h-3.5 text-slate-900" /> Direct Bank Settlement
+                </span>
+              </div>
             </div>
-            <Check className="w-5 h-5 text-primary ml-auto" />
           </div>
         </div>
 
         <div>
-          <Label htmlFor="businessName">Settlement business name</Label>
+          <Label htmlFor="businessName" className="text-xs font-semibold uppercase tracking-wider text-slate-700">
+            Settlement Business Name (Paystack Record)
+          </Label>
           <Input
             id="businessName"
-            className="mt-1"
+            className="mt-1 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-900/10 shadow-sm"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
-            placeholder="Your business name on Paystack"
+            placeholder="Your registered business name on Paystack"
             disabled={isLoading}
           />
         </div>
@@ -131,23 +154,17 @@ export function PaymentIntegration() {
           onVerifyErrorChange={setVerifyError}
         />
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Button
-            type="submit"
-            className="flex-1"
-            loading={isLoading}
-            loadingLabel="Connecting..."
-            disabled={!verifiedAccount || isLoading}
-          >
-            Connect Paystack & finish
-          </Button>
-          <Button type="button" variant="outline" className="flex-1" onClick={handleSkip} disabled={isLoading}>
-            Skip for now
-          </Button>
-        </div>
+        <OnboardingStepActions
+          onBack={() => navigate("/onboarding")}
+          nextLabel="Connect Paystack & Finish Setup"
+          isLoading={isLoading}
+          loadingLabel="Connecting Paystack..."
+          nextDisabled={!verifiedAccount}
+          helperText="Bank account verification ensures client booking payments route smoothly."
+        />
       </form>
     </OnboardingShell>
   );
 }
+
+
